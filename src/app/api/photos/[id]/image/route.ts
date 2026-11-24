@@ -11,6 +11,13 @@ type Ctx = { params: Promise<{ id: string }> };
 function viewer(request: Request): string | null {
   const header = request.headers.get("x-shooter-token");
   if (header && isUuid(header)) return header.toLowerCase();
+  const cookie = request.headers.get("cookie") ?? "";
+  for (const part of cookie.split(";")) {
+    const trimmed = part.trim();
+    if (!trimmed.startsWith("relapse.shooter=")) continue;
+    const value = decodeURIComponent(trimmed.slice("relapse.shooter=".length));
+    if (isUuid(value)) return value.toLowerCase();
+  }
   return null;
 }
 

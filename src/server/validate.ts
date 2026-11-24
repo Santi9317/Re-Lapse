@@ -85,10 +85,39 @@ function cleanIdList(value: unknown): string[] {
 
 export function cleanHours(value: unknown): number {
   const hours = typeof value === "number" ? value : Number(value);
-  if (!Number.isInteger(hours) || hours < 8 || hours > 24) {
-    throw new HttpError(400, "An event stays open between 8 and 24 hours.");
+  if (!Number.isInteger(hours) || hours < 1 || hours > 24) {
+    throw new HttpError(400, "A roll stays open between 1 and 24 hours.");
   }
   return hours;
+}
+
+const INVITE_CODE = /^[A-HJ-NP-Z2-9]{6}$/;
+
+export function cleanInviteCode(value: unknown): string {
+  if (typeof value !== "string") throw new HttpError(400, "That invite isn't one of ours.");
+  const code = value.replace(/[\s-]/g, "").toUpperCase();
+  if (!INVITE_CODE.test(code)) throw new HttpError(400, "That invite isn't one of ours.");
+  return code;
+}
+
+export function cleanInviteName(value: unknown): string {
+  const name = scrub(value, 24, false);
+  if (!name) throw new HttpError(400, "Say who you're inviting.");
+  return name;
+}
+
+export function cleanPhotoIds(value: unknown): string[] {
+  if (!Array.isArray(value)) throw new HttpError(400, "Pick the frames first.");
+  if (value.length > 80) throw new HttpError(400, "That's too many frames at once.");
+  const seen = new Set<string>();
+  const ids: string[] = [];
+  for (const item of value) {
+    const id = requireUuid(item, "That frame isn't one of ours.");
+    if (seen.has(id)) continue;
+    seen.add(id);
+    ids.push(id);
+  }
+  return ids;
 }
 
 function jpegSize(buf: Buffer): { w: number; h: number } | null {
