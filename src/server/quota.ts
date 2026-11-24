@@ -116,11 +116,46 @@ export async function issueCamera(
   return { token: String(issued), proof: await cameraProof(String(issued)) };
 }
 
+export async function cameraHoldsProof(token: string, proof: string | null): Promise<boolean> {
+  if (!isUuid(token) || !proof) return false;
+  return proofMatches(token.toLowerCase(), proof.toLowerCase());
+}
+
 export async function viewerFromCookie(token: string | null, proof: string | null): Promise<string | null> {
   if (!token || !isUuid(token)) return null;
   const id = token.toLowerCase();
   if (!(await cameraIsIssued(id, proof))) return null;
   return id;
+}
+
+function readAuthCookie(request: Request): { token: string; proof: string } | null {
+  const header = request.headers.get("cookie") ?? "";
+  for (const part of header.split(";")) {
+    const trimmed = part.trim();
+    if (!trimmed.startsWith("relapse_auth=")) continue;
+    let value = "";
+    try {
+      value = decodeURIComponent(trimmed.slice("relapse_auth=".length));
+    } catch {
+      return null;
+    }
+    const dot = value.indexOf(".");
+    if (dot < 0) continue;
+    const token = value.slice(0, dot);
+    if (!isUuid(token)) continue;
+    return { token: token.toLowerCase(), proof: value.slice(dot + 1) };
+  }
+  return null;
+}
+
+/** The camera a request can prove, from its header or its httpOnly cookie. */
+export async function provenCamera(request: Request): Promise<string | null> {
+  const header = request.headers.get("x-shooter-token");
+  const headerToken = header && isUuid(header) ? header.toLowerCase() : null;
+  if (headerToken && (await cameraHoldsProof(headerToken, readProof(request)))) return headerToken;
+  const cookie = readAuthCookie(request);
+  if (!cookie || !(await cameraHoldsProof(cookie.token, cookie.proof))) return null;
+  return cookie.token;
 }
 
 const ANON = "00000000-0000-4000-8000-000000000000";

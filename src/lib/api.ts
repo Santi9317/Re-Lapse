@@ -54,6 +54,58 @@ function cameraProof(): string {
   return "";
 }
 
+export type GateStatus = "pending" | "accepted" | "declined";
+
+export async function fetchGate(): Promise<{ status: GateStatus; name: string } | null> {
+  const token = shooterToken();
+  const proof = cameraProof();
+  if (!token || !proof) return null;
+  const response = await fetch("/api/gate", {
+    headers: { "x-shooter-token": token, "x-camera-proof": proof },
+    cache: "no-store",
+  });
+  if (response.status === 404) return null;
+  const data = (await response.json().catch(() => null)) as { status?: string; name?: string; error?: string } | null;
+  if (!response.ok) throw new Error(data?.error || "The lab didn't answer.");
+  if (data?.status !== "pending" && data?.status !== "accepted" && data?.status !== "declined") {
+    throw new Error("The lab didn't answer.");
+  }
+  return { status: data.status, name: typeof data.name === "string" ? data.name : "" };
+}
+
+export async function requestToJoin(name: string): Promise<{ status: GateStatus; name: string }> {
+  const headers: Record<string, string> = { "content-type": "application/json" };
+  const token = shooterToken();
+  const proof = cameraProof();
+  if (token) headers["x-shooter-token"] = token;
+  if (proof) headers["x-camera-proof"] = proof;
+  const response = await fetch("/api/gate", {
+    method: "POST",
+    headers,
+    cache: "no-store",
+    body: JSON.stringify({ name }),
+  });
+  const data = (await response.json().catch(() => null)) as {
+    status?: string;
+    name?: string;
+    token?: string;
+    proof?: string;
+    error?: string;
+  } | null;
+  if (
+    !response.ok ||
+    !data?.token ||
+    !UUID.test(data.token) ||
+    !data.proof ||
+    !PROOF.test(data.proof) ||
+    (data.status !== "pending" && data.status !== "accepted" && data.status !== "declined")
+  ) {
+    throw new Error(data?.error || "The lab didn't answer.");
+  }
+  rememberCamera(data.token, data.proof.toLowerCase());
+  return { status: data.status, name: typeof data.name === "string" ? data.name : name };
+}
+
 export function shooterToken(): string {
   try {
     const existing = localStorage.getItem(TOKEN_KEY);
@@ -133,8 +185,8 @@ export async function saveOwnProfile(profile: ProfileWrite): Promise<SharedProfi
   });
 }
 
-export function fetchPublicProfile(id: string): Promise<SharedProfile> {
-  return request(`/api/profiles/${id}`);
+export async function fetchPublicProfile(id: string): Promise<SharedProfile> {
+  return request(`/api/profiles/${id}`, { headers: await headers(false) });
 }
 
 export function fetchConfig(): Promise<{ devTimers: boolean }> {
@@ -200,7 +252,7 @@ export async function filePhoto(id: string, albumId: string | null): Promise<{ o
 }
 
 export async function fetchAlbums(): Promise<Album[]> {
-  const data = await request<{ albums: Album[] }>("/api/albums");
+  const data = await request<{ albums: Album[] }>("/api/albums", { headers: await headers(false) });
   return data.albums;
 }
 

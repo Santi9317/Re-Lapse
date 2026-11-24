@@ -9,6 +9,7 @@ import { Lab } from "@/components/Lab";
 import { GuestProfile, Profile } from "@/components/Profile";
 import { Rolls } from "@/components/Rolls";
 import { ShellPrompts } from "@/components/Shell";
+import { JoinGate } from "@/components/JoinGate";
 import { Shoot } from "@/components/Shoot";
 
 type Tab = "shoot" | "lab" | "feed" | "rolls" | "you";
@@ -22,6 +23,12 @@ const lede: Record<Exclude<Tab, "shoot">, string> = {
 };
 
 export function App() {
+  const [open, setOpen] = useState(false);
+  if (!open) return <JoinGate onOpen={() => setOpen(true)} />;
+  return <CameraDesk />;
+}
+
+function CameraDesk() {
   const [tab, setTab] = useState<Tab>("shoot");
   const [armed, setArmed] = useState<EventRoll | null>(null);
   const [labRevision, setLabRevision] = useState(0);
