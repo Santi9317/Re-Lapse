@@ -20,7 +20,7 @@ type InstallPrompt = Event & { prompt: () => Promise<void> };
 const lede: Record<Exclude<Tab, "shoot">, string> = {
   lab: "Let them lapse. Develop when the clock hits zero. 🧪",
   feed: "Everyone with this link. A frame stays up for a week, then it lapses. ✨",
-  rolls: "Invite people onto a roll, let it lapse, then pick the feed. 🎞️",
+  rolls: "Your galleries, and timecapsules that open, then seal. 🎞️",
   you: "Set your name, photo, and three emojis. They show on the frames you share.",
 };
 
@@ -244,7 +244,7 @@ function CameraDesk() {
               ["shoot", "Shoot", "📸"],
               ["lab", "Lab", "🧪"],
               ["feed", "Feed", "✨"],
-              ["rolls", "Rolls", "🎞️"],
+              ["rolls", "Keepsakes", "🎞️"],
               ["you", "You", "🪪"],
             ] as const
           ).map(([id, label, emoji]) => (

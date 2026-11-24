@@ -888,6 +888,71 @@ button.sticker:active { transform: translate(-50%, -50%) rotate(var(--tilt)) sca
   margin: 8px 0 6px;
 }
 .event p, .roll p { color: var(--muted); font-size: 12px; }
+.gallery-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  border: 1px solid rgba(180, 150, 255, 0.22);
+  background: #140c24;
+  padding: 10px;
+  margin-bottom: 10px;
+  border-radius: var(--radius);
+}
+.gallery-card h3 {
+  font-family: var(--display);
+  font-size: 22px;
+  font-weight: 400;
+  letter-spacing: 0.03em;
+  line-height: 1.05;
+  margin: 0 0 6px;
+  overflow-wrap: anywhere;
+}
+.gallery-card p { color: var(--muted); font-size: 12px; }
+.gallery-copy { min-width: 0; }
+.gallery-label { display: block; margin: 4px 0 6px; }
+.gallery-cover {
+  width: 76px;
+  height: 76px;
+  flex: none;
+  object-fit: cover;
+  border-radius: 14px;
+  background:
+    linear-gradient(160deg, rgba(255, 176, 106, 0.2), rgba(142, 236, 255, 0.08)),
+    #1a1028;
+  border: 1px solid rgba(180, 150, 255, 0.28);
+}
+.gallery-cover.empty {
+  display: grid;
+  place-items: center;
+  color: var(--faint);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  text-align: center;
+  padding: 6px;
+}
+.gallery-frame { margin: 0 0 16px; }
+.gallery-frame .print { margin-bottom: 0; }
+.gallery-frame-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 4px 8px;
+}
+.gallery-frame-bar .ghost { flex: 1; }
+.cover-pill {
+  flex: 1;
+  text-align: center;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 11px;
+  padding: 8px 10px;
+  border: 1px solid #3de0ff;
+  color: #3de0ff;
+  border-radius: 999px;
+}
 .pill {
   display: inline-block;
   letter-spacing: 0.06em;
@@ -972,11 +1037,14 @@ button.sticker:active { transform: translate(-50%, -50%) rotate(var(--tilt)) sca
 .invite .section { margin-top: 0; }
 .invite-code {
   font-family: var(--display);
-  font-size: 34px;
-  letter-spacing: 0.16em;
+  font-size: 22px;
+  letter-spacing: 0.12em;
+  line-height: 1.2;
   color: var(--blue);
   text-shadow: 0 0 18px rgba(142, 236, 255, 0.32);
   margin: 8px 0 4px;
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 .invite-actions {
   display: flex;

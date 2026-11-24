@@ -92,7 +92,7 @@ function cleanIdList(value: unknown): string[] {
 export function cleanHours(value: unknown): number {
   const hours = typeof value === "number" ? value : Number(value);
   if (!Number.isInteger(hours) || hours < 1 || hours > 24) {
-    throw new HttpError(400, "A roll stays open between 1 and 24 hours.");
+    throw new HttpError(400, "A timecapsule stays open between 1 and 24 hours.");
   }
   return hours;
 }
@@ -119,6 +119,21 @@ export function cleanInviteName(value: unknown): string {
   const name = scrub(value, 24, false);
   if (!name) throw new HttpError(400, "Say who you're inviting.");
   return name;
+}
+
+export function readGalleryPatch(body: Record<string, unknown>): { name?: string; coverPhotoId?: string | null } {
+  const patch: { name?: string; coverPhotoId?: string | null } = {};
+  if ("name" in body) patch.name = cleanName(body.name);
+  if ("coverPhotoId" in body) {
+    patch.coverPhotoId =
+      body.coverPhotoId == null || body.coverPhotoId === ""
+        ? null
+        : requireUuid(body.coverPhotoId, "Pick a cover from this gallery.");
+  }
+  if (patch.name === undefined && patch.coverPhotoId === undefined) {
+    throw new HttpError(400, "Nothing to change.");
+  }
+  return patch;
 }
 
 export function cleanPhotoIds(value: unknown): string[] {

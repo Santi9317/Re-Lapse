@@ -9,7 +9,8 @@ test("how to is a user recap, without the builder's notes", () => {
   assert.equal(/\blab\b/.test(lower), false);
   assert.match(lower, /round button/);
   assert.match(lower, /develop/);
-  assert.match(lower, /albums/);
+  assert.match(lower, /gallery/);
+  assert.match(lower, /timecapsule/);
   assert.match(lower, /emoji/);
   assert.match(lower, /seven emojis/);
   assert.match(lower, /type your own/);

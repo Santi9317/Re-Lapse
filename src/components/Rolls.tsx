@@ -5,7 +5,6 @@ import {
   createAlbum,
   createEvent,
   deletePhoto,
-  fetchAlbum,
   fetchAlbums,
   fetchEvent,
   fetchEvents,
@@ -13,6 +12,7 @@ import {
   joinEvent,
   publishEventFeed,
 } from "@/lib/api";
+import { Gallery, GalleryCardButton } from "@/components/Gallery";
 import { clockLabel, frames, longRemain } from "@/lib/format";
 import type { Album, EventDetail, EventRoll, EventStatus, FeedItem } from "@/lib/types";
 import { Lightbox, PrintView } from "@/components/Print";
@@ -20,7 +20,7 @@ import { Lightbox, PrintView } from "@/components/Print";
 function statusLine(event: EventRoll, now: number): string {
   if (event.status === "open") return `Open · ${longRemain(Math.max(0, event.endsAt - now))} left`;
   if (event.status === "sealing") return `Sealing · back in ${longRemain(Math.max(0, event.revealAt - now))}`;
-  return "Ready · the roll is back";
+  return "Ready · the timecapsule is back";
 }
 
 function eventMeta(event: EventRoll): string {
@@ -36,9 +36,9 @@ function eventMeta(event: EventRoll): string {
 }
 
 function inviteBlurb(status: EventStatus): string {
-  if (status === "open") return "Invite other people. Anyone who joins can add frames until this roll closes.";
-  if (status === "sealing") return "The window is closed. People you invite can still watch for the roll to come back.";
-  return "Share this if someone should see the whole roll. The feed only gets the frames you pick.";
+  if (status === "open") return "Invite other people. Anyone who joins can add frames until this timecapsule closes.";
+  if (status === "sealing") return "The window is closed. People you invite can still watch for the timecapsule to come back.";
+  return "Share this if someone should see the whole timecapsule. The feed only gets the frames you pick.";
 }
 
 function memberLine(event: EventDetail): string {
@@ -46,7 +46,7 @@ function memberLine(event: EventDetail): string {
   const names = event.members.map((member) => member.name).filter((name): name is string => Boolean(name));
   const shown = names.slice(0, 4);
   const rest = event.memberCount - shown.length;
-  if (shown.length === 0) return `${event.memberCount} people on this roll.`;
+  if (shown.length === 0) return `${event.memberCount} people on this timecapsule.`;
   if (rest > 0) return `${shown.join(", ")}, and ${rest} more.`;
   return shown.join(", ");
 }
@@ -93,7 +93,7 @@ export function Rolls({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [now, setNow] = useState(() => Date.now());
-  const [albumDetail, setAlbumDetail] = useState<{ album: Album; photos: FeedItem[] } | null>(null);
+  const [galleryId, setGalleryId] = useState<string | null>(null);
   const [eventDetail, setEventDetail] = useState<EventDetail | null>(null);
   const [open, setOpen] = useState<FeedItem | null>(null);
   const [picked, setPicked] = useState<Set<string>>(new Set());
@@ -167,8 +167,9 @@ export function Rolls({
       const album = await createAlbum(albumName.trim());
       setAlbums((current) => [album, ...current]);
       setAlbumName("");
+      setGalleryId(album.id);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not start that roll.");
+      setError(err instanceof Error ? err.message : "Could not start that gallery.");
     } finally {
       setBusy(false);
     }
@@ -186,7 +187,7 @@ export function Rolls({
       setCopied("");
       setEventDetail(await fetchEvent(event.id));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not open that event.");
+      setError(err instanceof Error ? err.message : "Could not open that timecapsule.");
     } finally {
       setBusy(false);
     }
@@ -203,7 +204,7 @@ export function Rolls({
       setInviteName("");
       setCopied("");
       setEventDetail(event);
-      setAlbumDetail(null);
+      setGalleryId(null);
       setTick((value) => value + 1);
     } catch (err) {
       setError(err instanceof Error ? err.message : "That invite isn't one of ours.");
@@ -270,21 +271,9 @@ export function Rolls({
   }
 
   async function onDelete(id: string) {
-    const albumSnap = albumDetail;
     const eventSnap = eventDetail;
     const opened = open;
     removed.current.add(id);
-    setAlbumDetail((current) =>
-      current
-        ? {
-            album: {
-              ...current.album,
-              frameCount: Math.max(0, current.album.frameCount - (current.photos.some((photo) => photo.id === id) ? 1 : 0)),
-            },
-            photos: current.photos.filter((photo) => photo.id !== id),
-          }
-        : current,
-    );
     setEventDetail((current) =>
       current
         ? {
@@ -309,7 +298,6 @@ export function Rolls({
       setTick((value) => value + 1);
     } catch (err) {
       removed.current.delete(id);
-      setAlbumDetail(albumSnap);
       setEventDetail(eventSnap);
       setOpen(opened);
       setError(err instanceof Error ? err.message : "That frame stayed put.");
@@ -317,14 +305,10 @@ export function Rolls({
     }
   }
 
-  async function showAlbum(id: string) {
+  function showAlbum(id: string) {
     setError("");
-    try {
-      setAlbumDetail(await fetchAlbum(id));
-      setEventDetail(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "That roll is gone.");
-    }
+    setEventDetail(null);
+    setGalleryId(id);
   }
 
   async function showEvent(id: string) {
@@ -333,36 +317,23 @@ export function Rolls({
       setInviteName("");
       setCopied("");
       setEventDetail(await fetchEvent(id));
-      setAlbumDetail(null);
+      setGalleryId(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "That event is gone.");
+      setError(err instanceof Error ? err.message : "That timecapsule is gone.");
     }
   }
 
-  if (albumDetail) {
+  if (galleryId) {
     return (
-      <div className="scroll" data-screen="album">
-        <button className="ghost back" type="button" onClick={() => setAlbumDetail(null)}>
-          ← Rolls
-        </button>
-        <h2 className="word" style={{ fontSize: 36 }}>{albumDetail.album.name}</h2>
-        <p className="fine">{frames(albumDetail.album.frameCount)}</p>
-        {albumDetail.photos.length === 0 ? (
-          <div className="empty">
-            <h2>Empty roll.</h2>
-            <p>Develop a frame, then file it here from the feed.</p>
-          </div>
-        ) : (
-          <div className="grid">
-            {albumDetail.photos.map((photo) => (
-              <PrintView key={photo.id} item={photo} onOpen={setOpen} onOpenProfile={onOpenProfile} onDelete={onDelete} compact />
-            ))}
-          </div>
-        )}
-        {open ? (
-          <Lightbox item={open} onClose={() => setOpen(null)} onOpenProfile={onOpenProfile} onDelete={onDelete} />
-        ) : null}
-      </div>
+      <Gallery
+        id={galleryId}
+        onBack={() => {
+          setGalleryId(null);
+          setTick((value) => value + 1);
+        }}
+        onOpenProfile={onOpenProfile}
+        onChanged={() => setTick((value) => value + 1)}
+      />
     );
   }
 
@@ -381,7 +352,7 @@ export function Rolls({
             setTick((value) => value + 1);
           }}
         >
-          ← Rolls
+          ← Keepsakes
         </button>
         <span className="pill" data-status={eventDetail.status}>{line}</span>
         <h2 className="word" style={{ fontSize: 40, marginTop: 10 }}>{eventDetail.name}</h2>
@@ -389,7 +360,7 @@ export function Rolls({
         <div className="phases">
           <Phase label="Open" detail={`until ${clockLabel(eventDetail.endsAt)}`} on={eventDetail.status === "open"} />
           <Phase label="Sealing" detail={`until ${clockLabel(eventDetail.revealAt)}`} on={eventDetail.status === "sealing"} />
-          <Phase label="Ready" detail={eventDetail.inviteOnly ? "pick the feed" : "the roll returns"} on={eventDetail.status === "ready"} />
+          <Phase label="Ready" detail={eventDetail.inviteOnly ? "pick the feed" : "the timecapsule returns"} on={eventDetail.status === "ready"} />
         </div>
         {eventDetail.inviteOnly && eventDetail.owner ? (
           <section className="invite" data-invite>
@@ -429,29 +400,29 @@ export function Rolls({
           </section>
         ) : null}
         {eventDetail.inviteOnly && !eventDetail.owner && eventDetail.status === "open" ? (
-          <p className="fine">You're invited. Add frames until this roll closes.</p>
+          <p className="fine">You're invited. Add frames until this timecapsule closes.</p>
         ) : null}
         {eventDetail.status === "open" ? (
           <button className="primary" type="button" data-arm-event={eventDetail.id} onClick={() => onArm(eventDetail)}>
-            Shoot this event
+            Shoot this timecapsule
           </button>
         ) : null}
         {eventDetail.status === "sealing" ? (
           <div className="empty">
             <h2>At the lab.</h2>
-            <p>The window is closed. Nothing from this event is viewable until the seal breaks.</p>
+            <p>The window is closed. Nothing from this timecapsule is viewable until the seal breaks.</p>
           </div>
         ) : null}
         {eventDetail.status === "ready" && eventDetail.photos.length === 0 ? (
           <div className="empty">
-            <h2>The roll came back empty. 🎞️</h2>
+            <h2>The timecapsule came back empty. 🎞️</h2>
             <p>Nobody shot this one.</p>
           </div>
         ) : null}
         {eventDetail.status === "ready" && eventDetail.photos.length > 0 ? (
           <>
             {eventDetail.inviteOnly && !eventDetail.owner ? (
-              <p className="fine">The roll is back. Frames on the feed are the ones everyone can see.</p>
+              <p className="fine">The timecapsule is back. Frames on the feed are the ones everyone can see.</p>
             ) : null}
             <p className="section">In the order they were shot</p>
             <div className="thread">
@@ -509,17 +480,17 @@ export function Rolls({
   }
 
   return (
-    <div className="scroll" data-screen="rolls">
+    <div className="scroll" data-screen="keepsakes">
       <p className="fine">
-        Rolls are stacks of keepers. 🎞️ Events stay open for 1 to 24 hours, then the whole roll takes a 24-hour lapse. Invite people onto it, and pick what hits the feed.
+        Keepsakes are galleries of your photos. Timecapsules stay open for 1 to 24 hours, then the whole album seals for a day. Invite people onto it, and pick what hits the feed.
       </p>
       {error || joinNotice ? <p className="error">{error || joinNotice}</p> : null}
-      <h2 className="section">Rolls</h2>
+      <h2 className="section">Galleries</h2>
       <div className="row">
         <input
           className="field"
           maxLength={40}
-          placeholder="Name a roll"
+          placeholder="Album title"
           value={albumName}
           onChange={(event) => setAlbumName(event.target.value)}
           onKeyDown={(event) => {
@@ -527,45 +498,42 @@ export function Rolls({
           }}
         />
         <button className="primary" type="button" disabled={busy || !albumName.trim()} onClick={() => void makeAlbum()}>
-          File
+          Make
         </button>
       </div>
       {albums.length === 0 ? (
         <div className="empty">
-          <h2>No rolls yet. 🎞️</h2>
-          <p>Name one, send a frame to the feed, then file it.</p>
+          <h2>No galleries yet. 🎞️</h2>
+          <p>Name one, send a photo to the feed, then add it here.</p>
         </div>
       ) : (
         albums.map((album) => (
-          <button className="roll" type="button" key={album.id} onClick={() => void showAlbum(album.id)}>
-            <h3>{album.name}</h3>
-            <p>{frames(album.frameCount)}</p>
-          </button>
+          <GalleryCardButton key={album.id} gallery={album} onOpen={() => showAlbum(album.id)} />
         ))
       )}
-      <h2 className="section">Events</h2>
+      <h2 className="section">Timecapsules</h2>
       <input
         className="field"
         maxLength={40}
-        placeholder="Event name"
+        placeholder="Timecapsule name"
         value={eventName}
         onChange={(event) => setEventName(event.target.value)}
       />
       <div className="stepper">
-        <button type="button" aria-label="Shorter event" onClick={() => setHours((value) => Math.max(1, value - 1))}>
+        <button type="button" aria-label="Shorter timecapsule" onClick={() => setHours((value) => Math.max(1, value - 1))}>
           –
         </button>
         <div className="hours" data-hours={hours}>
           {hours}
           <span>{hours === 1 ? "hour" : "hours"}</span>
         </div>
-        <button type="button" aria-label="Longer event" onClick={() => setHours((value) => Math.min(24, value + 1))}>
+        <button type="button" aria-label="Longer timecapsule" onClick={() => setHours((value) => Math.min(24, value + 1))}>
           +
         </button>
       </div>
-      <p className="fine">Open for 1 to 24 hours. When it closes, the roll seals for 24 hours. Then you choose which frames go on the feed.</p>
+      <p className="fine">Open for 1 to 24 hours. When it closes, the timecapsule seals for 24 hours. Then you choose which frames go on the feed.</p>
       <button className="primary" type="button" style={{ marginTop: 12 }} disabled={busy || !eventName.trim()} onClick={() => void makeEvent()}>
-        Start the event
+        Start the timecapsule
       </button>
       <h2 className="section">Join</h2>
       <div className="row">
@@ -589,7 +557,7 @@ export function Rolls({
       <div style={{ height: 14 }} />
       {events.length === 0 ? (
         <div className="empty">
-          <h2>No events yet. 🎉</h2>
+          <h2>No timecapsules yet. 🎉</h2>
           <p>Start one, invite people, and they can add frames until it closes.</p>
         </div>
       ) : (

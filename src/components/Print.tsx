@@ -25,7 +25,7 @@ import {
   shareOrSave,
   warmPhoto,
 } from "@/lib/save";
-import type { Album, FeedItem, FrameSticker, SharedProfile } from "@/lib/types";
+import type { FeedItem, FrameSticker, SharedProfile } from "@/lib/types";
 
 const STICKER_SLOTS: [number, number][] = [
   [10, 12],
@@ -579,8 +579,6 @@ function FrameActions({
 
 export function PrintView({
   item,
-  albums,
-  onFile,
   onOpen,
   onOpenProfile,
   onDelete,
@@ -588,8 +586,6 @@ export function PrintView({
   compact = false,
 }: {
   item: FeedItem;
-  albums?: Album[];
-  onFile?: (id: string, albumId: string | null) => void;
   onOpen?: (item: FeedItem) => void;
   onOpenProfile?: (id: string) => void;
   onDelete?: (id: string) => Promise<void> | void;
@@ -631,27 +627,6 @@ export function PrintView({
       <p className="meta">{meta}</p>
       {!compact ? <p className="stock-line">RE-LAPSE 400</p> : null}
       <FrameActions item={item} getImage={() => imageRef.current} onDelete={onDelete} />
-      {onFile && item.mine && !item.eventId ? (
-        <div className="file-row">
-          {albums && albums.length > 0 ? (
-            <select
-              className="paper-select"
-              aria-label="File this frame into a roll"
-              value={item.albumId ?? ""}
-              onChange={(event) => onFile(item.id, event.target.value || null)}
-            >
-              <option value="">Loose frame</option>
-              {albums.map((album) => (
-                <option key={album.id} value={album.id}>
-                  {album.name}
-                </option>
-              ))}
-            </select>
-          ) : (
-            <p className="meta">Make a roll to file this frame.</p>
-          )}
-        </div>
-      ) : null}
     </figure>
   );
 }
