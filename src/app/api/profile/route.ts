@@ -1,5 +1,5 @@
 import { asRecord, HttpError, json, PHOTO_BODY_BYTES, readJson, toErrorResponse } from "@/server/http";
-import { requireActor } from "@/server/quota";
+import { requireMember } from "@/server/gate";
 import { readOwnProfile, saveOwnProfile } from "@/server/store";
 import { cleanProfileWrite, readProof } from "@/server/validate";
 
@@ -7,7 +7,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 function shooter(request: Request): Promise<string> {
-  return requireActor(request);
+  return requireMember(request);
 }
 
 export async function GET(request: Request) {

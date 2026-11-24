@@ -16,6 +16,18 @@ export function json(data: unknown, status = 200) {
   });
 }
 
+export function sealCamera(response: NextResponse, request: Request, token: string, proof: string) {
+  const secure = new URL(request.url).protocol === "https:";
+  response.cookies.set("relapse_auth", `${token}.${proof}`, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure,
+    path: "/",
+    maxAge: 31_536_000,
+  });
+  return response;
+}
+
 export function toErrorResponse(error: unknown) {
   if (error instanceof HttpError) return json({ error: error.message }, error.status);
   const message = error instanceof Error ? error.message : "unknown";

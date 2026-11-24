@@ -112,7 +112,8 @@ async function runReclaim(): Promise<void> {
        and not exists (select 1 from albums a where a.owner_token = c.token)
        and not exists (select 1 from events e where e.owner_token = c.token)
        and not exists (select 1 from profiles r where r.shooter_token = c.token)
-       and not exists (select 1 from stickers s where s.shooter_token = c.token)`,
+       and not exists (select 1 from stickers s where s.shooter_token = c.token)
+       and not exists (select 1 from join_requests j where j.camera_token = c.token)`,
   );
 }
 

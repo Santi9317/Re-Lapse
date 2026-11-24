@@ -1,5 +1,5 @@
 import { json, toErrorResponse } from "@/server/http";
-import { requireActor } from "@/server/quota";
+import { requireMember } from "@/server/gate";
 import { deletePhoto } from "@/server/store";
 import { requireUuid } from "@/server/validate";
 
@@ -12,7 +12,7 @@ export async function DELETE(request: Request, ctx: Ctx) {
   try {
     const { id } = await ctx.params;
     const photoId = requireUuid(id, "That frame is gone.");
-    const token = await requireActor(request);
+    const token = await requireMember(request);
     await deletePhoto(photoId, token);
     return json({ ok: true });
   } catch (error) {
