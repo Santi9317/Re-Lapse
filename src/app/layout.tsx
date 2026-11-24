@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
+import { PortraitLock } from "@/components/PortraitLock";
 import "@fontsource/audiowide/latin-400.css";
 import "@fontsource/chakra-petch/latin-400.css";
 import "@fontsource/chakra-petch/latin-500.css";
@@ -36,7 +37,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   await headers();
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <PortraitLock />
+        {children}
+      </body>
     </html>
   );
 }
