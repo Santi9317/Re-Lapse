@@ -424,6 +424,13 @@ h1, h2, h3, p { margin: 0; }
   text-transform: uppercase;
   font-size: 13px;
 }
+.sealed-frame span {
+  display: block;
+  max-width: min(22ch, 86%);
+  text-align: center;
+  line-height: 1.45;
+  text-wrap: balance;
+}
 .review .hint, .fine {
   color: var(--muted);
   font-size: 12px;
