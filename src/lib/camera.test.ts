@@ -4,7 +4,9 @@ import {
   cameraWake,
   capturePlan,
   labeledDeviceIds,
+  lensCookieValue,
   parseStoredCamera,
+  recordFromLensCookie,
   permissionFromSignals,
   readCameraRecord,
   savedDeviceId,
@@ -214,6 +216,13 @@ test("a live video track is the only reason to skip a new camera request", () =>
     }),
     false,
   );
+});
+
+test("the lens cookie round-trips the saved camera", () => {
+  const stored: StoredCamera = { origin: ORIGIN, granted: true, devices: { environment: "rear" } };
+  const encoded = encodeURIComponent(lensCookieValue(stored));
+  assert.deepEqual(recordFromLensCookie(encoded), stored);
+  assert.deepEqual(recordFromLensCookie(null), { origin: null, granted: false, devices: {} });
 });
 
 test("corrupt site data does not become a grant", () => {

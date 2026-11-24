@@ -135,6 +135,29 @@ export async function askToJoin(request: Request, name: string, booth: string): 
   return { token, proof, status: row.status, name: row.name };
 }
 
+/**
+ * A PIN brings back the camera that already has this profile.
+ * An accepted camera stays accepted. A declined one stays declined.
+ * A missing row is the approval that was already given when the profile was saved.
+ */
+export async function ensureRestoredApproval(
+  token: string,
+  name: string,
+): Promise<{ status: GateDecision; name: string }> {
+  const existing = await findByToken(token);
+  if (existing) return existing;
+  const display = name.trim().slice(0, 40) || "Camera";
+  await sql(
+    `insert into join_requests (id, camera_token, display_name, status, decided_at)
+     values ($1, $2, $3, 'accepted', now())
+     on conflict (camera_token) do nothing`,
+    [randomUUID(), token, display],
+  );
+  const row = await findByToken(token);
+  if (!row) throw new HttpError(500, "The lab hit a snag.");
+  return row;
+}
+
 export async function isAccepted(token: string): Promise<boolean> {
   const row = await findByToken(token);
   return row?.status === "accepted";

@@ -1501,3 +1501,28 @@ button.byline .byline-name { text-decoration: underline; text-underline-offset: 
   flex: 1;
   text-align: center;
 }
+
+.pin-form { margin-top: 22px; }
+.gate-or {
+  margin: 0;
+  color: var(--faint);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-size: 11px;
+  text-align: center;
+}
+.pin-field {
+  letter-spacing: 0.42em;
+  text-align: center;
+  font-family: var(--display);
+  font-size: 22px;
+}
+.pin-slip { z-index: 50; }
+.pin-digits {
+  margin: 4px 0 14px;
+  text-align: center;
+  font-family: var(--display);
+  font-size: 40px;
+  letter-spacing: 0.18em;
+  color: var(--amber);
+}

@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { devFlagStored, ensureCamera, fetchConfig, fetchLab, joinEvent } from "@/lib/api";
+import { adoptSavedProfile, devFlagStored, ensureCamera, fetchConfig, fetchLab, joinEvent } from "@/lib/api";
+import { restorePhone } from "@/lib/identity";
 import { isSafariUa } from "@/lib/shell";
 import type { EventRoll } from "@/lib/types";
 import { Feed } from "@/components/Feed";
@@ -10,6 +11,7 @@ import { GuestProfile, Profile } from "@/components/Profile";
 import { Rolls } from "@/components/Rolls";
 import { ShellPrompts } from "@/components/Shell";
 import { JoinGate } from "@/components/JoinGate";
+import { PinSlip } from "@/components/PinSlip";
 import { Shoot } from "@/components/Shoot";
 
 type Tab = "shoot" | "lab" | "feed" | "rolls" | "you";
@@ -23,7 +25,34 @@ const lede: Record<Exclude<Tab, "shoot">, string> = {
 };
 
 export function App() {
+  const [booted, setBooted] = useState(false);
   const [open, setOpen] = useState(false);
+  useEffect(() => {
+    void restorePhone().finally(() => {
+      try {
+        void navigator.storage?.persist?.();
+      } catch {
+        /* persistence is optional */
+      }
+      setBooted(true);
+    });
+  }, []);
+  if (!booted) {
+    return (
+      <div className="desk">
+        <div className="phone">
+          <header className="top">
+            <h1 className="word">Re-Lapse ✨</h1>
+          </header>
+          <div className="stage">
+            <div className="scroll">
+              <p className="fine">Checking the gate.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
   if (!open) return <JoinGate onOpen={() => setOpen(true)} />;
   return <CameraDesk />;
 }
@@ -50,6 +79,7 @@ function CameraDesk() {
 
   useEffect(() => {
     void ensureCamera()
+      .then(() => adoptSavedProfile())
       .catch(() => undefined)
       .finally(() => setTokenReady((value) => value + 1));
     const standalone = window.matchMedia("(display-mode: standalone)").matches || (navigator as Navigator & { standalone?: boolean }).standalone === true;
@@ -225,6 +255,7 @@ function CameraDesk() {
           ))}
         </nav>
         <ShellPrompts />
+        <PinSlip />
       </div>
     </div>
   );

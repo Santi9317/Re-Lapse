@@ -2,6 +2,7 @@ import { createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypt
 import { sql } from "@/lib/db";
 import { HttpError } from "@/server/http";
 import { MINT_LIMITS, UNCLAIMED_MINT_KEEP } from "@/server/mint";
+import { profilePinHash } from "@/server/pin";
 import { isUuid, readCameraAuth } from "@/server/validate";
 
 /**
@@ -53,6 +54,10 @@ function sign(token: string, secret: Buffer): string {
 
 export async function cameraProof(token: string): Promise<string> {
   return sign(token, await signingSecret());
+}
+
+export async function hashProfilePin(pin: string): Promise<string> {
+  return profilePinHash(pin, await signingSecret());
 }
 
 async function proofMatches(token: string, proof: string | null): Promise<boolean> {

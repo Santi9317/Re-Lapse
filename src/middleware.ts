@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { boothFromCookie, cameraAuthFromCookie, shouldRefreshPhoneCookie } from "@/server/camera-auth";
 
 function contentSecurityPolicy(nonce: string): string {
   const dev = process.env.NODE_ENV === "development" ? " 'unsafe-eval'" : "";
@@ -28,6 +29,30 @@ export function middleware(request: NextRequest) {
   requestHeaders.set("Content-Security-Policy", policy);
   const response = NextResponse.next({ request: { headers: requestHeaders } });
   response.headers.set("Content-Security-Policy", policy);
+  if (shouldRefreshPhoneCookie(request.method, request.nextUrl.pathname)) {
+    const header = request.headers.get("cookie");
+    const auth = cameraAuthFromCookie(header);
+    const secure = request.nextUrl.protocol === "https:";
+    if (auth) {
+      response.cookies.set("relapse_auth", `${auth.token}.${auth.proof}`, {
+        httpOnly: true,
+        sameSite: "lax",
+        secure,
+        path: "/",
+        maxAge: 31_536_000,
+      });
+    }
+    const booth = boothFromCookie(header);
+    if (booth) {
+      response.cookies.set("relapse_booth", booth, {
+        httpOnly: true,
+        sameSite: "lax",
+        secure,
+        path: "/",
+        maxAge: 31_536_000,
+      });
+    }
+  }
   return response;
 }
 

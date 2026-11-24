@@ -1,6 +1,7 @@
 import { json, readBooth, sealBooth, sealCamera, toErrorResponse } from "@/server/http";
-import { issueCamera } from "@/server/quota";
-import { isUuid, readCameraAuth } from "@/server/validate";
+import { cameraRenewal } from "@/server/camera-renew";
+import { cameraProof, issueCamera, provenCamera } from "@/server/quota";
+import { isUuid } from "@/server/validate";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -8,12 +9,18 @@ export const dynamic = "force-dynamic";
 export async function POST(request: Request) {
   const booth = readBooth(request);
   try {
-    const auth = readCameraAuth(request);
     const header = request.headers.get("x-shooter-token");
-    const headerToken = header && isUuid(header) ? header.toLowerCase() : null;
-    const presented = auth?.token ?? headerToken;
-    const proof = auth && presented === auth.token ? auth.proof : null;
-    const issued = await issueCamera(presented, proof, booth);
+    const headerToken = Boolean(header && isUuid(header));
+    const known = await provenCamera(request);
+    const choice = cameraRenewal({ cookie: Boolean(known), headerToken });
+    if (choice === "keep" && known) {
+      const response = sealCamera(json({ token: known }), request, known, await cameraProof(known));
+      return sealBooth(response, request, booth);
+    }
+    if (choice === "hold") {
+      return sealBooth(json({ error: "This phone still has its camera." }, 401), request, booth);
+    }
+    const issued = await issueCamera(null, null, booth);
     const response = sealCamera(json({ token: issued.token }), request, issued.token, issued.proof);
     return sealBooth(response, request, booth);
   } catch (error) {

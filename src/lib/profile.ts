@@ -1,3 +1,4 @@
+import { snapshotPhone } from "@/lib/identity";
 import type { ProfileWrite, SharedProfile } from "@/lib/types";
 
 export const CAROUSEL_LIMIT = 17;
@@ -189,6 +190,7 @@ export function storeCameraProfile(profile: Profile): void {
     const clean = normalizeProfile(profile);
     if (!clean.username || clean.emojis.some((emoji) => emoji.length === 0)) return;
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ v: 1, ...clean }));
+    void snapshotPhone();
   } catch {
     /* the server copy remains */
   }
@@ -276,6 +278,7 @@ export function saveProfile(profile: Profile): Profile {
   if (clean.emojis.some((emoji) => emoji.length === 0)) throw new Error("Pick three emojis.");
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ v: 1, ...clean }));
+    void snapshotPhone();
   } catch {
     throw new Error("This device couldn't keep the profile.");
   }
