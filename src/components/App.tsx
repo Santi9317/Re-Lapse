@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { devFlagStored, fetchConfig, fetchLab, joinEvent, shooterToken } from "@/lib/api";
+import { devFlagStored, ensureCamera, fetchConfig, fetchLab, joinEvent } from "@/lib/api";
 import type { EventRoll } from "@/lib/types";
 import { Feed } from "@/components/Feed";
 import { Lab } from "@/components/Lab";
@@ -40,8 +40,9 @@ export function App() {
   }
 
   useEffect(() => {
-    shooterToken();
-    setTokenReady((value) => value + 1);
+    void ensureCamera()
+      .catch(() => undefined)
+      .finally(() => setTokenReady((value) => value + 1));
     setHideInstall(localStorage.getItem("relapse.hideInstall") === "1" || window.matchMedia("(display-mode: standalone)").matches);
     void fetchConfig().then((config) => setDevTimers(config.devTimers && devFlagStored()));
     if ("serviceWorker" in navigator) {

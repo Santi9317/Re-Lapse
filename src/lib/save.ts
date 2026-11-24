@@ -19,7 +19,7 @@ function remember(id: string, file: File) {
 
 async function fetchPhotoFile(id: string): Promise<File> {
   const response = await fetch(`/api/photos/${id}/image`, {
-    headers: photoHeaders(),
+    headers: await photoHeaders(),
     cache: "no-store",
   });
   if (!response.ok) throw new Error("That frame is already gone.");
