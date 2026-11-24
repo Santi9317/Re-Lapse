@@ -1,6 +1,6 @@
 import { asRecord, json, readJson, toErrorResponse } from "@/server/http";
 import { createEvent, listEvents, wantsDevClock } from "@/server/store";
-import { cleanHours, cleanName, isUuid, requireUuid } from "@/server/validate";
+import { cleanHours, cleanName, isUuid, readProof, requireUuid } from "@/server/validate";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,6 +28,7 @@ export async function POST(request: Request) {
       cleanHours(body.durationHours),
       wantsDevClock(request.headers.get("x-relapse-dev")),
       token,
+      readProof(request),
     );
     return json(event, 201);
   } catch (error) {

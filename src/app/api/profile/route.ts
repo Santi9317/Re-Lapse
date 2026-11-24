@@ -1,6 +1,6 @@
 import { asRecord, HttpError, json, PHOTO_BODY_BYTES, readJson, toErrorResponse } from "@/server/http";
 import { readOwnProfile, saveOwnProfile } from "@/server/store";
-import { cleanProfileWrite, requireUuid } from "@/server/validate";
+import { cleanProfileWrite, readProof, requireUuid } from "@/server/validate";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,7 +22,7 @@ export async function GET(request: Request) {
 export async function PUT(request: Request) {
   try {
     const body = asRecord(await readJson(request, PHOTO_BODY_BYTES));
-    const profile = await saveOwnProfile(shooter(request), cleanProfileWrite(body));
+    const profile = await saveOwnProfile(shooter(request), cleanProfileWrite(body), readProof(request));
     return json(profile);
   } catch (error) {
     return toErrorResponse(error);
