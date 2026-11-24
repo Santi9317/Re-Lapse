@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { sql, withTransaction, type Sql } from "@/lib/db";
 import { HttpError } from "@/server/http";
 import { gateCookie, gateSecret, guessMayCompare, sameSecret } from "@/server/gate-key";
-import { JOIN_LIMITS, phoneMayJoin } from "@/server/join-line";
+import { JOIN_LIMITS, joinRoom, phoneMayJoin } from "@/server/join-line";
 import { decideRecoveryRequest } from "@/server/profile-pin";
 import { cameraProof, provenCamera } from "@/server/quota";
 import { isUuid } from "@/server/validate";
@@ -98,6 +98,13 @@ export async function askToJoin(request: Request, name: string, booth: string): 
     );
     const waiting = pending[0]?.camera_token ? String(pending[0].camera_token) : "";
     if (isUuid(waiting)) return waiting;
+    const shared = await q<{ pending: number; recent: number }>(
+      `select
+         (select count(*)::int from join_requests where status = 'pending') as pending,
+         (select count(*)::int from join_requests where created_at > now() - ($1::int * interval '1 millisecond')) as recent`,
+      [JOIN_LIMITS.windowMs],
+    );
+    if (!joinRoom(countOf(shared[0]?.pending), countOf(shared[0]?.recent))) return "shared";
     const counts = await q<{ recent: number }>(
       `select count(*)::int as recent
        from join_requests
@@ -105,7 +112,7 @@ export async function askToJoin(request: Request, name: string, booth: string): 
          and created_at > now() - ($2::int * interval '1 millisecond')`,
       [boothId, JOIN_LIMITS.windowMs],
     );
-    if (!phoneMayJoin(countOf(counts[0]?.recent))) return "";
+    if (!phoneMayJoin(countOf(counts[0]?.recent))) return "phone";
     const token = randomUUID();
     await q(
       `insert into cameras (token, created_at) values ($1, now()) on conflict (token) do nothing`,
@@ -118,6 +125,7 @@ export async function askToJoin(request: Request, name: string, booth: string): 
     );
     return token;
   });
+  if (reserved === "shared") throw new HttpError(429, "The line is full. Try again shortly.");
   if (!isUuid(reserved)) throw new HttpError(429, "This phone needs a minute. Try again shortly.");
   const token = reserved;
   const proof = await cameraProof(token);
@@ -236,44 +244,36 @@ function guessFlag(value: unknown): boolean {
 export type GateGuessResult = "ok" | "wrong" | "blocked";
 
 /**
- * Checks a gate key only when this phone still has room. The check and the
- * count share one lock, so parallel guesses cannot all read the old total.
- * A phone that is already full is refused before the key is compared.
- * Another phone's failures do not close this one. The key itself is not written.
+ * Wrong gate keys share one budget. A missing cookie does not open another.
+ * The check and the count share one lock, so parallel guesses cannot all
+ * read the old total. A full window is refused before the key is compared.
+ * The key itself is not written.
  */
-export async function takeGateGuess(clientId: string, given: string, secret: string): Promise<GateGuessResult> {
-  if (!isUuid(clientId)) return "blocked";
+export async function takeGateGuess(_clientId: string, given: string, secret: string): Promise<GateGuessResult> {
   return withTransaction(async (q) => {
     await q(
       `insert into gate_guess_slot (id, window_start, n) values (1, now(), 0) on conflict (id) do nothing`,
     );
-    await q(`select id from gate_guess_slot where id = 1 for update`);
-    await q(`delete from gate_client where window_start <= now() - interval '2 hours'`);
-    const existing = await q<{ n: number; fresh: boolean | string | number }>(
+    const slot = await q<{ n: number; fresh: boolean | string | number }>(
       `select n,
-              window_start <= now() - ($2::int * interval '1 millisecond') as fresh
-       from gate_client
-       where id = $1
+              window_start <= now() - ($1::int * interval '1 millisecond') as fresh
+       from gate_guess_slot
+       where id = 1
        for update`,
-      [clientId, GUESS_WINDOW_MS],
+      [GUESS_WINDOW_MS],
     );
-    const row = existing[0];
-    const isNewClient = !row;
-    const failures = !row || guessFlag(row.fresh) ? 0 : countOf(row.n);
-    if (!guessMayCompare(failures)) return "blocked";
+    const fresh = guessFlag(slot[0]?.fresh);
+    const recent = fresh ? 0 : countOf(slot[0]?.n);
+    if (!guessMayCompare(recent)) return "blocked";
     const matches = given.length > 0 && sameSecret(given, secret);
-    if (isNewClient) {
+    if (!matches) {
       await q(
-        `insert into gate_client (id, window_start, n) values ($1, now(), $2)`,
-        [clientId, matches ? 0 : 1],
+        `update gate_guess_slot
+         set n = $1,
+             window_start = case when $2::boolean then now() else window_start end
+         where id = 1`,
+        [fresh ? 1 : recent + 1, fresh],
       );
-    } else if (matches || guessFlag(row.fresh)) {
-      await q(
-        `update gate_client set n = $2, window_start = now() where id = $1`,
-        [clientId, matches ? 0 : 1],
-      );
-    } else {
-      await q(`update gate_client set n = n + 1 where id = $1`, [clientId]);
     }
     return matches ? "ok" : "wrong";
   });
