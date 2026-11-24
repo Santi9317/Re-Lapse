@@ -1,0 +1,386 @@
+import { randomUUID } from "node:crypto";
+import { devClockRequested, eventTimes, personalReadyAt } from "@/lib/clock";
+import { sql } from "@/lib/db";
+import type { Album, EventDetail, EventRoll, EventStatus, FeedItem, LabItem, LabState } from "@/lib/types";
+import { HttpError } from "@/server/http";
+import { cleanJpeg } from "@/server/validate";
+
+const PHOTO_CAP = 500;
+const ALBUM_CAP = 200;
+const EVENT_CAP = 200;
+
+const recentSends = new Map<string, number[]>();
+
+function num(value: unknown): number {
+  const n = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(n)) return 0;
+  return n;
+}
+
+function text(value: unknown): string | null {
+  if (value == null) return null;
+  return String(value);
+}
+
+function flag(value: unknown): boolean {
+  return value === true || value === "t" || value === "true" || value === 1;
+}
+
+function rateLimit(token: string) {
+  const now = Date.now();
+  const recent = (recentSends.get(token) ?? []).filter((stamp) => now - stamp < 10 * 60_000);
+  if (recent.length >= 20) {
+    recentSends.set(token, recent);
+    throw new HttpError(429, "The lab needs a minute. Shoot again shortly.");
+  }
+  recent.push(now);
+  recentSends.set(token, recent);
+}
+
+function feedItem(row: Record<string, unknown>): FeedItem {
+  return {
+    id: String(row.id),
+    caption: String(row.caption ?? ""),
+    createdAt: num(row.created_ms),
+    developedAt: row.developed_ms == null ? null : num(row.developed_ms),
+    sortAt: num(row.sort_ms),
+    albumId: text(row.album_id),
+    albumName: text(row.album_name),
+    eventId: text(row.event_id),
+    eventName: text(row.event_name),
+    mine: flag(row.mine),
+  };
+}
+
+const feedSelect = `
+  select
+    p.id,
+    p.caption,
+    (extract(epoch from p.created_at) * 1000) as created_ms,
+    (extract(epoch from p.developed_at) * 1000) as developed_ms,
+    (extract(epoch from coalesce(p.developed_at, e.reveal_at)) * 1000) as sort_ms,
+    p.album_id,
+    a.name as album_name,
+    p.event_id,
+    e.name as event_name,
+    (p.shooter_token = $1) as mine
+  from photos p
+  left join albums a on a.id = p.album_id
+  left join events e on e.id = p.event_id
+`;
+
+export async function listFeed(viewer: string): Promise<FeedItem[]> {
+  const rows = await sql(
+    `${feedSelect}
+     where (p.event_id is null and p.developed_at is not null)
+        or (p.event_id is not null and e.reveal_at <= now())
+     order by coalesce(p.developed_at, e.reveal_at) desc, p.created_at desc
+     limit 80`,
+    [viewer],
+  );
+  return rows.map(feedItem);
+}
+
+export async function listLab(token: string): Promise<LabItem[]> {
+  const rows = await sql(
+    `select
+       p.id,
+       p.caption,
+       (extract(epoch from p.created_at) * 1000) as created_ms,
+       (extract(epoch from p.ready_at) * 1000) as ready_ms,
+       p.event_id,
+       e.name as event_name,
+       (extract(epoch from e.reveal_at) * 1000) as reveal_ms,
+       case
+         when p.event_id is not null then 'sealed'
+         when p.ready_at <= now() then 'ready'
+         else 'developing'
+       end as lab_state
+     from photos p
+     left join events e on e.id = p.event_id
+     where p.shooter_token = $1
+       and (
+         (p.event_id is null and p.developed_at is null)
+         or (p.event_id is not null and e.reveal_at > now())
+       )
+     order by p.created_at desc
+     limit 40`,
+    [token],
+  );
+  return rows.map((row) => ({
+    id: String(row.id),
+    caption: String(row.caption ?? ""),
+    createdAt: num(row.created_ms),
+    readyAt: num(row.ready_ms),
+    labState: String(row.lab_state) as LabState,
+    eventId: text(row.event_id),
+    eventName: text(row.event_name),
+    revealAt: row.reveal_ms == null ? null : num(row.reveal_ms),
+  }));
+}
+
+export async function createPhoto(input: {
+  token: string;
+  caption: string;
+  imageBase64: unknown;
+  eventId: string | null;
+  dev: boolean;
+}): Promise<{ id: string; readyAt: number; createdAt: number; labState: LabState; eventId: string | null }> {
+  const image = cleanJpeg(input.imageBase64);
+  rateLimit(input.token);
+  const counts = await sql<{ n: number }>("select count(*)::int as n from photos");
+  if (num(counts[0]?.n) >= PHOTO_CAP) throw new HttpError(429, "The lab is full.");
+
+  let readyAt = personalReadyAt(Date.now(), input.dev);
+  let labState: LabState = "developing";
+  if (input.eventId) {
+    const events = await sql<{ status: EventStatus; reveal_ms: number }>(
+      `select
+         case
+           when now() < ends_at then 'open'
+           when now() < reveal_at then 'sealing'
+           else 'ready'
+         end as status,
+         (extract(epoch from reveal_at) * 1000) as reveal_ms
+       from events
+       where id = $1`,
+      [input.eventId],
+    );
+    const event = events[0];
+    if (!event) throw new HttpError(404, "That event is gone.");
+    if (event.status !== "open") throw new HttpError(409, "This event is closed.");
+    readyAt = new Date(num(event.reveal_ms));
+    labState = "sealed";
+  }
+
+  const id = randomUUID();
+  const rows = await sql<{ created_ms: number; ready_ms: number }>(
+    `insert into photos (id, shooter_token, caption, image_b64, ready_at, event_id)
+     values ($1, $2, $3, $4, $5, $6)
+     returning
+       (extract(epoch from created_at) * 1000) as created_ms,
+       (extract(epoch from ready_at) * 1000) as ready_ms`,
+    [id, input.token, input.caption, image, readyAt.toISOString(), input.eventId],
+  );
+  const row = rows[0];
+  if (!row) throw new HttpError(500, "The lab hit a snag.");
+  return {
+    id,
+    readyAt: num(row.ready_ms),
+    createdAt: num(row.created_ms),
+    labState,
+    eventId: input.eventId,
+  };
+}
+
+export async function developPhoto(id: string, token: string): Promise<{ developedAt: number }> {
+  const rows = await sql<{ developed_ms: number }>(
+    `update photos
+     set developed_at = now()
+     where id = $1
+       and shooter_token = $2
+       and event_id is null
+       and developed_at is null
+       and ready_at <= now()
+     returning (extract(epoch from developed_at) * 1000) as developed_ms`,
+    [id, token],
+  );
+  const row = rows[0];
+  if (!row) throw new HttpError(409, "That frame can't be developed yet.");
+  return { developedAt: num(row.developed_ms) };
+}
+
+export async function filePhoto(id: string, token: string, albumId: string | null): Promise<void> {
+  const rows = await sql<{ id: string }>(
+    `update photos
+     set album_id = $1
+     where id = $2
+       and shooter_token = $3
+       and event_id is null
+       and developed_at is not null
+       and ($1::text is null or exists (select 1 from albums where id = $1))
+     returning id`,
+    [albumId, id, token],
+  );
+  if (!rows[0]) throw new HttpError(409, "That frame can't be filed.");
+}
+
+export async function readImage(
+  id: string,
+  viewer: string | null,
+): Promise<{ bytes: Buffer; visibility: "public" | "private" } | null> {
+  const rows = await sql<{
+    image_b64: string;
+    shooter_token: string;
+    developed_at: string | null;
+    event_id: string | null;
+    revealed: boolean;
+  }>(
+    `select
+       p.image_b64,
+       p.shooter_token,
+       p.developed_at,
+       p.event_id,
+       coalesce(e.reveal_at <= now(), false) as revealed
+     from photos p
+     left join events e on e.id = p.event_id
+     where p.id = $1`,
+    [id],
+  );
+  const row = rows[0];
+  if (!row) return null;
+  const eventPhoto = row.event_id != null;
+  if (eventPhoto) {
+    if (!flag(row.revealed)) return null;
+    return { bytes: Buffer.from(row.image_b64, "base64"), visibility: "public" };
+  }
+  if (row.developed_at != null) {
+    return { bytes: Buffer.from(row.image_b64, "base64"), visibility: "public" };
+  }
+  if (viewer && viewer === row.shooter_token) {
+    return { bytes: Buffer.from(row.image_b64, "base64"), visibility: "private" };
+  }
+  return null;
+}
+
+export async function listAlbums(): Promise<Album[]> {
+  const rows = await sql(
+    `select
+       a.id,
+       a.name,
+       (extract(epoch from a.created_at) * 1000) as created_ms,
+       (
+         select count(*)::int from photos p
+         where p.album_id = a.id and p.event_id is null and p.developed_at is not null
+       ) as frame_count
+     from albums a
+     order by a.created_at desc
+     limit 100`,
+  );
+  return rows.map((row) => ({
+    id: String(row.id),
+    name: String(row.name),
+    createdAt: num(row.created_ms),
+    frameCount: num(row.frame_count),
+  }));
+}
+
+export async function createAlbum(name: string): Promise<Album> {
+  const counts = await sql<{ n: number }>("select count(*)::int as n from albums");
+  if (num(counts[0]?.n) >= ALBUM_CAP) throw new HttpError(429, "There are enough rolls already.");
+  const id = randomUUID();
+  const rows = await sql<{ created_ms: number }>(
+    `insert into albums (id, name) values ($1, $2)
+     returning (extract(epoch from created_at) * 1000) as created_ms`,
+    [id, name],
+  );
+  return { id, name, createdAt: num(rows[0]?.created_ms), frameCount: 0 };
+}
+
+export async function getAlbum(id: string, viewer: string): Promise<{ album: Album; photos: FeedItem[] } | null> {
+  const albums = await sql(
+    `select
+       a.id,
+       a.name,
+       (extract(epoch from a.created_at) * 1000) as created_ms,
+       (
+         select count(*)::int from photos p
+         where p.album_id = a.id and p.event_id is null and p.developed_at is not null
+       ) as frame_count
+     from albums a
+     where a.id = $1`,
+    [id],
+  );
+  const album = albums[0];
+  if (!album) return null;
+  const photos = await sql(
+    `${feedSelect}
+     where p.album_id = $2 and p.event_id is null and p.developed_at is not null
+     order by p.developed_at desc, p.created_at desc
+     limit 80`,
+    [viewer, id],
+  );
+  return {
+    album: {
+      id: String(album.id),
+      name: String(album.name),
+      createdAt: num(album.created_ms),
+      frameCount: num(album.frame_count),
+    },
+    photos: photos.map(feedItem),
+  };
+}
+
+function eventFrom(row: Record<string, unknown>): EventRoll {
+  const status = String(row.status);
+  return {
+    id: String(row.id),
+    name: String(row.name),
+    durationHours: num(row.duration_hours),
+    createdAt: num(row.created_ms),
+    endsAt: num(row.ends_ms),
+    revealAt: num(row.reveal_ms),
+    status: (status === "open" || status === "sealing" || status === "ready" ? status : "ready") as EventStatus,
+    frameCount: num(row.frame_count),
+  };
+}
+
+const eventSelect = `
+  select
+    e.id,
+    e.name,
+    e.duration_hours,
+    (extract(epoch from e.created_at) * 1000) as created_ms,
+    (extract(epoch from e.ends_at) * 1000) as ends_ms,
+    (extract(epoch from e.reveal_at) * 1000) as reveal_ms,
+    case
+      when now() < e.ends_at then 'open'
+      when now() < e.reveal_at then 'sealing'
+      else 'ready'
+    end as status,
+    (select count(*)::int from photos p where p.event_id = e.id) as frame_count
+  from events e
+`;
+
+export async function listEvents(): Promise<EventRoll[]> {
+  const rows = await sql(`${eventSelect} order by e.created_at desc limit 100`);
+  return rows.map(eventFrom);
+}
+
+export async function createEvent(name: string, hours: number, dev: boolean): Promise<EventRoll> {
+  const counts = await sql<{ n: number }>("select count(*)::int as n from events");
+  if (num(counts[0]?.n) >= EVENT_CAP) throw new HttpError(429, "There are enough events already.");
+  const id = randomUUID();
+  const times = eventTimes(Date.now(), hours, dev);
+  const rows = await sql(
+    `insert into events (id, name, duration_hours, ends_at, reveal_at)
+     values ($1, $2, $3, $4, $5)
+     returning id`,
+    [id, name, hours, times.endsAt.toISOString(), times.revealAt.toISOString()],
+  );
+  if (!rows[0]) throw new HttpError(500, "The lab hit a snag.");
+  const created = await sql(`${eventSelect} where e.id = $1`, [id]);
+  const row = created[0];
+  if (!row) throw new HttpError(500, "The lab hit a snag.");
+  return eventFrom(row);
+}
+
+export async function getEvent(id: string, viewer: string): Promise<EventDetail | null> {
+  const rows = await sql(`${eventSelect} where e.id = $1`, [id]);
+  const row = rows[0];
+  if (!row) return null;
+  const event = eventFrom(row);
+  if (event.status !== "ready") return { ...event, photos: [] };
+  const photos = await sql(
+    `${feedSelect}
+     where p.event_id = $2
+     order by p.created_at asc
+     limit 80`,
+    [viewer, id],
+  );
+  return { ...event, photos: photos.map(feedItem) };
+}
+
+export function wantsDevClock(header: string | null): boolean {
+  return devClockRequested(header);
+}
