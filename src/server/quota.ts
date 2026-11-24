@@ -4,12 +4,12 @@ import { HttpError } from "@/server/http";
 import { isUuid } from "@/server/validate";
 
 /**
- * Each camera has its own window. Nothing here is a shared pool: not new
- * cameras, and not photos, rolls, events, profiles, or invite guesses. The
- * browser cannot mint an id. A camera is a server id plus a proof only this
- * server can make. A camera row is written only when that camera stores
- * something, and only after its own window still has room. Address headers
- * are not read. One camera cannot spend another's window.
+ * Each camera has its own photo, roll, event, profile, and invite window.
+ * One camera cannot spend another's. A brand-new id is the only shared
+ * ceiling, and only so a script cannot open unlimited windows. Asking again
+ * for an id this server already issued does not spend that ceiling and does
+ * not write a row. A camera row is written only when that camera stores
+ * something. Address headers are not read.
  */
 const QUOTA = {
   photo: { windowMs: 10 * 60_000, limit: 12 },
@@ -18,6 +18,8 @@ const QUOTA = {
   profile: { windowMs: 60 * 60_000, limit: 4 },
   join: { windowMs: 60 * 60_000, limit: 8 },
 } as const;
+
+const MINT = { windowMs: 60_000, limit: 20 };
 
 export type CreateKind = Exclude<keyof typeof QUOTA, "join">;
 
@@ -94,6 +96,19 @@ export async function issueCamera(
     }
   }
   const token = randomUUID();
+  const minted = await sql<{ id: string }>(
+    `insert into create_log (id, kind, camera_key)
+     select $1, 'camera', $2
+     where (
+       select count(*)::int
+       from create_log
+       where kind = 'camera'
+         and created_at > now() - ($3::int * interval '1 millisecond')
+     ) < $4::int
+     returning id`,
+    [randomUUID(), token, MINT.windowMs, MINT.limit],
+  );
+  if (!minted[0]) throw new HttpError(429, "New cameras need a minute. Try again shortly.");
   return { token, proof: await cameraProof(token) };
 }
 
