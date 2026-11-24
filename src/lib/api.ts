@@ -2,6 +2,8 @@ import type { Album, EventDetail, EventRoll, FeedItem, LabItem, ProfileWrite, Sh
 
 const DEV_KEY = "relapse.devtimers";
 const TOKEN_KEY = "relapse.shooter";
+const PROOF_KEY = "relapse.shooter.proof";
+const PROOF = /^[0-9a-f]{64}$/i;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function localHost(): boolean {
@@ -32,9 +34,20 @@ export function devFlagStored(): boolean {
   }
 }
 
-function rememberCamera(token: string) {
+function rememberCamera(token: string, proof: string) {
   localStorage.setItem(TOKEN_KEY, token);
+  localStorage.setItem(PROOF_KEY, proof);
   document.cookie = `relapse.shooter=${token}; Path=/; Max-Age=31536000; SameSite=Lax`;
+}
+
+function cameraProof(): string {
+  try {
+    const proof = localStorage.getItem(PROOF_KEY) ?? "";
+    if (PROOF.test(proof)) return proof.toLowerCase();
+  } catch {
+    /* storage can be blocked */
+  }
+  return "";
 }
 
 export function shooterToken(): string {
@@ -64,22 +77,28 @@ export function ensureCamera(): Promise<string> {
 
 async function requestCamera(): Promise<string> {
   const existing = shooterToken();
+  const proof = cameraProof();
+  const headers: Record<string, string> = {};
+  if (existing) headers["x-shooter-token"] = existing;
+  if (proof) headers["x-camera-proof"] = proof;
   const response = await fetch("/api/camera", {
     method: "POST",
     cache: "no-store",
-    headers: existing ? { "x-shooter-token": existing } : undefined,
+    headers: Object.keys(headers).length > 0 ? headers : undefined,
   });
-  const data = (await response.json().catch(() => null)) as { token?: string; error?: string } | null;
-  if (!response.ok || !data?.token || !UUID.test(data.token)) {
+  const data = (await response.json().catch(() => null)) as { token?: string; proof?: string; error?: string } | null;
+  if (!response.ok || !data?.token || !UUID.test(data.token) || !data.proof || !PROOF.test(data.proof)) {
     throw new Error(data?.error || "The lab didn't answer.");
   }
-  rememberCamera(data.token);
+  rememberCamera(data.token, data.proof.toLowerCase());
   return data.token;
 }
 
 async function headers(jsonBody: boolean): Promise<Record<string, string>> {
   const token = await ensureCamera();
   const result: Record<string, string> = { "x-shooter-token": token };
+  const proof = cameraProof();
+  if (proof) result["x-camera-proof"] = proof;
   if (jsonBody) result["content-type"] = "application/json";
   if (devFlagStored()) result["x-relapse-dev"] = "1";
   return result;
