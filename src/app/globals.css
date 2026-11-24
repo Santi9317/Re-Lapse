@@ -1292,23 +1292,36 @@ button.byline .byline-name { text-decoration: underline; text-underline-offset: 
   display: flex;
   flex-direction: column;
 }
-.profile-screen > .scroll { padding-top: 36px; }
+.profile-screen > .scroll { padding-top: 44px; }
 
 .sleeve-mark {
   position: absolute;
   z-index: 3;
-  top: 0;
-  right: 6px;
-  min-width: 32px;
+  top: 4px;
+  right: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-height: 32px;
-  padding: 6px 8px;
-  color: rgba(143, 122, 184, 0.62);
-  font-size: 15px;
-  letter-spacing: 0.22em;
+  padding: 0 12px;
+  color: var(--amber);
+  background: #1a1228;
+  border: 1px solid rgba(255, 176, 106, 0.9);
+  border-radius: 999px;
+  box-shadow: 0 0 8px rgba(255, 176, 106, 0.35);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
   line-height: 1;
+  text-transform: uppercase;
+  white-space: nowrap;
 }
 .sleeve-mark:hover,
-.sleeve-mark:focus-visible { color: var(--amber); }
+.sleeve-mark:focus-visible {
+  color: #1a0820;
+  background: var(--amber);
+  border-color: var(--amber);
+}
 
 .sleeve {
   position: absolute;
