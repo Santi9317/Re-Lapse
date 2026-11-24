@@ -553,20 +553,37 @@ button.sticker:active { transform: translate(-50%, -50%) rotate(var(--tilt)) sca
   font-size: 13px;
   border-radius: 6px;
 }
-.sticker-picker {
+.emoji-keyboard {
+  position: fixed;
+  left: 12px;
+  bottom: 12px;
+  width: min(420px, calc(100% - 24px));
+  height: 44px;
+  margin: 0;
+  opacity: 0.01;
+  z-index: 6;
+  pointer-events: none;
+}
+.emoji-keyboard.is-open {
+  position: static;
+  display: block;
+  width: 100%;
+  height: auto;
   margin-top: 8px;
-  padding: 10px;
+  padding: 12px 14px;
+  opacity: 1;
+  pointer-events: auto;
   background: #120c22;
   color: var(--ink);
-  border-radius: 16px;
-  max-height: 320px;
-  overflow: auto;
 }
-.sticker-picker .fine { color: var(--muted); }
-.sticker-picker .field { color: var(--ink); margin-top: 8px; }
-.sticker-picker .kicker { margin-top: 8px; }
-.sticker-picker .emoji-grid button { color: var(--ink); }
-.sticker-picker .ghost { margin-top: 8px; }
+.emoji-compose { margin-top: 8px; }
+.emoji-compose .fine { color: #7a3b22; }
+.emoji-compose .field { color: var(--ink); margin-top: 8px; }
+.emoji-compose .ghost,
+.emoji-compose .primary { margin-top: 8px; }
+.sticker-preview .identity { color: var(--paper-ink); }
+.sticker-preview .open-profile,
+.sticker-preview [data-open-profile] { margin-top: 8px; }
 .print img {
   display: block;
   width: 100%;

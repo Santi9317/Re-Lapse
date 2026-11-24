@@ -157,19 +157,62 @@ export function profileFromServer(row: SharedProfile): Profile {
   });
 }
 
+export function hasPortrait(profile: Profile): boolean {
+  return Boolean(profile.avatarDataUrl || profile.avatarPhotoId || profile.avatarUrl);
+}
+
+/**
+ * The upload bytes stay on this camera's profile. The server still has the
+ * upload when `saved` carries an /avatar url; the bytes are what the You tab
+ * shows after that tab unmounts.
+ */
+export function withCameraPortrait(saved: Profile, camera: Profile): Profile {
+  if (!saved.avatarUrl?.endsWith("/avatar") || saved.avatarPhotoId) return saved;
+  if (saved.avatarDataUrl || !camera.avatarDataUrl) return saved;
+  return { ...saved, avatarDataUrl: camera.avatarDataUrl };
+}
+
+/** A draft that lost its portrait still shows the one already saved. */
+export function draftWithSavedPortrait(pending: Profile, saved: Profile): Profile {
+  if (hasPortrait(pending) || !hasPortrait(saved)) return pending;
+  return {
+    ...pending,
+    avatarDataUrl: saved.avatarDataUrl,
+    avatarPhotoId: saved.avatarPhotoId,
+    avatarUrl: saved.avatarUrl,
+  };
+}
+
+/** Write this camera's profile without clearing an in-progress draft. */
+export function storeCameraProfile(profile: Profile): void {
+  try {
+    const clean = normalizeProfile(profile);
+    if (!clean.username || clean.emojis.some((emoji) => emoji.length === 0)) return;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ v: 1, ...clean }));
+  } catch {
+    /* the server copy remains */
+  }
+}
+
 export function profileWrite(profile: Profile): ProfileWrite {
   const clean = normalizeProfile(profile);
   if (!clean.username) throw new Error("Give yourself a short name.");
   if (clean.emojis.some((emoji) => emoji.length === 0)) throw new Error("Pick three emojis.");
-  const avatarImageBase64 = clean.avatarDataUrl
-    ? clean.avatarDataUrl.replace(/^data:image\/jpeg;base64,/i, "")
-    : null;
+  // Bytes plus the upload url means the camera is only remembering the picture.
+  // A new picture clears that url before it is saved.
+  const keepExistingUpload = Boolean(profile.avatarUrl?.endsWith("/avatar")) && !profile.avatarPhotoId;
+  const avatarImageBase64 =
+    clean.avatarDataUrl && !keepExistingUpload
+      ? clean.avatarDataUrl.replace(/^data:image\/jpeg;base64,/i, "")
+      : null;
   return {
     username: clean.username,
     emojis: clean.emojis,
-    avatarPhotoId: avatarImageBase64 ? null : clean.avatarPhotoId,
+    avatarPhotoId: avatarImageBase64 || keepExistingUpload ? null : clean.avatarPhotoId,
     avatarImageBase64,
-    keepUpload: !avatarImageBase64 && !clean.avatarPhotoId && Boolean(clean.avatarUrl?.endsWith("/avatar")),
+    keepUpload:
+      keepExistingUpload ||
+      (!avatarImageBase64 && !clean.avatarPhotoId && Boolean(clean.avatarUrl?.endsWith("/avatar"))),
     carouselIds: clean.carouselIds,
   };
 }
