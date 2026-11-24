@@ -3,14 +3,14 @@ import { devClockRequested, eventTimes, FEED_DAYS, personalReadyAt } from "@/lib
 import { sql } from "@/lib/db";
 import type { Album, EventDetail, EventRoll, EventStatus, FeedItem, LabItem, LabState, ProfileWrite, SharedProfile } from "@/lib/types";
 import { HttpError } from "@/server/http";
-import { assertCreateAllowed, cameraIsYoung, noteCreate, releaseUnusedCamera } from "@/server/quota";
+import { assertCreateAllowed, cameraIsYoung, noteCreate } from "@/server/quota";
 import { cleanJpeg } from "@/server/validate";
 
-// A shared frame stays on the feed for a week and is then deleted. Each camera
-// can only hold so many of its own rows, and each camera spends only its own
-// create window. Cameras newer than a day use a small day-one pool. When that
-// pool is full, this camera can replace its own oldest row and nothing of
-// anyone else's. Address headers are not read.
+// A shared frame stays on the feed for a week and is then deleted. Only a
+// camera the server issued can create anything, and that camera spends only
+// its own window. Cameras newer than a day use a small day-one pool. When
+// that pool is full, this camera can replace its own oldest row and nothing
+// of anyone else's. Address headers are not read.
 const OWN_PHOTO_CAP = 24;
 const OWN_ALBUM_CAP = 8;
 const OWN_EVENT_CAP = 4;
@@ -484,7 +484,6 @@ export async function createPhoto(input: {
   dev: boolean;
 }): Promise<{ id: string; readyAt: number; createdAt: number; labState: LabState; eventId: string | null }> {
   const image = cleanJpeg(input.imageBase64);
-  try {
   await assertCreateAllowed("photo", input.token);
 
   let readyAt = personalReadyAt(Date.now(), input.dev);
@@ -531,10 +530,6 @@ export async function createPhoto(input: {
     labState,
     eventId: input.eventId,
   };
-  } catch (error) {
-    await releaseUnusedCamera(input.token);
-    throw error;
-  }
 }
 
 export async function developPhoto(id: string, token: string): Promise<{ developedAt: number }> {
@@ -683,22 +678,17 @@ export async function listAlbums(): Promise<Album[]> {
 }
 
 export async function createAlbum(name: string, token: string): Promise<Album> {
-  try {
-    await assertCreateAllowed("album", token);
-    await reclaimNow();
-    await fitAlbums(token);
-    const id = randomUUID();
-    const rows = await sql<{ created_ms: number }>(
-      `insert into albums (id, name, owner_token) values ($1, $2, $3)
-       returning (extract(epoch from created_at) * 1000) as created_ms`,
-      [id, name, token],
-    );
-    await noteCreate("album", token);
-    return { id, name, createdAt: num(rows[0]?.created_ms), frameCount: 0 };
-  } catch (error) {
-    await releaseUnusedCamera(token);
-    throw error;
-  }
+  await assertCreateAllowed("album", token);
+  await reclaimNow();
+  await fitAlbums(token);
+  const id = randomUUID();
+  const rows = await sql<{ created_ms: number }>(
+    `insert into albums (id, name, owner_token) values ($1, $2, $3)
+     returning (extract(epoch from created_at) * 1000) as created_ms`,
+    [id, name, token],
+  );
+  await noteCreate("album", token);
+  return { id, name, createdAt: num(rows[0]?.created_ms), frameCount: 0 };
 }
 
 export async function getAlbum(id: string, viewer: string): Promise<{ album: Album; photos: FeedItem[] } | null> {
@@ -780,7 +770,6 @@ export async function listEvents(): Promise<EventRoll[]> {
 }
 
 export async function createEvent(name: string, hours: number, dev: boolean, token: string): Promise<EventRoll> {
-  try {
   await assertCreateAllowed("event", token);
   await reclaimNow();
   await fitEvents(token);
@@ -798,10 +787,6 @@ export async function createEvent(name: string, hours: number, dev: boolean, tok
   const row = created[0];
   if (!row) throw new HttpError(500, "The lab hit a snag.");
   return eventFrom(row);
-  } catch (error) {
-    await releaseUnusedCamera(token);
-    throw error;
-  }
 }
 
 export async function getEvent(id: string, viewer: string): Promise<EventDetail | null> {
@@ -912,7 +897,6 @@ async function fitNewProfile(): Promise<void> {
 }
 
 export async function saveOwnProfile(token: string, input: ProfileWrite): Promise<SharedProfile> {
-  try {
   const existing = await profileRow("shooter_token", token);
   await assertCreateAllowed("profile", token);
   if (!existing) {
@@ -962,10 +946,6 @@ export async function saveOwnProfile(token: string, input: ProfileWrite): Promis
   const saved = await readOwnProfile(token);
   if (!saved) throw new HttpError(500, "The lab hit a snag.");
   return saved;
-  } catch (error) {
-    await releaseUnusedCamera(token);
-    throw error;
-  }
 }
 
 export async function readAvatar(profileId: string): Promise<Buffer | null> {

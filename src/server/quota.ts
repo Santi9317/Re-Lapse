@@ -1,12 +1,17 @@
 import { randomUUID } from "node:crypto";
 import { sql } from "@/lib/db";
 import { HttpError } from "@/server/http";
+import { isUuid } from "@/server/validate";
 
 /**
- * Each camera has its own window, including one that was just minted. One
- * camera cannot spend another camera's window. A camera row is written only
- * after this camera still has room in its own window. Address headers are
- * not read.
+ * The browser does not choose a camera id, and a made-up id is not a budget.
+ * The server issues a camera, and only when the new-camera window still has
+ * room. Sending some other UUID does not insert a row and does not open a
+ * window. A camera that was already issued keeps its own photo, roll, event,
+ * and profile window. This new-camera window does not spend those, and one
+ * camera cannot spend another's. Address headers are not read. When the
+ * new-camera window is full, only a brand-new id is refused. Nothing that
+ * already belongs to a camera is removed.
  */
 const QUOTA = {
   photo: { windowMs: 10 * 60_000, limit: 12 },
@@ -14,6 +19,8 @@ const QUOTA = {
   event: { windowMs: 60 * 60_000, limit: 2 },
   profile: { windowMs: 60 * 60_000, limit: 4 },
 } as const;
+
+const NEW_CAMERA = { windowMs: 10 * 60_000, limit: 24 };
 
 export type CreateKind = keyof typeof QUOTA;
 
@@ -56,42 +63,37 @@ export async function cameraIsYoung(token: string): Promise<boolean> {
   return age !== "settled";
 }
 
-async function claimCamera(token: string): Promise<void> {
-  await sql(
+export async function issueCamera(presented: string | null): Promise<string> {
+  const known = presented && isUuid(presented) ? presented.toLowerCase() : null;
+  if (known) {
+    const existing = await sql<{ token: string }>(`select token from cameras where token = $1`, [known]);
+    if (existing[0]) return String(existing[0].token);
+  }
+  const token = randomUUID();
+  const rows = await sql<{ token: string }>(
     `insert into cameras (token, created_at)
-     select $1::text,
-       case
-         when exists (select 1 from photos where shooter_token = $1::text)
-           or exists (select 1 from albums where owner_token = $1::text)
-           or exists (select 1 from events where owner_token = $1::text)
-         then now() - interval '25 hours'
-         else now()
-       end
-     on conflict (token) do nothing`,
-    [token],
+     select $1::text, now()
+     where (
+       select count(*)::int
+       from cameras
+       where created_at > now() - ($2::int * interval '1 millisecond')
+     ) < $3::int
+     returning token`,
+    [token, NEW_CAMERA.windowMs, NEW_CAMERA.limit],
   );
+  const issued = rows[0]?.token;
+  if (!issued) throw new HttpError(429, "New cameras need a minute. Try again shortly.");
+  return String(issued);
 }
 
 export async function assertCreateAllowed(kind: CreateKind, token: string): Promise<void> {
   const age = await cameraAge(token);
+  if (age === "missing") throw new HttpError(403, "This camera hasn't been issued.");
   const rule = QUOTA[kind];
-  const own = age === "missing" ? 0 : await countForCamera(kind, rule.windowMs, token);
+  const own = await countForCamera(kind, rule.windowMs, token);
   if (own >= rule.limit) {
     throw new HttpError(429, "This camera needs a minute. Try again shortly.");
   }
-  if (age === "missing") await claimCamera(token);
-}
-
-export async function releaseUnusedCamera(token: string): Promise<void> {
-  await sql(
-    `delete from cameras c
-     where c.token = $1
-       and not exists (select 1 from photos p where p.shooter_token = c.token)
-       and not exists (select 1 from albums a where a.owner_token = c.token)
-       and not exists (select 1 from events e where e.owner_token = c.token)
-       and not exists (select 1 from profiles r where r.shooter_token = c.token)`,
-    [token],
-  );
 }
 
 export async function noteCreate(kind: CreateKind, token: string): Promise<void> {

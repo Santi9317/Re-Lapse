@@ -33,22 +33,51 @@ export function devFlagStored(): boolean {
 }
 
 export function shooterToken(): string {
-  const existing = localStorage.getItem(TOKEN_KEY);
-  if (existing && UUID.test(existing)) return existing;
-  const token = crypto.randomUUID();
-  localStorage.setItem(TOKEN_KEY, token);
-  return token;
+  try {
+    const existing = localStorage.getItem(TOKEN_KEY);
+    if (existing && UUID.test(existing)) return existing;
+  } catch {
+    /* storage can be blocked */
+  }
+  return "";
 }
 
-function headers(jsonBody: boolean): HeadersInit {
-  const token = shooterToken();
+let issuing: Promise<string> | null = null;
+
+export function ensureCamera(): Promise<string> {
+  if (!issuing) {
+    issuing = requestCamera().catch((error: unknown) => {
+      issuing = null;
+      throw error;
+    });
+  }
+  return issuing;
+}
+
+async function requestCamera(): Promise<string> {
+  const existing = shooterToken();
+  const response = await fetch("/api/camera", {
+    method: "POST",
+    cache: "no-store",
+    headers: existing ? { "x-shooter-token": existing } : undefined,
+  });
+  const data = (await response.json().catch(() => null)) as { token?: string; error?: string } | null;
+  if (!response.ok || !data?.token || !UUID.test(data.token)) {
+    throw new Error(data?.error || "The lab didn't answer.");
+  }
+  localStorage.setItem(TOKEN_KEY, data.token);
+  return data.token;
+}
+
+async function headers(jsonBody: boolean): Promise<Record<string, string>> {
+  const token = await ensureCamera();
   const result: Record<string, string> = { "x-shooter-token": token };
   if (jsonBody) result["content-type"] = "application/json";
   if (devFlagStored()) result["x-relapse-dev"] = "1";
   return result;
 }
 
-export function photoHeaders(): HeadersInit {
+export async function photoHeaders(): Promise<Record<string, string>> {
   return headers(false);
 }
 
@@ -60,17 +89,17 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export async function fetchOwnProfile(): Promise<SharedProfile | null> {
-  const response = await fetch("/api/profile", { headers: headers(false), cache: "no-store" });
+  const response = await fetch("/api/profile", { headers: await headers(false), cache: "no-store" });
   if (response.status === 404) return null;
   const data = (await response.json().catch(() => null)) as (SharedProfile & { error?: string }) | null;
   if (!response.ok) throw new Error(data?.error || "The lab didn't answer.");
   return data as SharedProfile;
 }
 
-export function saveOwnProfile(profile: ProfileWrite): Promise<SharedProfile> {
+export async function saveOwnProfile(profile: ProfileWrite): Promise<SharedProfile> {
   return request("/api/profile", {
     method: "PUT",
-    headers: headers(true),
+    headers: await headers(true),
     body: JSON.stringify(profile),
   });
 }
@@ -83,51 +112,52 @@ export function fetchConfig(): Promise<{ devTimers: boolean }> {
   return request("/api/config");
 }
 
-export function fetchFeed(): Promise<{ photos: FeedItem[] }> {
-  return request("/api/feed", { headers: headers(false) });
+export async function fetchFeed(): Promise<{ photos: FeedItem[] }> {
+  return request("/api/feed", { headers: await headers(false) });
 }
 
-export function fetchLab(): Promise<{ photos: LabItem[] }> {
-  return request("/api/lab", { headers: headers(false) });
+export async function fetchLab(): Promise<{ photos: LabItem[] }> {
+  return request("/api/lab", { headers: await headers(false) });
 }
 
 export async function fetchPrivateImage(id: string): Promise<Blob> {
   const response = await fetch(`/api/photos/${id}/image`, {
-    headers: headers(false),
+    headers: await headers(false),
     cache: "no-store",
   });
   if (!response.ok) throw new Error("That frame is still hidden.");
   return response.blob();
 }
 
-export function sendPhoto(input: {
+export async function sendPhoto(input: {
   imageBase64: string;
   caption: string;
   eventId: string | null;
 }): Promise<{ id: string; readyAt: number; createdAt: number; labState: string; eventId: string | null }> {
+  const token = await ensureCamera();
   return request("/api/photos", {
     method: "POST",
-    headers: headers(true),
-    body: JSON.stringify({ ...input, shooterToken: shooterToken() }),
+    headers: await headers(true),
+    body: JSON.stringify({ ...input, shooterToken: token }),
   });
 }
 
-export function developPhoto(id: string): Promise<{ developedAt: number }> {
-  return request(`/api/photos/${id}/develop`, { method: "POST", headers: headers(false) });
+export async function developPhoto(id: string): Promise<{ developedAt: number }> {
+  return request(`/api/photos/${id}/develop`, { method: "POST", headers: await headers(false) });
 }
 
-export function publishPhoto(id: string): Promise<{ publishedAt: number }> {
-  return request(`/api/photos/${id}/publish`, { method: "POST", headers: headers(false) });
+export async function publishPhoto(id: string): Promise<{ publishedAt: number }> {
+  return request(`/api/photos/${id}/publish`, { method: "POST", headers: await headers(false) });
 }
 
-export function deletePhoto(id: string): Promise<{ ok: boolean }> {
-  return request(`/api/photos/${id}`, { method: "DELETE", headers: headers(false) });
+export async function deletePhoto(id: string): Promise<{ ok: boolean }> {
+  return request(`/api/photos/${id}`, { method: "DELETE", headers: await headers(false) });
 }
 
-export function filePhoto(id: string, albumId: string | null): Promise<{ ok: boolean }> {
+export async function filePhoto(id: string, albumId: string | null): Promise<{ ok: boolean }> {
   return request(`/api/photos/${id}/album`, {
     method: "PATCH",
-    headers: headers(true),
+    headers: await headers(true),
     body: JSON.stringify({ albumId }),
   });
 }
@@ -137,16 +167,16 @@ export async function fetchAlbums(): Promise<Album[]> {
   return data.albums;
 }
 
-export function createAlbum(name: string): Promise<Album> {
+export async function createAlbum(name: string): Promise<Album> {
   return request("/api/albums", {
     method: "POST",
-    headers: headers(true),
+    headers: await headers(true),
     body: JSON.stringify({ name }),
   });
 }
 
-export function fetchAlbum(id: string): Promise<{ album: Album; photos: FeedItem[] }> {
-  return request(`/api/albums/${id}`, { headers: headers(false) });
+export async function fetchAlbum(id: string): Promise<{ album: Album; photos: FeedItem[] }> {
+  return request(`/api/albums/${id}`, { headers: await headers(false) });
 }
 
 export async function fetchEvents(): Promise<EventRoll[]> {
@@ -154,16 +184,16 @@ export async function fetchEvents(): Promise<EventRoll[]> {
   return data.events;
 }
 
-export function createEvent(name: string, durationHours: number): Promise<EventRoll> {
+export async function createEvent(name: string, durationHours: number): Promise<EventRoll> {
   return request("/api/events", {
     method: "POST",
-    headers: headers(true),
+    headers: await headers(true),
     body: JSON.stringify({ name, durationHours }),
   });
 }
 
-export function fetchEvent(id: string): Promise<EventDetail> {
-  return request(`/api/events/${id}`, { headers: headers(false) });
+export async function fetchEvent(id: string): Promise<EventDetail> {
+  return request(`/api/events/${id}`, { headers: await headers(false) });
 }
 
 export async function blobToBase64(blob: Blob): Promise<string> {
