@@ -11,7 +11,7 @@ export type FeedItem = {
   mine: boolean;
 };
 
-export type LabState = "developing" | "ready" | "sealed";
+export type LabState = "developing" | "ready" | "developed" | "sealed";
 
 export type LabItem = {
   id: string;

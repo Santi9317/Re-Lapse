@@ -83,6 +83,10 @@ export function developPhoto(id: string): Promise<{ developedAt: number }> {
   return request(`/api/photos/${id}/develop`, { method: "POST", headers: headers(false) });
 }
 
+export function publishPhoto(id: string): Promise<{ publishedAt: number }> {
+  return request(`/api/photos/${id}/publish`, { method: "POST", headers: headers(false) });
+}
+
 export function filePhoto(id: string, albumId: string | null): Promise<{ ok: boolean }> {
   return request(`/api/photos/${id}/album`, {
     method: "PATCH",

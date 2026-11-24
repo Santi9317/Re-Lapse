@@ -58,7 +58,7 @@ const feedSelect = `
     p.caption,
     (extract(epoch from p.created_at) * 1000) as created_ms,
     (extract(epoch from p.developed_at) * 1000) as developed_ms,
-    (extract(epoch from coalesce(p.developed_at, e.reveal_at)) * 1000) as sort_ms,
+    (extract(epoch from coalesce(p.published_at, e.reveal_at)) * 1000) as sort_ms,
     p.album_id,
     a.name as album_name,
     p.event_id,
@@ -72,9 +72,9 @@ const feedSelect = `
 export async function listFeed(viewer: string): Promise<FeedItem[]> {
   const rows = await sql(
     `${feedSelect}
-     where (p.event_id is null and p.developed_at is not null)
+     where (p.event_id is null and p.published_at is not null)
         or (p.event_id is not null and e.reveal_at <= now())
-     order by coalesce(p.developed_at, e.reveal_at) desc, p.created_at desc
+     order by coalesce(p.published_at, e.reveal_at) desc, p.created_at desc
      limit 80`,
     [viewer],
   );
@@ -93,6 +93,7 @@ export async function listLab(token: string): Promise<LabItem[]> {
        (extract(epoch from e.reveal_at) * 1000) as reveal_ms,
        case
          when p.event_id is not null then 'sealed'
+         when p.developed_at is not null then 'developed'
          when p.ready_at <= now() then 'ready'
          else 'developing'
        end as lab_state
@@ -100,7 +101,7 @@ export async function listLab(token: string): Promise<LabItem[]> {
      left join events e on e.id = p.event_id
      where p.shooter_token = $1
        and (
-         (p.event_id is null and p.developed_at is null)
+         (p.event_id is null and p.published_at is null)
          or (p.event_id is not null and e.reveal_at > now())
        )
      order by p.created_at desc
@@ -181,6 +182,7 @@ export async function developPhoto(id: string, token: string): Promise<{ develop
        and shooter_token = $2
        and event_id is null
        and developed_at is null
+       and published_at is null
        and ready_at <= now()
      returning (extract(epoch from developed_at) * 1000) as developed_ms`,
     [id, token],
@@ -190,6 +192,23 @@ export async function developPhoto(id: string, token: string): Promise<{ develop
   return { developedAt: num(row.developed_ms) };
 }
 
+export async function publishPhoto(id: string, token: string): Promise<{ publishedAt: number }> {
+  const rows = await sql<{ published_ms: number }>(
+    `update photos
+     set published_at = now()
+     where id = $1
+       and shooter_token = $2
+       and event_id is null
+       and developed_at is not null
+       and published_at is null
+     returning (extract(epoch from published_at) * 1000) as published_ms`,
+    [id, token],
+  );
+  const row = rows[0];
+  if (!row) throw new HttpError(409, "That frame isn't ready to share.");
+  return { publishedAt: num(row.published_ms) };
+}
+
 export async function filePhoto(id: string, token: string, albumId: string | null): Promise<void> {
   const rows = await sql<{ id: string }>(
     `update photos
@@ -197,7 +216,7 @@ export async function filePhoto(id: string, token: string, albumId: string | nul
      where id = $2
        and shooter_token = $3
        and event_id is null
-       and developed_at is not null
+       and published_at is not null
        and ($1::text is null or exists (select 1 from albums where id = $1))
      returning id`,
     [albumId, id, token],
@@ -213,6 +232,7 @@ export async function readImage(
     image_b64: string;
     shooter_token: string;
     developed_at: string | null;
+    published_at: string | null;
     event_id: string | null;
     revealed: boolean;
   }>(
@@ -220,6 +240,7 @@ export async function readImage(
        p.image_b64,
        p.shooter_token,
        p.developed_at,
+       p.published_at,
        p.event_id,
        coalesce(e.reveal_at <= now(), false) as revealed
      from photos p
@@ -234,10 +255,10 @@ export async function readImage(
     if (!flag(row.revealed)) return null;
     return { bytes: Buffer.from(row.image_b64, "base64"), visibility: "public" };
   }
-  if (row.developed_at != null) {
+  if (row.published_at != null) {
     return { bytes: Buffer.from(row.image_b64, "base64"), visibility: "public" };
   }
-  if (viewer && viewer === row.shooter_token) {
+  if (row.developed_at != null && viewer && viewer === row.shooter_token) {
     return { bytes: Buffer.from(row.image_b64, "base64"), visibility: "private" };
   }
   return null;
@@ -251,7 +272,7 @@ export async function listAlbums(): Promise<Album[]> {
        (extract(epoch from a.created_at) * 1000) as created_ms,
        (
          select count(*)::int from photos p
-         where p.album_id = a.id and p.event_id is null and p.developed_at is not null
+         where p.album_id = a.id and p.event_id is null and p.published_at is not null
        ) as frame_count
      from albums a
      order by a.created_at desc
@@ -285,7 +306,7 @@ export async function getAlbum(id: string, viewer: string): Promise<{ album: Alb
        (extract(epoch from a.created_at) * 1000) as created_ms,
        (
          select count(*)::int from photos p
-         where p.album_id = a.id and p.event_id is null and p.developed_at is not null
+         where p.album_id = a.id and p.event_id is null and p.published_at is not null
        ) as frame_count
      from albums a
      where a.id = $1`,
@@ -295,8 +316,8 @@ export async function getAlbum(id: string, viewer: string): Promise<{ album: Alb
   if (!album) return null;
   const photos = await sql(
     `${feedSelect}
-     where p.album_id = $2 and p.event_id is null and p.developed_at is not null
-     order by p.developed_at desc, p.created_at desc
+     where p.album_id = $2 and p.event_id is null and p.published_at is not null
+     order by p.published_at desc, p.created_at desc
      limit 80`,
     [viewer, id],
   );

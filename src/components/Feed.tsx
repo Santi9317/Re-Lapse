@@ -54,7 +54,7 @@ export function Feed({ revision }: { revision: number }) {
       {photos.length === 0 ? (
         <div className="empty">
           <h2>Nothing back from the lab.</h2>
-          <p>Shoot, wait, then develop. Everyone with this link sees the frames that make it back.</p>
+          <p>Develop a frame in the lab, then send it if you want it here.</p>
         </div>
       ) : (
         <div className="thread">
