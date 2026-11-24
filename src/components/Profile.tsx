@@ -9,6 +9,7 @@ import {
   EMOJI_GROUPS,
   NAME_LIMIT,
   clearDraft,
+  draftWithSavedPortrait,
   emptyProfile,
   loadDraft,
   loadProfile,
@@ -20,8 +21,10 @@ import {
   profilesEqual,
   saveProfile,
   storeDraft,
+  storeCameraProfile,
   takeEmoji,
   toggleCarouselId,
+  withCameraPortrait,
   type Profile,
 } from "@/lib/profile";
 import type { FeedItem } from "@/lib/types";
@@ -57,19 +60,22 @@ export function Profile({ revision }: { revision: number }) {
     let stop = false;
     async function load() {
       try {
+        const local = loadProfile();
         const remote = await fetchOwnProfile();
         if (stop) return;
-        let saved = remote ? profileFromServer(remote) : emptyProfile();
-        if (!remote && profileReady(loadProfile())) {
-          const created = await saveOwnProfile(profileWrite(loadProfile()));
+        let saved = remote ? withCameraPortrait(profileFromServer(remote), local) : emptyProfile();
+        if (!remote && profileReady(local)) {
+          const created = await saveOwnProfile(profileWrite(local));
           if (stop) return;
-          saved = profileFromServer(created);
+          saved = withCameraPortrait(profileFromServer(created), local);
           saveProfile(saved);
+        } else if (remote) {
+          storeCameraProfile(saved);
         }
         const pending = loadDraft();
         setProfile(saved);
         if (pending && !profilesEqual(pending, saved)) {
-          setDraft(pending);
+          setDraft(draftWithSavedPortrait(pending, saved));
           setMode("edit");
         } else {
           clearDraft();
@@ -79,8 +85,9 @@ export function Profile({ revision }: { revision: number }) {
       } catch (err) {
         if (stop) return;
         const local = loadProfile();
+        const pending = loadDraft();
         setProfile(local);
-        setDraft(loadDraft() && !profilesEqual(loadDraft() as Profile, local) ? (loadDraft() as Profile) : local);
+        setDraft(pending && !profilesEqual(pending, local) ? draftWithSavedPortrait(pending, local) : local);
         setMode(profileReady(local) ? "page" : "edit");
         setFormError(err instanceof Error ? err.message : "The lab didn't answer.");
       }
@@ -167,8 +174,14 @@ export function Profile({ revision }: { revision: number }) {
   async function persist(next: Profile): Promise<Profile | null> {
     const ticket = write.current + 1;
     write.current = ticket;
-    const saved = profileFromServer(await saveOwnProfile(profileWrite(next)));
+    const remote = profileFromServer(await saveOwnProfile(profileWrite(next)));
     if (ticket !== write.current) return null;
+    const bytes = next.avatarDataUrl
+      ? next.avatarDataUrl
+      : next.avatarUrl?.endsWith("/avatar")
+        ? loadProfile().avatarDataUrl
+        : null;
+    const saved = withCameraPortrait(remote, { ...next, avatarDataUrl: bytes });
     saveProfile(saved);
     setProfile(saved);
     return saved;

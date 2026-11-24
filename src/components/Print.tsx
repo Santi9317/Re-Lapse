@@ -1,10 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState, type RefObject } from "react";
-import { fetchOwnProfile, saveOwnProfile, setFrameSticker } from "@/lib/api";
+import { fetchOwnProfile, fetchPublicProfile, saveOwnProfile, setFrameSticker } from "@/lib/api";
 import { ago, leavesIn } from "@/lib/format";
 import {
-  EMOJI_GROUPS,
   NAME_LIMIT,
   STARTER_EMOJIS,
   emptyProfile,
@@ -14,6 +13,7 @@ import {
   profileWrite,
   saveProfile,
   takeEmoji,
+  withCameraPortrait,
 } from "@/lib/profile";
 import {
   ensurePhotoFile,
@@ -23,7 +23,7 @@ import {
   shareOrSave,
   warmPhoto,
 } from "@/lib/save";
-import type { Album, FeedItem, FrameSticker } from "@/lib/types";
+import type { Album, FeedItem, FrameSticker, SharedProfile } from "@/lib/types";
 
 const STICKER_SLOTS: [number, number][] = [
   [10, 12],
@@ -91,7 +91,8 @@ function useFrameTap(onSingle: (() => void) | null, onDouble: (() => void) | nul
 async function ensureStickerIdentity(typedName: string): Promise<void> {
   const remote = await fetchOwnProfile();
   if (remote) {
-    saveProfile(profileFromServer(remote));
+    const next = withCameraPortrait(profileFromServer(remote), loadProfile());
+    if (profileReady(next)) saveProfile(next);
     return;
   }
   const local = loadProfile();
@@ -103,37 +104,16 @@ async function ensureStickerIdentity(typedName: string): Promise<void> {
 
 function StickerLayer({
   item,
-  onOpenProfile,
+  onPreview,
 }: {
   item: FeedItem;
-  onOpenProfile?: (id: string) => void;
+  onPreview: (sticker: FrameSticker) => void;
 }) {
   if (item.stickers.length === 0) return null;
   return (
     <ul className="stickers" aria-label="Stickers on this frame">
       {item.stickers.map((sticker, index) => {
         const style = stickerStyle(index);
-        const label = `${sticker.profileName} stuck ${sticker.emoji}`;
-        const linked = item.mine && Boolean(onOpenProfile);
-        if (!linked) {
-          return (
-            <li key={sticker.profileId}>
-              <span
-                className="sticker"
-                style={style}
-                data-sticker={sticker.emoji}
-                data-profile-id={sticker.profileId}
-                data-mine={sticker.mine ? "true" : "false"}
-                data-inert="true"
-                role="img"
-                aria-label={label}
-                title={sticker.profileName}
-              >
-                {sticker.emoji}
-              </span>
-            </li>
-          );
-        }
         return (
           <li key={sticker.profileId}>
             <button
@@ -142,13 +122,14 @@ function StickerLayer({
               type="button"
               data-sticker={sticker.emoji}
               data-profile-id={sticker.profileId}
-              data-sticker-link="profile"
+              data-sticker-preview={sticker.profileId}
               data-mine={sticker.mine ? "true" : "false"}
               title={sticker.profileName}
-              aria-label={`Open ${sticker.profileName}'s profile`}
+              aria-label={`Preview ${sticker.profileName}'s profile`}
               onClick={(event) => {
                 event.stopPropagation();
-                onOpenProfile?.(sticker.profileId);
+                event.preventDefault();
+                onPreview(sticker);
               }}
             >
               {sticker.emoji}
@@ -160,44 +141,39 @@ function StickerLayer({
   );
 }
 
-function StickerPicker({
-  photoId,
-  mineEmoji,
+function StickerPreview({
+  sticker,
+  ownPhoto,
+  onOpenProfile,
   onClose,
-  onPlaced,
 }: {
-  photoId: string;
-  mineEmoji: string;
+  sticker: FrameSticker;
+  ownPhoto: boolean;
+  onOpenProfile?: (id: string) => void;
   onClose: () => void;
-  onPlaced: (stickers: FrameSticker[]) => void;
 }) {
-  const rootRef = useRef<HTMLDivElement>(null);
-  const [name, setName] = useState(() => loadProfile().username);
-  const [needsName, setNeedsName] = useState(() => !profileReady(loadProfile()));
-  const [typed, setTyped] = useState("");
+  const [profile, setProfile] = useState<SharedProfile | null>(null);
   const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-  const nameId = `sticker-name-${photoId}`;
-
-  useEffect(() => {
-    rootRef.current?.scrollIntoView({ block: "nearest" });
-  }, []);
+  const closeRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     let stop = false;
-    fetchOwnProfile()
-      .then((remote) => {
-        if (stop || !remote) return;
-        saveProfile(profileFromServer(remote));
-        setNeedsName(false);
+    setProfile(null);
+    setError("");
+    fetchPublicProfile(sticker.profileId)
+      .then((row) => {
+        if (!stop) setProfile(row);
       })
-      .catch(() => undefined);
+      .catch((err: unknown) => {
+        if (!stop) setError(err instanceof Error ? err.message : "That profile is gone.");
+      });
     return () => {
       stop = true;
     };
-  }, []);
+  }, [sticker.profileId]);
 
   useEffect(() => {
+    closeRef.current?.focus();
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
     };
@@ -205,93 +181,50 @@ function StickerPicker({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  async function place(emoji: string) {
-    if (busy) return;
-    setBusy(true);
-    setError("");
-    try {
-      await ensureStickerIdentity(name);
-      const result = await setFrameSticker(photoId, emoji);
-      onPlaced(result.stickers);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "That sticker didn't stick.");
-      setBusy(false);
-    }
-  }
+  const name = profile?.username || sticker.profileName;
+  const marks = profile?.emojis ?? [];
 
   return (
     <div
-      className="sticker-picker"
+      className="lightbox sticker-preview"
       role="dialog"
-      aria-label="Stick an emoji"
-      data-sticker-picker={photoId}
-      ref={rootRef}
-      onClick={(event) => event.stopPropagation()}
+      aria-modal="true"
+      aria-label={`${name}'s profile`}
+      data-sticker-preview={sticker.profileId}
+      onClick={onClose}
     >
-      <p className="kicker">Stick an emoji</p>
-      <p className="fine">
-        {mineEmoji ? `Yours is ${mineEmoji}. Pick again to change it.` : "One sticker each. It stays on the frame."}
-      </p>
-      {needsName ? (
-        <>
-          <label className="fine" htmlFor={nameId}>
-            Your name
-          </label>
-          <input
-            id={nameId}
-            className="field"
-            value={name}
-            maxLength={NAME_LIMIT}
-            autoComplete="nickname"
-            placeholder="What the frame should call you"
-            onChange={(event) => setName(event.target.value)}
-          />
-          <p className="fine">So the sticker has a person. Change the marks later on You.</p>
-        </>
-      ) : null}
-      <label className="fine" htmlFor={`sticker-type-${photoId}`}>
-        Or type one
-      </label>
-      <input
-        id={`sticker-type-${photoId}`}
-        className="field emoji-type"
-        value={typed}
-        maxLength={16}
-        autoComplete="off"
-        aria-label="Type an emoji"
-        onChange={(event) => {
-          const value = event.target.value;
-          const emoji = takeEmoji(value);
-          if (emoji) {
-            setTyped("");
-            void place(emoji);
-            return;
-          }
-          setTyped(value.slice(0, 16));
-          setError(value.trim() ? "That isn't an emoji." : "");
-        }}
-      />
-      {EMOJI_GROUPS.map((group) => (
-        <div key={group.label}>
-          <p className="kicker">{group.label}</p>
-          <div className="emoji-grid">
-            {group.emojis.map((emoji) => (
-              <button
-                key={emoji}
-                type="button"
-                aria-label={`Stick ${emoji}`}
-                aria-pressed={emoji === mineEmoji}
-                disabled={busy}
-                onClick={() => void place(emoji)}
-              >
-                {emoji}
-              </button>
-            ))}
+      <figure className="print identity" onClick={(event) => event.stopPropagation()}>
+        {profile?.avatarUrl ? (
+          <img src={profile.avatarUrl} alt="" />
+        ) : (
+          <div className="portrait-empty" aria-hidden="true">
+            {profile ? "No photo" : error ? "No photo" : "…"}
           </div>
-        </div>
-      ))}
-      {error ? <p className="error">{error}</p> : null}
-      <button className="ghost" type="button" onClick={onClose} disabled={busy}>
+        )}
+        <h2 className="caption" data-preview-name={name}>
+          {name}
+        </h2>
+        {marks.length > 0 ? (
+          <p className="marks">
+            {marks.map((emoji, slot) => (
+              <span key={slot}>{emoji}</span>
+            ))}
+          </p>
+        ) : null}
+        <p className="fine">Stuck {sticker.emoji}</p>
+        {error ? <p className="error">{error}</p> : null}
+        {ownPhoto && onOpenProfile ? (
+          <button
+            className="ghost"
+            type="button"
+            data-open-profile={sticker.profileId}
+            onClick={() => onOpenProfile(sticker.profileId)}
+          >
+            Open profile
+          </button>
+        ) : null}
+      </figure>
+      <button ref={closeRef} className="ghost" type="button" onClick={onClose}>
         Close
       </button>
     </div>
@@ -311,10 +244,87 @@ function FrameFace({
   onOpenProfile?: (id: string) => void;
   onStickers?: (id: string, stickers: FrameSticker[]) => void;
 }) {
-  const [picker, setPicker] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [composing, setComposing] = useState(false);
+  const [preview, setPreview] = useState<FrameSticker | null>(null);
+  const [name, setName] = useState(() => loadProfile().username);
+  const [needsName, setNeedsName] = useState(() => !profileReady(loadProfile()));
+  const [held, setHeld] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
   const reactable = Boolean(onStickers) && !item.mine;
-  const tap = useFrameTap(onOpen ?? null, reactable ? () => setPicker(true) : null);
+  const nameId = `sticker-name-${item.id}`;
   const mineEmoji = item.stickers.find((sticker) => sticker.mine)?.emoji ?? "";
+
+  function closeKeyboard() {
+    inputRef.current?.classList.remove("is-open");
+    inputRef.current?.blur();
+    setComposing(false);
+    setHeld("");
+    setBusy(false);
+  }
+
+  function openKeyboard() {
+    const input = inputRef.current;
+    if (!input) return;
+    input.value = "";
+    input.classList.add("is-open");
+    void input.getBoundingClientRect();
+    // Focus in this tap, before any await. A later focus does not open the phone keyboard.
+    input.focus();
+    setComposing(true);
+    setError("");
+  }
+
+  const tap = useFrameTap(onOpen ?? null, reactable ? openKeyboard : null);
+
+  useEffect(() => {
+    if (!composing) return;
+    let stop = false;
+    fetchOwnProfile()
+      .then((remote) => {
+        if (stop || !remote) return;
+        const next = withCameraPortrait(profileFromServer(remote), loadProfile());
+        if (profileReady(next)) {
+          try {
+            saveProfile(next);
+          } catch {
+            /* the name is already on the server */
+          }
+        }
+        setNeedsName(false);
+      })
+      .catch(() => undefined);
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") closeKeyboard();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      stop = true;
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [composing]);
+
+  async function place(emoji: string) {
+    if (busy) return;
+    if (needsName && !name.trim()) {
+      setHeld(emoji);
+      setError("Give yourself a short name.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      await ensureStickerIdentity(name);
+      const result = await setFrameSticker(item.id, emoji);
+      onStickers?.(item.id, result.stickers);
+      closeKeyboard();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "That sticker didn't stick.");
+      setBusy(false);
+    }
+  }
+
   const image = (
     <img ref={imageRef} src={`/api/photos/${item.id}/image`} alt={item.caption || "Developed frame"} />
   );
@@ -334,17 +344,71 @@ function FrameFace({
         ) : (
           image
         )}
-        <StickerLayer item={item} onOpenProfile={onOpenProfile} />
+        <StickerLayer item={item} onPreview={setPreview} />
       </div>
-      {picker && onStickers ? (
-        <StickerPicker
-          photoId={item.id}
-          mineEmoji={mineEmoji}
-          onClose={() => setPicker(false)}
-          onPlaced={(stickers) => {
-            onStickers(item.id, stickers);
-            setPicker(false);
+      {reactable ? (
+        <input
+          ref={inputRef}
+          className="field emoji-type emoji-keyboard"
+          inputMode="text"
+          enterKeyHint="send"
+          autoComplete="off"
+          autoCorrect="off"
+          spellCheck={false}
+          aria-label="Type an emoji"
+          data-emoji-keyboard={item.id}
+          onInput={(event) => {
+            const input = event.currentTarget;
+            const emoji = takeEmoji(input.value);
+            if (!emoji) {
+              setError(input.value.trim() ? "That isn't an emoji." : "");
+              return;
+            }
+            input.value = "";
+            setError("");
+            void place(emoji);
           }}
+        />
+      ) : null}
+      {composing ? (
+        <div className="emoji-compose" data-emoji-compose={item.id}>
+          <p className="fine">
+            {mineEmoji ? `Yours is ${mineEmoji}. Pick again to change it.` : "One sticker. It stays on the frame."}
+          </p>
+          {needsName ? (
+            <>
+              <label className="fine" htmlFor={nameId}>
+                Your name
+              </label>
+              <input
+                id={nameId}
+                className="field"
+                value={name}
+                maxLength={NAME_LIMIT}
+                autoComplete="nickname"
+                placeholder="What the frame should call you"
+                onChange={(event) => setName(event.target.value)}
+              />
+              <p className="fine">So the sticker has a person. Change the marks later on You.</p>
+              {held ? (
+                <button className="primary" type="button" disabled={busy} onClick={() => void place(held)}>
+                  Stick {held}
+                </button>
+              ) : null}
+            </>
+          ) : null}
+          {error ? <p className="error">{error}</p> : null}
+          <button className="ghost" type="button" onClick={closeKeyboard} disabled={busy}>
+            Close
+          </button>
+        </div>
+      ) : null}
+      {preview ? (
+        <StickerPreview
+          sticker={preview}
+          ownPhoto={item.mine}
+          onOpenProfile={onOpenProfile}
+          onClose={() => setPreview(null)}
         />
       ) : null}
     </>
