@@ -67,6 +67,15 @@ export function fetchLab(): Promise<{ photos: LabItem[] }> {
   return request("/api/lab", { headers: headers(false) });
 }
 
+export async function fetchPrivateImage(id: string): Promise<Blob> {
+  const response = await fetch(`/api/photos/${id}/image`, {
+    headers: headers(false),
+    cache: "no-store",
+  });
+  if (!response.ok) throw new Error("That frame is still hidden.");
+  return response.blob();
+}
+
 export function sendPhoto(input: {
   imageBase64: string;
   caption: string;

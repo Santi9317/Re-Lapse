@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { developPhoto, fetchLab, publishPhoto, shooterToken } from "@/lib/api";
+import { developPhoto, fetchLab, fetchPrivateImage, publishPhoto } from "@/lib/api";
 import { countdown, longRemain } from "@/lib/format";
 import type { LabItem, LabState } from "@/lib/types";
 
@@ -16,7 +16,6 @@ export function Lab({ revision, onPublished }: { revision: number; onPublished: 
   const [now, setNow] = useState(() => Date.now());
   const [error, setError] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
-  const [token] = useState(() => shooterToken());
   const developedIds = useRef(new Set<string>());
 
   useEffect(() => {
@@ -93,10 +92,7 @@ export function Lab({ revision, onPublished }: { revision: number; onPublished: 
           return (
             <article className="lab-card" key={item.id} data-lab-state={state}>
               {state === "developed" ? (
-                <img
-                  src={`/api/photos/${item.id}/image?t=${encodeURIComponent(token)}`}
-                  alt={item.caption || "Developed frame"}
-                />
+                <PrivateFrame id={item.id} alt={item.caption || "Developed frame"} />
               ) : (
                 <div className="thumb sealed-thumb" data-hidden-frame={item.id}>
                   {state === "developing" ? <div className="safelight" /> : null}
@@ -157,4 +153,27 @@ export function Lab({ revision, onPublished }: { revision: number; onPublished: 
       )}
     </div>
   );
+}
+
+function PrivateFrame({ id, alt }: { id: string; alt: string }) {
+  const [src, setSrc] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    let objectUrl = "";
+    fetchPrivateImage(id)
+      .then((blob) => {
+        if (cancelled) return;
+        objectUrl = URL.createObjectURL(blob);
+        setSrc(objectUrl);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [id]);
+
+  if (!src) return null;
+  return <img src={src} alt={alt} />;
 }

@@ -12,6 +12,12 @@ function statusLine(event: EventRoll, now: number): string {
   return "Ready · the roll is back";
 }
 
+function eventMeta(event: EventRoll): string {
+  const camera = `${event.durationHours}-hour camera`;
+  if (event.status !== "ready" || event.frameCount == null) return camera;
+  return `${camera} · ${frames(event.frameCount)}`;
+}
+
 export function Rolls({
   revision,
   onArm,
@@ -159,7 +165,7 @@ export function Rolls({
         </button>
         <span className="pill" data-status={eventDetail.status}>{line}</span>
         <h2 className="word" style={{ fontSize: 40, marginTop: 10 }}>{eventDetail.name}</h2>
-        <p className="fine">{eventDetail.durationHours}-hour camera · {frames(eventDetail.frameCount)}</p>
+        <p className="fine">{eventMeta(eventDetail)}</p>
         <div className="phases">
           <Phase label="Open" detail={`until ${clockLabel(eventDetail.endsAt)}`} on={eventDetail.status === "open"} />
           <Phase label="Sealing" detail={`until ${clockLabel(eventDetail.revealAt)}`} on={eventDetail.status === "sealing"} />
@@ -268,7 +274,7 @@ export function Rolls({
           <button className="event" type="button" key={event.id} data-status={event.status} onClick={() => void showEvent(event.id)}>
             <span className="pill" data-status={event.status}>{statusLine(event, now)}</span>
             <h3>{event.name}</h3>
-            <p>{event.durationHours}-hour camera · {frames(event.frameCount)}</p>
+            <p>{eventMeta(event)}</p>
           </button>
         ))
       )}

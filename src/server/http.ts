@@ -23,13 +23,50 @@ export function toErrorResponse(error: unknown) {
   return json({ error: "The lab hit a snag." }, 500);
 }
 
-export async function readJson(request: Request, maxChars = 2_200_000): Promise<unknown> {
-  const advertised = Number(request.headers.get("content-length") || 0);
-  if (Number.isFinite(advertised) && advertised > maxChars) {
-    throw new HttpError(413, "That frame is too big.");
+export const JSON_BODY_BYTES = 8_000;
+export const PHOTO_BODY_BYTES = 2_200_000;
+
+export async function readJson(request: Request, maxBytes = JSON_BODY_BYTES): Promise<unknown> {
+  const advertised = Number(request.headers.get("content-length") || "");
+  if (Number.isFinite(advertised) && advertised > maxBytes) {
+    throw new HttpError(413, "That request is too big.");
   }
-  const text = await request.text();
-  if (text.length > maxChars) throw new HttpError(413, "That frame is too big.");
+  const body = request.body;
+  if (!body) throw new HttpError(400, "The lab couldn't read that.");
+
+  const reader = body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value || value.byteLength === 0) continue;
+      if (total + value.byteLength > maxBytes) {
+        throw new HttpError(413, "That request is too big.");
+      }
+      chunks.push(value);
+      total += value.byteLength;
+    }
+  } catch (error) {
+    await reader.cancel().catch(() => undefined);
+    throw error;
+  }
+  reader.releaseLock();
+
+  if (total === 0) throw new HttpError(400, "The lab couldn't read that.");
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  let text = "";
+  try {
+    text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    throw new HttpError(400, "The lab couldn't read that.");
+  }
   try {
     return JSON.parse(text) as unknown;
   } catch {
