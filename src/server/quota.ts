@@ -3,15 +3,14 @@ import { sql } from "@/lib/db";
 import { HttpError } from "@/server/http";
 
 /**
- * Successful creates are counted in the database, not by the shooter id the
- * browser invents. Rotating that id does not open a new window. The global
- * window applies to everyone. The per-network window is best-effort and is
- * skipped when the host did not provide a client address.
+ * Each camera has its own window, so one visitor cannot use up the allowance
+ * of every other visitor. When the host sends a client address, that network
+ * has a separate window too. There is no shared worldwide counter.
  */
 const QUOTA = {
-  photo: { windowMs: 10 * 60_000, global: 60, perSource: 12 },
-  album: { windowMs: 60 * 60_000, global: 20, perSource: 4 },
-  event: { windowMs: 60 * 60_000, global: 8, perSource: 2 },
+  photo: { windowMs: 10 * 60_000, perCamera: 12, perNetwork: 24 },
+  album: { windowMs: 60 * 60_000, perCamera: 4, perNetwork: 8 },
+  event: { windowMs: 60 * 60_000, perCamera: 2, perNetwork: 4 },
 } as const;
 
 export type CreateKind = keyof typeof QUOTA;
@@ -35,40 +34,48 @@ export function clientSource(request: Request): string | null {
   return null;
 }
 
-async function countSince(kind: CreateKind, windowMs: number, source: string | null): Promise<number> {
+async function countCamera(kind: CreateKind, windowMs: number, token: string): Promise<number> {
   const rows = await sql<{ n: number }>(
-    source
-      ? `select count(*)::int as n
-         from create_log
-         where kind = $1
-           and source_hash = $2
-           and created_at > now() - ($3::int * interval '1 millisecond')`
-      : `select count(*)::int as n
-         from create_log
-         where kind = $1
-           and created_at > now() - ($2::int * interval '1 millisecond')`,
-    source ? [kind, source, windowMs] : [kind, windowMs],
+    `select count(*)::int as n
+     from create_log
+     where kind = $1
+       and camera_key = $2
+       and created_at > now() - ($3::int * interval '1 millisecond')`,
+    [kind, token, windowMs],
   );
   const n = rows[0]?.n;
   return typeof n === "number" ? n : Number(n ?? 0);
 }
 
-export async function assertCreateAllowed(kind: CreateKind, source: string | null): Promise<void> {
+async function countNetwork(kind: CreateKind, windowMs: number, source: string): Promise<number> {
+  const rows = await sql<{ n: number }>(
+    `select count(*)::int as n
+     from create_log
+     where kind = $1
+       and source_hash = $2
+       and created_at > now() - ($3::int * interval '1 millisecond')`,
+    [kind, source, windowMs],
+  );
+  const n = rows[0]?.n;
+  return typeof n === "number" ? n : Number(n ?? 0);
+}
+
+export async function assertCreateAllowed(kind: CreateKind, token: string, source: string | null): Promise<void> {
   const rule = QUOTA[kind];
-  const globalCount = await countSince(kind, rule.windowMs, null);
-  if (globalCount >= rule.global) {
+  const byCamera = await countCamera(kind, rule.windowMs, token);
+  if (byCamera >= rule.perCamera) {
     throw new HttpError(429, "The lab needs a minute. Try again shortly.");
   }
   if (!source) return;
-  const sourceCount = await countSince(kind, rule.windowMs, source);
-  if (sourceCount >= rule.perSource) {
+  const byNetwork = await countNetwork(kind, rule.windowMs, source);
+  if (byNetwork >= rule.perNetwork) {
     throw new HttpError(429, "The lab needs a minute. Try again shortly.");
   }
 }
 
-export async function noteCreate(kind: CreateKind, source: string | null): Promise<void> {
+export async function noteCreate(kind: CreateKind, token: string, source: string | null): Promise<void> {
   await sql(
-    `insert into create_log (id, kind, source_hash) values ($1, $2, $3)`,
-    [randomUUID(), kind, source ?? ""],
+    `insert into create_log (id, kind, source_hash, camera_key) values ($1, $2, $3, $4)`,
+    [randomUUID(), kind, source ?? "", token],
   );
 }
