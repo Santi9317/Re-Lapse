@@ -17,8 +17,8 @@ import {
   moveCarouselId,
   portraitFromFile,
   profileFromServer,
+  profilePatch,
   profileReady,
-  profileWrite,
   profilesEqual,
   saveProfile,
   storeDraft,
@@ -68,7 +68,7 @@ export function Profile({ revision }: { revision: number }) {
         setGalleries(remote?.galleries ?? []);
         let saved = remote ? withCameraPortrait(profileFromServer(remote), local) : emptyProfile();
         if (!remote && profileReady(local)) {
-          const created = await saveOwnProfile(profileWrite(local));
+          const created = await saveOwnProfile(profilePatch(local, null));
           if (stop) return;
           setGalleries(created.galleries ?? []);
           saved = withCameraPortrait(profileFromServer(created), local);
@@ -178,7 +178,7 @@ export function Profile({ revision }: { revision: number }) {
   async function persist(next: Profile, replaceRemoved = false): Promise<Profile | null> {
     const ticket = write.current + 1;
     write.current = ticket;
-    const remoteProfile = await saveOwnProfile(profileWrite(next), { replaceRemoved });
+    const remoteProfile = await saveOwnProfile(profilePatch(next, profile), { replaceRemoved });
     if (ticket !== write.current) return null;
     setGalleries(remoteProfile.galleries ?? []);
     const remote = profileFromServer(remoteProfile);

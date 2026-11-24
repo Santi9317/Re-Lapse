@@ -1,7 +1,7 @@
 import { asRecord, HttpError, json, PHOTO_BODY_BYTES, readJson, toErrorResponse } from "@/server/http";
 import { requireMember } from "@/server/gate";
 import { profileWasRemoved, readOwnProfile, saveOwnProfile } from "@/server/store";
-import { cleanProfileWrite, readProof } from "@/server/validate";
+import { cleanProfilePatch, readProof } from "@/server/validate";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,7 +28,7 @@ export async function PUT(request: Request) {
     const replaceRemoved = request.headers.get("x-relapse-replace-profile") === "1";
     const saved = await saveOwnProfile(
       await shooter(request),
-      cleanProfileWrite(body),
+      cleanProfilePatch(body),
       readProof(request),
       replaceRemoved,
     );

@@ -1,5 +1,5 @@
 import { snapshotPhone } from "@/lib/identity";
-import type { ProfileWrite, SharedProfile } from "@/lib/types";
+import type { ProfilePatch, ProfileWrite, SharedProfile } from "@/lib/types";
 
 export const CAROUSEL_LIMIT = 17;
 export const NAME_LIMIT = 24;
@@ -173,15 +173,21 @@ export function withCameraPortrait(saved: Profile, camera: Profile): Profile {
   return { ...saved, avatarDataUrl: camera.avatarDataUrl };
 }
 
-/** A draft that lost its portrait still shows the one already saved. */
+/**
+ * A draft that lost its portrait still shows the one already saved.
+ * The editor does not change the strip, so a stale draft cannot drop it.
+ */
 export function draftWithSavedPortrait(pending: Profile, saved: Profile): Profile {
-  if (hasPortrait(pending) || !hasPortrait(saved)) return pending;
-  return {
-    ...pending,
-    avatarDataUrl: saved.avatarDataUrl,
-    avatarPhotoId: saved.avatarPhotoId,
-    avatarUrl: saved.avatarUrl,
-  };
+  const withPortrait =
+    hasPortrait(pending) || !hasPortrait(saved)
+      ? pending
+      : {
+          ...pending,
+          avatarDataUrl: saved.avatarDataUrl,
+          avatarPhotoId: saved.avatarPhotoId,
+          avatarUrl: saved.avatarUrl,
+        };
+  return { ...withPortrait, carouselIds: saved.carouselIds.slice() };
 }
 
 /** Write this camera's profile without clearing an in-progress draft. */
@@ -217,6 +223,51 @@ export function profileWrite(profile: Profile): ProfileWrite {
       (!avatarImageBase64 && !clean.avatarPhotoId && Boolean(clean.avatarUrl?.endsWith("/avatar"))),
     carouselIds: clean.carouselIds,
   };
+}
+
+function sameIds(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((id, index) => id === b[index]);
+}
+
+function samePortrait(a: Profile, b: Profile): boolean {
+  return a.avatarDataUrl === b.avatarDataUrl && a.avatarPhotoId === b.avatarPhotoId && a.avatarUrl === b.avatarUrl;
+}
+
+/**
+ * A profile save sends the fields that changed. The first save sends the
+ * name, emojis, and portrait, and leaves the strip for the server to fill
+ * from shots this camera already took.
+ */
+export function profilePatch(next: Profile, previous: Profile | null): ProfilePatch {
+  const clean = normalizeProfile(next);
+  const prior = previous && profileReady(normalizeProfile(previous)) ? normalizeProfile(previous) : null;
+  if (!prior) {
+    const created = profileWrite(clean);
+    return {
+      username: created.username,
+      emojis: created.emojis,
+      avatarPhotoId: created.avatarPhotoId,
+      avatarImageBase64: created.avatarImageBase64,
+      keepUpload: created.keepUpload,
+    };
+  }
+  const patch: ProfilePatch = {};
+  if (clean.username !== prior.username) patch.username = clean.username;
+  if (clean.emojis[0] !== prior.emojis[0] || clean.emojis[1] !== prior.emojis[1] || clean.emojis[2] !== prior.emojis[2]) {
+    patch.emojis = clean.emojis;
+  }
+  if (!sameIds(clean.carouselIds, prior.carouselIds)) patch.carouselIds = clean.carouselIds;
+  if (!samePortrait(clean, prior)) {
+    const avatar = profileWrite({
+      ...clean,
+      username: clean.username || prior.username,
+      emojis: clean.emojis.every((emoji) => emoji.length > 0) ? clean.emojis : prior.emojis,
+    });
+    patch.avatarPhotoId = avatar.avatarPhotoId;
+    patch.avatarImageBase64 = avatar.avatarImageBase64;
+    patch.keepUpload = avatar.keepUpload;
+  }
+  return patch;
 }
 
 export function profileReady(profile: Profile): boolean {
