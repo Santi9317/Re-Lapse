@@ -10,7 +10,8 @@ export const HOW_TO: HowToSection[] = [
     title: "Shooting",
     body: [
       "Shoot is the camera. The round button is the shutter. The space bar does the same job, and a volume key will too when the phone passes it through.",
-      "Flip turns the lens around. The numbers up top are the stock, 400, and a tally of frames this camera has already sent. It is a counter, not a last-exposure warning. This disposable does not run out.",
+      "Flip turns the lens around. The live front preview is a mirror, so your face sits where a mirror would put it. The shutter ignores that trick. The JPEG, the lab print, and the developed photo stay in true orientation. The back camera is never mirrored.",
+      "The numbers up top are the stock, 400, and a tally of frames this camera has already sent. It is a counter, not a last-exposure warning. This disposable does not run out.",
       "If the lens cap stays on, allow the camera, or load a JPEG or PNG. You can also drop a picture onto the finder. On an iPhone the flash starts on. The little bolt turns it off. The back camera uses the phone's light. The front camera lights the screen, because a selfie has nowhere to bolt a flash. The camera you already allowed is the one that opens next time.",
       "The moment a frame is exposed, the finder covers. No peeking at the negative. That is the whole trick. Retake if it was a blink. If you are shooting an event, its name sits on the finder like a piece of tape. Peel the tape off and the next frame is a personal one.",
     ],
@@ -72,15 +73,24 @@ export const HOW_TO: HowToSection[] = [
     title: "The shared feed",
     body: [
       "The feed is everyone with this link. Personal frames you chose to send, and event frames the host released. A frame stays up for a week from the moment it was shared, or from the moment an event roll was revealed, then the file lapses. The print says how long it has left, and how long ago it was made.",
-      "Tap a print to open it larger. The name, the little photo, and the three emojis belong to the person who shot it. Tap them to open their profile. Download keeps a copy. If you shot the frame, you can delete it. Yours can be filed into a roll from the menu on the print. An event name or a roll name shows on the border when the frame belongs somewhere.",
+      "Tap a print once to open it larger. Double-tap someone else's developed photo to stick an emoji on the frame. The name, the little photo, and the three emojis belong to the person who shot it. Tap them to open their profile. Download keeps a copy. If you shot the frame, you can delete it. Yours can be filed into a roll from the menu on the print. An event name or a roll name shows on the border when the frame belongs somewhere.",
+    ],
+  },
+  {
+    id: "stickers",
+    title: "Frame stickers",
+    body: [
+      "On someone else's developed photo, double-tap the picture. A tray of emoji opens. One emoji per person, and it stays on the frame. Pick again and yours changes. You do not get a second sticker, and you cannot sticker a frame you shot. A frame that is already covered says so.",
+      "If the camera does not know your name yet, it asks. The sticker needs a person. The same double-tap works after you open the print. A single tap still opens the picture.",
+      "On a photo you took, the stickers sit on the print. Tap one and that person's profile opens. On everyone else's photos the marks just stay where they were stuck.",
     ],
   },
   {
     id: "home",
     title: "The home-screen shortcut",
     body: [
-      "A note may ask to keep the camera on your home screen. If the browser can install it, the note offers Install. On an iPhone it says Share, then Add to Home Screen. The lab cannot place the icon for you. You do that part.",
-      "Hide remembers that you heard the note, on this device. Open Re-Lapse from the icon and the note stays quiet. The camera then opens full screen, like a thing you own rather than a tab you borrowed.",
+      "Safari asks once, the first time you open Re-Lapse in the browser. The dialog says Add Re-Lapse to your home screen? Yes keeps the camera on the nightstand. On an iPhone the steps are Share, then Add to Home Screen, then Add. On a Mac they are Share, then Add to Dock. The lab cannot place the icon for you. No remembers that you heard it.",
+      "Open Re-Lapse from the home-screen icon and the question stays quiet. It does not appear in Chrome or the other browsers. Those still get a small note: Install, when the browser can do it, or Hide, when it cannot. Hide remembers, on this device. A camera you already added opens full screen, like a thing you own rather than a tab you borrowed.",
     ],
   },
   {
@@ -88,8 +98,8 @@ export const HOW_TO: HowToSection[] = [
     title: "Updates",
     body: [
       "The home-screen camera keeps a spare shell of Re-Lapse, so the icon can still open if the lab is slow to answer. The shell is the camera. The negatives still live at the lab.",
-      "When a newer camera ships, that shell steps aside on its own the next time the browser picks it up. This build does not stop you with an update card, and it does not ask you to develop a new version by hand. There is no second prompt to dismiss.",
-      "The name stored on this device, the choice to hide the home-screen note, and the camera that already knows you stay put. Frames in the lab stay in the lab. If one corner of the interface still looks like an older roll, leave and come back.",
+      "When a new version is waiting, one dialog shows up. It says Santi is in the lab, developing a better camera for you. Develop the update reloads the camera once. That same new version does not ask again.",
+      "People who already saved the shortcut are not asked to add it again. The name stored on this device, the answer you already gave about the home screen, and the camera that already knows you stay put. Frames in the lab stay in the lab. If one corner of the interface still looks like an older roll, leave and come back.",
     ],
   },
   {
