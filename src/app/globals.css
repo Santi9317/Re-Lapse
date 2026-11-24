@@ -205,6 +205,8 @@ h1, h2, h3, p { margin: 0; }
   object-fit: cover;
   background: #000;
 }
+/* Front camera only. The shutter copies the raw frame, so this flip never reaches the print. */
+.lens.mirror { transform: scaleX(-1); }
 .lens.concealed { visibility: hidden; }
 
 .sprockets {
