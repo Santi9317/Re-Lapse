@@ -11,7 +11,7 @@ import { GuestProfile, Profile } from "@/components/Profile";
 import { Rolls } from "@/components/Rolls";
 import { ShellPrompts } from "@/components/Shell";
 import { JoinGate } from "@/components/JoinGate";
-import { PinSlip } from "@/components/PinSlip";
+import { ChoosePin } from "@/components/RecoveryPin";
 import { Shoot } from "@/components/Shoot";
 
 type Tab = "shoot" | "lab" | "feed" | "rolls" | "you";
@@ -27,6 +27,7 @@ const lede: Record<Exclude<Tab, "shoot">, string> = {
 export function App() {
   const [booted, setBooted] = useState(false);
   const [open, setOpen] = useState(false);
+  const [pinChosen, setPinChosen] = useState(false);
   useEffect(() => {
     void restorePhone().finally(() => {
       try {
@@ -54,6 +55,7 @@ export function App() {
     );
   }
   if (!open) return <JoinGate onOpen={() => setOpen(true)} />;
+  if (!pinChosen) return <ChoosePin onReady={() => setPinChosen(true)} />;
   return <CameraDesk />;
 }
 
@@ -255,7 +257,6 @@ function CameraDesk() {
           ))}
         </nav>
         <ShellPrompts />
-        <PinSlip />
       </div>
     </div>
   );

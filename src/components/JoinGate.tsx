@@ -155,15 +155,15 @@ export function JoinGate({ onOpen }: { onOpen: () => void }) {
                 <p>{kept ? `${kept} stays outside.` : "This camera stays outside."} A refresh keeps it that way.</p>
               </div>
             ) : null}
-            {phase !== "checking" ? (
-              <form className="stack pin-form" data-pin-entry="gate" onSubmit={(event) => void submitPin(event)}>
-                <p className="gate-or">Already have a profile</p>
+            <section className="recovery-box" data-pin-entry="gate" aria-labelledby="recovery-title">
+              <h2 id="recovery-title">Recovery</h2>
+              <p className="fine" id="gate-pin-help">
+                Already have a profile? Enter its PIN. This puts that profile on this phone. It does not make a second one.
+              </p>
+              <form className="stack" onSubmit={(event) => void submitPin(event)}>
                 <label className="section" htmlFor="gate-pin">
                   6-digit PIN
                 </label>
-                <p className="fine" id="gate-pin-help">
-                  The PIN from when the profile was made. It brings that profile back onto this phone.
-                </p>
                 <input
                   id="gate-pin"
                   className="field pin-field"
@@ -187,7 +187,7 @@ export function JoinGate({ onOpen }: { onOpen: () => void }) {
                   {pinBusy ? "Checking…" : "Bring my profile back"}
                 </button>
               </form>
-            ) : null}
+            </section>
           </div>
         </div>
       </div>

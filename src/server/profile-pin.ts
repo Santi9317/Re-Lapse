@@ -1,6 +1,4 @@
-import { randomInt } from "node:crypto";
 import { sql, withTransaction, type Sql } from "@/lib/db";
-import { HttpError } from "@/server/http";
 import { guessMayCompare } from "@/server/gate-key";
 import { hashProfilePin } from "@/server/quota";
 import { isUuid } from "@/server/validate";
@@ -13,16 +11,6 @@ function countOf(value: unknown): number {
 
 function guessFlag(value: unknown): boolean {
   return value === true || value === "t" || value === "true" || value === 1;
-}
-
-export async function allocateProfilePin(): Promise<{ pin: string; hash: string }> {
-  for (let attempt = 0; attempt < 8; attempt += 1) {
-    const pin = randomInt(0, 1_000_000).toString().padStart(6, "0");
-    const hash = await hashProfilePin(pin);
-    const rows = await sql<{ ok: number }>(`select 1 as ok from profiles where pin_hash = $1`, [hash]);
-    if (!rows[0]) return { pin, hash };
-  }
-  throw new HttpError(500, "The lab hit a snag.");
 }
 
 export type PinRestore = { ok: true; token: string } | { ok: false; reason: "wrong" | "blocked" };
@@ -78,7 +66,7 @@ export async function takePinRestore(clientId: string, pin: string): Promise<Pin
     }
     if (!guessMayCompare(failures, otherClients, isNewClient)) return { ok: false, reason: "blocked" };
     const found = await q<{ shooter_token: string }>(
-      `select shooter_token from profiles where pin_hash = $1`,
+      `select token as shooter_token from cameras where pin_hash = $1`,
       [hash],
     );
     const token = found[0]?.shooter_token ? String(found[0].shooter_token) : "";
@@ -87,4 +75,80 @@ export async function takePinRestore(clientId: string, pin: string): Promise<Pin
     if (!matches) return { ok: false, reason: "wrong" };
     return { ok: true, token };
   });
+}
+
+const CHOICE_LIMIT = 8;
+
+function isPinCollision(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const row = error as { code?: unknown; constraint?: unknown; message?: unknown };
+  if (row.code !== "23505") return false;
+  const text = `${row.constraint ?? ""} ${row.message ?? ""}`;
+  return text.includes("pin_hash") || text.includes("pin_code");
+}
+
+/** The digits the owner can read back. Absent until they choose one. */
+export async function readRecoveryPin(token: string): Promise<string | null> {
+  const rows = await sql<{ pin_code: string | null }>(`select pin_code from cameras where token = $1`, [token]);
+  const pin = rows[0]?.pin_code ? String(rows[0].pin_code) : "";
+  return /^\d{6}$/.test(pin) ? pin : null;
+}
+
+export type PinSave = "saved" | "taken" | "blocked";
+
+/**
+ * Stores the six digits they chose, and the hash the gate compares.
+ * A PIN already held by another camera is refused. The old PIN stops matching.
+ */
+export async function saveRecoveryPin(token: string, pin: string): Promise<PinSave> {
+  if (!isUuid(token)) return "blocked";
+  const hash = await hashProfilePin(pin);
+  try {
+    return await withTransaction(async (q) => {
+      await q(
+        `insert into pin_choice (id, window_start, n) values ($1, now(), 0) on conflict (id) do nothing`,
+        [token],
+      );
+      const budget = await q<{ n: number; fresh: boolean | string | number }>(
+        `select n,
+                window_start <= now() - ($2::int * interval '1 millisecond') as fresh
+         from pin_choice
+         where id = $1
+         for update`,
+        [token, WINDOW_MS],
+      );
+      const row = budget[0];
+      const fresh = guessFlag(row?.fresh);
+      const failures = !row || fresh ? 0 : countOf(row.n);
+      if (failures >= CHOICE_LIMIT) return "blocked";
+      const cameras = await q<{ token: string }>(
+        `select token from cameras where (pin_hash = $1 or pin_code = $2) and token <> $3`,
+        [hash, pin, token],
+      );
+      const profiles = await q<{ shooter_token: string }>(
+        `select shooter_token from profiles where pin_hash = $1 and shooter_token <> $2`,
+        [hash, token],
+      );
+      if (cameras[0] || profiles[0]) {
+        if (fresh) {
+          await q(`update pin_choice set n = $2, window_start = now() where id = $1`, [token, failures + 1]);
+        } else {
+          await q(`update pin_choice set n = $2 where id = $1`, [token, failures + 1]);
+        }
+        return "taken";
+      }
+      await q(
+        `insert into cameras (token, created_at, pin_code, pin_hash)
+         values ($1, now(), $2, $3)
+         on conflict (token) do update set pin_code = excluded.pin_code, pin_hash = excluded.pin_hash`,
+        [token, pin, hash],
+      );
+      await q(`update profiles set pin_hash = $2 where shooter_token = $1`, [token, hash]);
+      await q(`update pin_choice set n = 0, window_start = now() where id = $1`, [token]);
+      return "saved";
+    });
+  } catch (error) {
+    if (isPinCollision(error)) return "taken";
+    throw error;
+  }
 }

@@ -180,12 +180,8 @@ export async function saveOwnProfile(profile: ProfileWrite): Promise<SharedProfi
     body: JSON.stringify(profile),
     cache: "no-store",
   });
-  const data = (await response.json().catch(() => null)) as (SharedProfile & { pin?: unknown; error?: string }) | null;
+  const data = (await response.json().catch(() => null)) as (SharedProfile & { error?: string }) | null;
   if (!response.ok || !data) throw new Error(data?.error || "The lab didn't answer.");
-  const pin = typeof data.pin === "string" ? data.pin : "";
-  if (/^\d{6}$/.test(pin) && typeof window !== "undefined") {
-    window.dispatchEvent(new CustomEvent("relapse-pin", { detail: pin }));
-  }
   return {
     id: data.id,
     username: data.username,
@@ -202,6 +198,27 @@ export async function adoptSavedProfile(): Promise<void> {
   const saved = withCameraPortrait(profileFromServer(remote), loadProfile());
   if (!profileReady(saved)) return;
   storeCameraProfile(saved);
+}
+
+export async function fetchRecoveryPin(): Promise<string | null> {
+  const response = await fetch("/api/profile/pin", { headers: await headers(false), cache: "no-store" });
+  const data = (await response.json().catch(() => null)) as { pin?: unknown; error?: string } | null;
+  if (!response.ok) throw new Error(data?.error || "The lab didn't answer.");
+  return typeof data?.pin === "string" && /^\d{6}$/.test(data.pin) ? data.pin : null;
+}
+
+export async function saveRecoveryPin(pin: string): Promise<string> {
+  const response = await fetch("/api/profile/pin", {
+    method: "PUT",
+    headers: await headers(true),
+    cache: "no-store",
+    body: JSON.stringify({ pin }),
+  });
+  const data = (await response.json().catch(() => null)) as { pin?: unknown; error?: string } | null;
+  if (!response.ok || typeof data?.pin !== "string" || !/^\d{6}$/.test(data.pin)) {
+    throw new Error(data?.error || "The lab didn't answer.");
+  }
+  return data.pin;
 }
 
 export async function restoreWithPin(pin: string): Promise<{ status: GateStatus; name: string }> {

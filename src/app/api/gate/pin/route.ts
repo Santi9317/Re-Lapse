@@ -33,16 +33,12 @@ export async function POST(request: Request) {
       );
     }
     const profile = await readOwnProfile(result.token);
-    if (!profile) {
-      await delay(GATE_GUESS_DELAY_MS);
-      return sealBooth(json({ error: "That PIN doesn't match a profile." }, 401), request, booth);
-    }
-    const membership = await ensureRestoredApproval(result.token, profile.username);
+    const membership = await ensureRestoredApproval(result.token, profile?.username ?? "Camera");
     const response = sealCamera(
       json({
         token: result.token,
         status: membership.status,
-        name: profile.username,
+        name: profile?.username || membership.name,
         profile,
       }),
       request,
