@@ -160,7 +160,7 @@ export function PrintView({
       )}
       {!compact && item.caption ? <figcaption className="caption">{item.caption}</figcaption> : null}
       <p className="meta">{meta}</p>
-      {!compact ? <p className="stock-line">RELAPSE 400</p> : null}
+      {!compact ? <p className="stock-line">RE-LAPSE 400</p> : null}
       <FrameActions item={item} getImage={() => imageRef.current} onDelete={onDelete} />
       {onFile && item.mine && !item.eventId ? (
         <div className="file-row">

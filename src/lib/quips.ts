@@ -5,7 +5,7 @@ const DEVELOPING = [
   "Shutter up. This negative needs a minute. ✨",
   "It's having a little lapse before its big debut. 💿",
   "Focus is a process. Mid-lapse, do not disturb. 🌀",
-  "Relapse later. The darkroom has the aux. 🎧",
+  "Re\u2011Lapse later. The darkroom has the aux. 🎧",
   "No sneak peek. That would be a lapse in judgment. 😏",
   "Long exposure, short patience. It's getting there. 🌙",
   "Hold the aperture. The print is lapsing into focus. 🔮",
