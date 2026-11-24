@@ -276,7 +276,7 @@ export function Shoot({
         {flash ? <div className="flash" /> : null}
         <div className="vf-top">
           <div>
-            <div className="brand">Relapse ✨</div>
+            <div className="brand">Re-Lapse ✨</div>
             <div className="stock">DISPOSABLE 💿</div>
           </div>
           <div className="counter">400 · {String(frames).padStart(2, "0")}</div>

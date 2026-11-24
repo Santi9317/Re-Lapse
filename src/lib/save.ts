@@ -4,7 +4,7 @@ const files = new Map<string, File>();
 const pending = new Map<string, Promise<File>>();
 const recent: string[] = [];
 const MAX_FILES = 6;
-const FILE_NAME = "Relapse.jpg";
+const FILE_NAME = "Re-Lapse.jpg";
 
 function remember(id: string, file: File) {
   files.set(id, file);

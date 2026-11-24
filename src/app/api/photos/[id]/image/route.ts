@@ -24,7 +24,7 @@ export async function GET(request: Request, ctx: Ctx) {
       headers: {
         "content-type": "image/jpeg",
         "cache-control": image.visibility === "public" ? "private, max-age=300" : "private, no-store",
-        "content-disposition": 'inline; filename="Relapse.jpg"',
+        "content-disposition": 'inline; filename="Re-Lapse.jpg"',
         "x-content-type-options": "nosniff",
       },
     });

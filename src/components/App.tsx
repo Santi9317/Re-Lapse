@@ -82,7 +82,7 @@ export function App() {
       <div className="phone">
         {tab !== "shoot" ? (
           <header className="top">
-            <h1 className="word">Relapse ✨</h1>
+            <h1 className="word">Re-Lapse ✨</h1>
             <p className="lede">{lede[tab]}</p>
           </header>
         ) : null}
@@ -128,7 +128,7 @@ export function App() {
                 ? "Keep the camera on your home screen."
                 : ios
                   ? "Share, then Add to Home Screen."
-                  : "Add Relapse to your home screen."}
+                  : <>Add <span className="namemark">Re-Lapse</span> to your home screen.</>}
             </span>
             {install ? (
               <button

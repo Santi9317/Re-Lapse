@@ -7,15 +7,15 @@ import "@fontsource/ibm-plex-mono/latin-600.css";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Relapse",
+  title: "Re-Lapse",
   description: "A shared disposable camera. Shoot, wait, develop.",
-  applicationName: "Relapse",
+  applicationName: "Re-Lapse",
   manifest: "/manifest.webmanifest",
   referrer: "same-origin",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "Relapse",
+    title: "Re-Lapse",
   },
   formatDetection: { telephone: false },
   icons: {

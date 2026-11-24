@@ -78,7 +78,7 @@ export function Feed({ revision }: { revision: number }) {
       {photos.length === 0 ? (
         <div className="empty">
           <h2>Nothing back yet. 🌈</h2>
-          <p>Develop a frame, then send the ones worth a relapse. They stay up for a week.</p>
+          <p>Develop a frame, then send the ones worth a <span className="namemark">Re-Lapse</span>. They stay up for a week.</p>
         </div>
       ) : (
         <div className="thread">
