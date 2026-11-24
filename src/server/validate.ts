@@ -1,5 +1,5 @@
 import { CAROUSEL_LIMIT, isEmoji } from "@/lib/profile";
-import type { ProfileWrite } from "@/lib/types";
+import type { ProfilePatch } from "@/lib/types";
 import { cameraAuthFromCookie } from "@/server/camera-auth";
 import { HttpError } from "@/server/http";
 
@@ -48,31 +48,43 @@ export function cleanCaption(value: unknown): string {
   return caption;
 }
 
-export function cleanProfileWrite(body: Record<string, unknown>): ProfileWrite {
-  const username = scrub(body.username, 24, false);
-  if (!username) throw new HttpError(400, "Give yourself a short name.");
-  if (!Array.isArray(body.emojis) || body.emojis.length !== 3) {
-    throw new HttpError(400, "Pick three emojis.");
+/**
+ * Only keys the request actually sent. A missing key is not a clear:
+ * editing a name must not wipe the portrait, the strip, or the PIN.
+ */
+export function cleanProfilePatch(body: Record<string, unknown>): ProfilePatch {
+  const patch: ProfilePatch = {};
+  if ("username" in body) {
+    const username = scrub(body.username, 24, false);
+    if (!username) throw new HttpError(400, "Give yourself a short name.");
+    patch.username = username;
   }
-  const emojis = body.emojis.map((item) => {
-    if (typeof item !== "string" || !isEmoji(item)) throw new HttpError(400, "Pick three emojis.");
-    return item;
-  }) as [string, string, string];
-  let avatarImageBase64: string | null = null;
-  if (typeof body.avatarImageBase64 === "string" && body.avatarImageBase64 !== "") {
-    avatarImageBase64 = cleanJpeg(body.avatarImageBase64);
-    if (avatarImageBase64.length > 450_000) throw new HttpError(413, "That photo is too heavy.");
+  if ("emojis" in body) {
+    if (!Array.isArray(body.emojis) || body.emojis.length !== 3) {
+      throw new HttpError(400, "Pick three emojis.");
+    }
+    patch.emojis = body.emojis.map((item) => {
+      if (typeof item !== "string" || !isEmoji(item)) throw new HttpError(400, "Pick three emojis.");
+      return item;
+    }) as [string, string, string];
   }
-  const avatarPhotoId = avatarImageBase64 ? null : optionalUuid(body.avatarPhotoId);
-  const keepUpload = body.keepUpload === true && !avatarPhotoId && !avatarImageBase64;
-  return {
-    username,
-    emojis,
-    avatarPhotoId,
-    avatarImageBase64,
-    keepUpload,
-    carouselIds: cleanIdList(body.carouselIds),
-  };
+  if ("carouselIds" in body) patch.carouselIds = cleanIdList(body.carouselIds);
+  const mentionsAvatar = "avatarPhotoId" in body || "avatarImageBase64" in body || "keepUpload" in body;
+  if (mentionsAvatar) {
+    let avatarImageBase64: string | null = null;
+    if (typeof body.avatarImageBase64 === "string" && body.avatarImageBase64 !== "") {
+      avatarImageBase64 = cleanJpeg(body.avatarImageBase64);
+      if (avatarImageBase64.length > 450_000) throw new HttpError(413, "That photo is too heavy.");
+    }
+    const avatarPhotoId = avatarImageBase64 ? null : optionalUuid(body.avatarPhotoId);
+    const keepUpload = body.keepUpload === true && !avatarPhotoId && !avatarImageBase64;
+    if (!keepUpload) {
+      patch.avatarPhotoId = avatarPhotoId;
+      patch.avatarImageBase64 = avatarImageBase64;
+      patch.keepUpload = false;
+    }
+  }
+  return patch;
 }
 
 function cleanIdList(value: unknown): string[] {

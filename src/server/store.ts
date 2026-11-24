@@ -1,8 +1,8 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { devClockRequested, eventTimes, FEED_DAYS, personalReadyAt } from "@/lib/clock";
 import { sql, withTransaction } from "@/lib/db";
-import { isEmoji } from "@/lib/profile";
-import type { Album, EventDetail, EventRoll, EventStatus, FeedItem, FrameSticker, LabItem, LabState, ProfileWrite, RollMember, SharedProfile } from "@/lib/types";
+import { CAROUSEL_LIMIT, isEmoji } from "@/lib/profile";
+import type { Album, EventDetail, EventRoll, EventStatus, FeedItem, FrameSticker, LabItem, LabState, ProfilePatch, RollMember, SharedProfile } from "@/lib/types";
 import { HttpError } from "@/server/http";
 import { assertCreateAllowed, assertJoinAllowed, claimCamera, noteCreate } from "@/server/quota";
 import { cleanJpeg } from "@/server/validate";
@@ -53,7 +53,7 @@ function flag(value: unknown): boolean {
   return value === true || value === "t" || value === "true" || value === 1;
 }
 
-async function runReclaim(): Promise<void> {
+async function runReclaim(preserveToken?: string): Promise<void> {
   await sql(
     `delete from photos
      where event_id is null
@@ -86,6 +86,10 @@ async function runReclaim(): Promise<void> {
          where p.album_id = a.id and p.event_id is null and p.developed_at is not null
        )`,
   );
+  // Unpublished shots on a day-one camera are cleared so a fresh id cannot
+  // fill the lab. Shots already tied to a profile stay, and so do the shots
+  // of a camera that is saving its profile in this same pass — that save used
+  // to reap them before the profile row existed.
   await sql(
     `delete from photos p
      using cameras c
@@ -93,7 +97,10 @@ async function runReclaim(): Promise<void> {
        and c.created_at > now() - interval '24 hours'
        and p.event_id is null
        and p.published_at is null
-       and p.created_at < now() - interval '2 hours'`,
+       and p.created_at < now() - interval '2 hours'
+       and not exists (select 1 from profiles r where r.shooter_token = p.shooter_token)
+       and ($1::text is null or p.shooter_token <> $1::text)`,
+    [preserveToken ?? null],
   );
   await sql(
     `delete from profiles p
@@ -147,9 +154,9 @@ async function runReclaim(): Promise<void> {
   );
 }
 
-async function reclaimNow(): Promise<void> {
+async function reclaimNow(preserveToken?: string): Promise<void> {
   lastReclaim = Date.now();
-  await runReclaim();
+  await runReclaim(preserveToken);
 }
 
 async function reclaimSoon(): Promise<void> {
@@ -1289,60 +1296,156 @@ async function fitNewProfile(token: string): Promise<void> {
   }
 }
 
+/** Public frames, plus this camera's own developed frames, in the order given. */
+async function keepablePhotoIds(ids: string[], owner: string): Promise<string[]> {
+  if (ids.length === 0) return [];
+  const open = new Set(await publicPhotoIds(ids));
+  const rest = ids.filter((id) => !open.has(id));
+  const own = new Set<string>();
+  if (rest.length > 0) {
+    const marks = rest.map((_, index) => `$${index + 2}`).join(", ");
+    const rows = await sql<{ id: string }>(
+      `select id from photos
+       where shooter_token = $1
+         and event_id is null
+         and developed_at is not null
+         and id in (${marks})`,
+      [owner, ...rest],
+    );
+    for (const row of rows) own.add(String(row.id));
+  }
+  return ids.filter((id) => open.has(id) || own.has(id));
+}
+
+/** Shots this camera already kept, newest first, for the profile strip. */
+async function ownKeptPhotoIds(token: string): Promise<string[]> {
+  const rows = await sql<{ id: string }>(
+    `select p.id
+     from photos p
+     where p.shooter_token = $1
+       and p.event_id is null
+       and (p.developed_at is not null or p.published_at is not null)
+     order by p.created_at desc
+     limit $2`,
+    [token, CAROUSEL_LIMIT],
+  );
+  return rows.map((row) => String(row.id));
+}
+
+async function portraitColumns(
+  patch: ProfilePatch,
+): Promise<{ photoId: string | null; image: string | null } | undefined> {
+  if (patch.avatarPhotoId === undefined && patch.avatarImageBase64 === undefined) return undefined;
+  let photoId = patch.avatarPhotoId ?? null;
+  let image = patch.avatarImageBase64 ?? null;
+  if (photoId) {
+    const open = await publicPhotoIds([photoId]);
+    if (open.length === 0) throw new HttpError(400, "That frame isn't on the feed.");
+    image = null;
+  }
+  if (image) photoId = null;
+  return { photoId, image };
+}
+
 export async function saveOwnProfile(
   token: string,
-  input: ProfileWrite,
+  input: ProfilePatch,
   proof: string | null,
   replaceRemoved = false,
 ): Promise<SharedProfile> {
   const removed = await profileWasRemoved(token);
   if (removed && !replaceRemoved) throw new HttpError(409, "That profile is gone.");
   const existing = await profileRow("shooter_token", token);
+  const portrait = await portraitColumns(input);
+  const writing =
+    input.username !== undefined ||
+    input.emojis !== undefined ||
+    input.carouselIds !== undefined ||
+    portrait !== undefined;
+  if (!existing && (input.username === undefined || input.emojis === undefined)) {
+    throw new HttpError(400, input.username === undefined ? "Give yourself a short name." : "Pick three emojis.");
+  }
+  if (existing && !writing) {
+    const current = await readOwnProfile(token);
+    if (!current) throw new HttpError(500, "The lab hit a snag.");
+    return current;
+  }
   await assertCreateAllowed("profile", token, proof);
   if (!existing) {
-    await reclaimNow();
+    // Reap other visitors first, but not the shots this camera already took.
+    // Those rows are attached by the profile insert below.
+    await reclaimNow(token);
     await fitNewProfile(token);
   }
   await claimCamera(token, proof);
-  const id = existing ? String(existing.id) : randomUUID();
-  let avatarPhotoId = input.avatarPhotoId;
-  let avatarImage = input.avatarImageBase64;
-  if (input.keepUpload && existing) {
-    avatarPhotoId = text(existing.avatar_photo_id);
-    avatarImage = text(existing.avatar_image);
+  if (!existing) {
+    const username = input.username;
+    const emojis = input.emojis;
+    if (!username || !emojis) throw new HttpError(400, "Give yourself a short name.");
+    const carouselIds = await ownKeptPhotoIds(token);
+    const seen = new Set(carouselIds);
+    if (input.carouselIds && input.carouselIds.length > 0) {
+      for (const id of await keepablePhotoIds(input.carouselIds, token)) {
+        if (carouselIds.length >= CAROUSEL_LIMIT) break;
+        if (seen.has(id)) continue;
+        seen.add(id);
+        carouselIds.push(id);
+      }
+    }
+    await sql(
+      `insert into profiles (
+         id, shooter_token, username, emoji_1, emoji_2, emoji_3, avatar_photo_id, avatar_image, carousel, pin_hash
+       ) values (
+         $1, $2, $3, $4, $5, $6, $7, $8, $9, (select pin_hash from cameras where token = $2)
+       )
+       on conflict (shooter_token) do update set
+         username = excluded.username,
+         emoji_1 = excluded.emoji_1,
+         emoji_2 = excluded.emoji_2,
+         emoji_3 = excluded.emoji_3,
+         avatar_photo_id = excluded.avatar_photo_id,
+         avatar_image = excluded.avatar_image,
+         carousel = excluded.carousel,
+         pin_hash = coalesce(profiles.pin_hash, excluded.pin_hash),
+         updated_at = now()`,
+      [
+        randomUUID(),
+        token,
+        username,
+        emojis[0],
+        emojis[1],
+        emojis[2],
+        portrait?.photoId ?? null,
+        portrait?.image ?? null,
+        JSON.stringify(carouselIds),
+      ],
+    );
+  } else {
+    const sets: string[] = [];
+    const params: unknown[] = [];
+    const add = (column: string, value: unknown) => {
+      params.push(value);
+      sets.push(`${column} = $${params.length}`);
+    };
+    if (input.username !== undefined) add("username", input.username);
+    if (input.emojis) {
+      add("emoji_1", input.emojis[0]);
+      add("emoji_2", input.emojis[1]);
+      add("emoji_3", input.emojis[2]);
+    }
+    if (portrait !== undefined) {
+      add("avatar_photo_id", portrait.photoId);
+      add("avatar_image", portrait.image);
+    }
+    if (input.carouselIds) {
+      add("carousel", JSON.stringify(await keepablePhotoIds(input.carouselIds, token)));
+    }
+    if (sets.length > 0) {
+      sets.push("updated_at = now()");
+      params.push(token);
+      await sql(`update profiles set ${sets.join(", ")} where shooter_token = $${params.length}`, params);
+    }
   }
-  if (avatarPhotoId) {
-    const open = await publicPhotoIds([avatarPhotoId]);
-    if (open.length === 0) throw new HttpError(400, "That frame isn't on the feed.");
-    avatarImage = null;
-  }
-  if (avatarImage) avatarPhotoId = null;
-  const carouselIds = await publicPhotoIds(input.carouselIds);
-  await sql(
-    `insert into profiles (
-       id, shooter_token, username, emoji_1, emoji_2, emoji_3, avatar_photo_id, avatar_image, carousel
-     ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-     on conflict (shooter_token) do update set
-       username = excluded.username,
-       emoji_1 = excluded.emoji_1,
-       emoji_2 = excluded.emoji_2,
-       emoji_3 = excluded.emoji_3,
-       avatar_photo_id = excluded.avatar_photo_id,
-       avatar_image = excluded.avatar_image,
-       carousel = excluded.carousel,
-       updated_at = now()`,
-    [
-      id,
-      token,
-      input.username,
-      input.emojis[0],
-      input.emojis[1],
-      input.emojis[2],
-      avatarPhotoId,
-      avatarImage,
-      JSON.stringify(carouselIds),
-    ],
-  );
   if (removed) await sql(`delete from profile_removals where shooter_token = $1`, [token]);
   await noteCreate("profile", token);
   const saved = await readOwnProfile(token);
