@@ -1,5 +1,4 @@
 import { asRecord, json, readJson, toErrorResponse } from "@/server/http";
-import { clientSource } from "@/server/quota";
 import { createEvent, listEvents, wantsDevClock } from "@/server/store";
 import { cleanHours, cleanName, requireUuid } from "@/server/validate";
 
@@ -23,7 +22,6 @@ export async function POST(request: Request) {
       cleanHours(body.durationHours),
       wantsDevClock(request.headers.get("x-relapse-dev")),
       token,
-      clientSource(request),
     );
     return json(event, 201);
   } catch (error) {
