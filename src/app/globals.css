@@ -173,6 +173,7 @@ h1, h2, h3, p { margin: 0; }
   object-fit: cover;
   background: #000;
 }
+.lens.concealed { visibility: hidden; }
 
 .sprockets {
   position: absolute;
