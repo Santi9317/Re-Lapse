@@ -1,16 +1,29 @@
 "use client";
 
 import { ago } from "@/lib/format";
-import type { Profile } from "@/lib/profile";
 import type { Album, FeedItem } from "@/lib/types";
 
-function Signature({ signature }: { signature?: Pick<Profile, "username" | "emojis"> | null }) {
-  if (!signature) return null;
+function ProfileLink({ item, onOpenProfile }: { item: FeedItem; onOpenProfile?: (id: string) => void }) {
+  if (!item.profileId || !item.profileName || !item.profileEmojis) return null;
+  const marks = item.profileEmojis.join(" ");
+  const inner = (
+    <>
+      {item.profileAvatar ? <img className="byline-avatar" src={`/api/profiles/${item.profileId}/avatar`} alt="" /> : null}
+      <span className="byline-name">{item.profileName}</span>
+      <span className="byline-marks">{marks}</span>
+    </>
+  );
+  if (!onOpenProfile) return <p className="byline">{inner}</p>;
   return (
-    <p className="byline">
-      <span className="byline-name">{signature.username}</span>
-      <span className="byline-marks">{signature.emojis.join(" ")}</span>
-    </p>
+    <button
+      className="byline"
+      type="button"
+      data-profile-id={item.profileId}
+      aria-label={`Open ${item.profileName}'s profile`}
+      onClick={() => onOpenProfile(item.profileId as string)}
+    >
+      {inner}
+    </button>
   );
 }
 
@@ -23,15 +36,15 @@ export function PrintView({
   albums,
   onFile,
   onOpen,
+  onOpenProfile,
   compact = false,
-  signature = null,
 }: {
   item: FeedItem;
   albums?: Album[];
   onFile?: (id: string, albumId: string | null) => void;
   onOpen?: (item: FeedItem) => void;
+  onOpenProfile?: (id: string) => void;
   compact?: boolean;
-  signature?: Pick<Profile, "username" | "emojis"> | null;
 }) {
   const where = place(item);
   const meta = where ? `${where} · ${ago(item.createdAt)}` : ago(item.createdAt);
@@ -48,7 +61,7 @@ export function PrintView({
         image
       )}
       {!compact && item.caption ? <figcaption className="caption">{item.caption}</figcaption> : null}
-      {!compact && item.mine ? <Signature signature={signature} /> : null}
+      {!compact ? <ProfileLink item={item} onOpenProfile={onOpenProfile} /> : null}
       <p className="meta">{meta}</p>
       {!compact ? <p className="stock-line">RELAPSE 400</p> : null}
       {onFile && item.mine && !item.eventId ? (
@@ -79,11 +92,11 @@ export function PrintView({
 export function Lightbox({
   item,
   onClose,
-  signature = null,
+  onOpenProfile,
 }: {
   item: FeedItem;
   onClose: () => void;
-  signature?: Pick<Profile, "username" | "emojis"> | null;
+  onOpenProfile?: (id: string) => void;
 }) {
   const where = place(item);
   return (
@@ -91,7 +104,7 @@ export function Lightbox({
       <figure className="print" onClick={(event) => event.stopPropagation()}>
         <img src={`/api/photos/${item.id}/image`} alt={item.caption || "Developed frame"} />
         {item.caption ? <figcaption className="caption">{item.caption}</figcaption> : null}
-        {item.mine ? <Signature signature={signature} /> : null}
+        <ProfileLink item={item} onOpenProfile={onOpenProfile} />
         <p className="meta">{where ? `${where} · ${ago(item.createdAt)}` : ago(item.createdAt)}</p>
       </figure>
       <button className="ghost" type="button" onClick={onClose}>

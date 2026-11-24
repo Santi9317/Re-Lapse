@@ -699,9 +699,20 @@ h1, h2, h3, p { margin: 0; }
 .byline {
   display: flex;
   gap: 8px;
-  align-items: baseline;
+  align-items: center;
   margin: 8px 4px 0;
   color: #7a3b22;
+  text-align: left;
+}
+button.byline { width: 100%; }
+button.byline .byline-name { text-decoration: underline; text-underline-offset: 3px; }
+.print .byline-avatar {
+  width: 28px;
+  height: 28px;
+  aspect-ratio: auto;
+  object-fit: cover;
+  flex: 0 0 28px;
+  background: #d9cbb8;
 }
 .byline-name {
   letter-spacing: 0.08em;

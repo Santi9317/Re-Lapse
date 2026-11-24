@@ -1,3 +1,5 @@
+import { CAROUSEL_LIMIT, isEmoji } from "@/lib/profile";
+import type { ProfileWrite } from "@/lib/types";
 import { HttpError } from "@/server/http";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -38,6 +40,47 @@ export function cleanCaption(value: unknown): string {
   const caption = scrub(value ?? "", 80, true);
   if (caption == null) throw new HttpError(400, "Keep the caption short.");
   return caption;
+}
+
+export function cleanProfileWrite(body: Record<string, unknown>): ProfileWrite {
+  const username = scrub(body.username, 24, false);
+  if (!username) throw new HttpError(400, "Give yourself a short name.");
+  if (!Array.isArray(body.emojis) || body.emojis.length !== 3) {
+    throw new HttpError(400, "Pick three emojis.");
+  }
+  const emojis = body.emojis.map((item) => {
+    if (typeof item !== "string" || !isEmoji(item)) throw new HttpError(400, "Pick three emojis.");
+    return item;
+  }) as [string, string, string];
+  let avatarImageBase64: string | null = null;
+  if (typeof body.avatarImageBase64 === "string" && body.avatarImageBase64 !== "") {
+    avatarImageBase64 = cleanJpeg(body.avatarImageBase64);
+    if (avatarImageBase64.length > 450_000) throw new HttpError(413, "That photo is too heavy.");
+  }
+  const avatarPhotoId = avatarImageBase64 ? null : optionalUuid(body.avatarPhotoId);
+  const keepUpload = body.keepUpload === true && !avatarPhotoId && !avatarImageBase64;
+  return {
+    username,
+    emojis,
+    avatarPhotoId,
+    avatarImageBase64,
+    keepUpload,
+    carouselIds: cleanIdList(body.carouselIds),
+  };
+}
+
+function cleanIdList(value: unknown): string[] {
+  if (!Array.isArray(value)) throw new HttpError(400, "The strip needs a list of frames.");
+  const seen = new Set<string>();
+  const ids: string[] = [];
+  for (const item of value) {
+    const id = optionalUuid(item);
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    ids.push(id);
+    if (ids.length > CAROUSEL_LIMIT) throw new HttpError(400, "The strip holds 17 frames.");
+  }
+  return ids;
 }
 
 export function cleanHours(value: unknown): number {

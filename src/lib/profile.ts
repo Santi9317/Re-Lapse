@@ -1,3 +1,5 @@
+import type { ProfileWrite, SharedProfile } from "@/lib/types";
+
 export const CAROUSEL_LIMIT = 17;
 export const NAME_LIMIT = 24;
 
@@ -5,6 +7,7 @@ const STORAGE_KEY = "relapse.profile";
 const DRAFT_KEY = "relapse.profile.draft";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const DATA_URL = /^data:image\/jpeg;base64,[a-z0-9+/=]+$/i;
+const AVATAR_URL = /^\/api\/(?:profiles\/[0-9a-f-]{36}\/avatar|photos\/[0-9a-f-]{36}\/image)$/i;
 const MAX_DATA_URL = 450_000;
 
 export const EMOJI_GROUPS: { label: string; emojis: string[] }[] = [
@@ -33,6 +36,7 @@ export type Profile = {
   emojis: [string, string, string];
   avatarPhotoId: string | null;
   avatarDataUrl: string | null;
+  avatarUrl: string | null;
   carouselIds: string[];
 };
 
@@ -67,6 +71,7 @@ export function emptyProfile(): Profile {
     emojis: ["", "", ""],
     avatarPhotoId: null,
     avatarDataUrl: null,
+    avatarUrl: null,
     carouselIds: [],
   };
 }
@@ -84,6 +89,11 @@ function cleanUsername(value: unknown): string {
 function cleanId(value: unknown): string | null {
   if (typeof value !== "string" || !UUID.test(value)) return null;
   return value.toLowerCase();
+}
+
+function cleanAvatarUrl(value: unknown): string | null {
+  if (typeof value !== "string" || !AVATAR_URL.test(value)) return null;
+  return value;
 }
 
 function cleanDataUrl(value: unknown): string | null {
@@ -123,12 +133,41 @@ export function normalizeProfile(raw: unknown): Profile {
   if (!raw || typeof raw !== "object") return blank;
   const row = raw as Record<string, unknown>;
   const avatarDataUrl = cleanDataUrl(row.avatarDataUrl);
+  const avatarPhotoId = avatarDataUrl ? null : cleanId(row.avatarPhotoId);
   return {
     username: cleanUsername(row.username),
     emojis: cleanEmojis(row.emojis),
-    avatarPhotoId: avatarDataUrl ? null : cleanId(row.avatarPhotoId),
+    avatarPhotoId,
     avatarDataUrl,
+    avatarUrl: avatarDataUrl || avatarPhotoId ? null : cleanAvatarUrl(row.avatarUrl),
     carouselIds: cleanCarousel(row.carouselIds),
+  };
+}
+
+export function profileFromServer(row: SharedProfile): Profile {
+  return normalizeProfile({
+    username: row.username,
+    emojis: row.emojis,
+    avatarPhotoId: row.avatarPhotoId,
+    avatarUrl: row.avatarUrl,
+    carouselIds: row.carouselIds,
+  });
+}
+
+export function profileWrite(profile: Profile): ProfileWrite {
+  const clean = normalizeProfile(profile);
+  if (!clean.username) throw new Error("Give yourself a short name.");
+  if (clean.emojis.some((emoji) => emoji.length === 0)) throw new Error("Pick three emojis.");
+  const avatarImageBase64 = clean.avatarDataUrl
+    ? clean.avatarDataUrl.replace(/^data:image\/jpeg;base64,/i, "")
+    : null;
+  return {
+    username: clean.username,
+    emojis: clean.emojis,
+    avatarPhotoId: avatarImageBase64 ? null : clean.avatarPhotoId,
+    avatarImageBase64,
+    keepUpload: !avatarImageBase64 && !clean.avatarPhotoId && Boolean(clean.avatarUrl?.endsWith("/avatar")),
+    carouselIds: clean.carouselIds,
   };
 }
 
@@ -141,6 +180,7 @@ export function profilesEqual(a: Profile, b: Profile): boolean {
     a.username === b.username &&
     a.avatarPhotoId === b.avatarPhotoId &&
     a.avatarDataUrl === b.avatarDataUrl &&
+    a.avatarUrl === b.avatarUrl &&
     a.emojis[0] === b.emojis[0] &&
     a.emojis[1] === b.emojis[1] &&
     a.emojis[2] === b.emojis[2] &&

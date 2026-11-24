@@ -9,6 +9,28 @@ export type FeedItem = {
   eventId: string | null;
   eventName: string | null;
   mine: boolean;
+  profileId: string | null;
+  profileName: string | null;
+  profileEmojis: [string, string, string] | null;
+  profileAvatar: boolean;
+};
+
+export type SharedProfile = {
+  id: string;
+  username: string;
+  emojis: [string, string, string];
+  avatarPhotoId: string | null;
+  avatarUrl: string | null;
+  carouselIds: string[];
+};
+
+export type ProfileWrite = {
+  username: string;
+  emojis: [string, string, string];
+  avatarPhotoId: string | null;
+  avatarImageBase64: string | null;
+  keepUpload: boolean;
+  carouselIds: string[];
 };
 
 export type LabState = "developing" | "ready" | "developed" | "sealed";

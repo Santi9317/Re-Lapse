@@ -3,15 +3,13 @@
 import { useEffect, useState } from "react";
 import { fetchAlbums, fetchFeed, filePhoto } from "@/lib/api";
 import type { Album, FeedItem } from "@/lib/types";
-import { useSavedProfile } from "@/lib/useSavedProfile";
 import { Lightbox, PrintView } from "@/components/Print";
 
-export function Feed({ revision }: { revision: number }) {
+export function Feed({ revision, onOpenProfile }: { revision: number; onOpenProfile: (id: string) => void }) {
   const [photos, setPhotos] = useState<FeedItem[]>([]);
   const [albums, setAlbums] = useState<Album[]>([]);
   const [error, setError] = useState("");
   const [open, setOpen] = useState<FeedItem | null>(null);
-  const signature = useSavedProfile();
 
   useEffect(() => {
     let stop = false;
@@ -61,11 +59,18 @@ export function Feed({ revision }: { revision: number }) {
       ) : (
         <div className="thread">
           {photos.map((photo) => (
-            <PrintView key={photo.id} item={photo} albums={albums} onFile={onFile} onOpen={setOpen} signature={signature} />
+            <PrintView
+              key={photo.id}
+              item={photo}
+              albums={albums}
+              onFile={onFile}
+              onOpen={setOpen}
+              onOpenProfile={onOpenProfile}
+            />
           ))}
         </div>
       )}
-      {open ? <Lightbox item={open} onClose={() => setOpen(null)} signature={signature} /> : null}
+      {open ? <Lightbox item={open} onClose={() => setOpen(null)} onOpenProfile={onOpenProfile} /> : null}
     </div>
   );
 }

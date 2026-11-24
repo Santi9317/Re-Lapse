@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { devClockRequested, eventTimes, personalReadyAt } from "@/lib/clock";
 import { sql } from "@/lib/db";
-import type { Album, EventDetail, EventRoll, EventStatus, FeedItem, LabItem, LabState } from "@/lib/types";
+import type { Album, EventDetail, EventRoll, EventStatus, FeedItem, LabItem, LabState, ProfileWrite, SharedProfile } from "@/lib/types";
 import { HttpError } from "@/server/http";
 import { assertCreateAllowed, noteCreate } from "@/server/quota";
 import { cleanJpeg } from "@/server/validate";
@@ -149,6 +149,12 @@ function feedItem(row: Record<string, unknown>): FeedItem {
     eventId: text(row.event_id),
     eventName: text(row.event_name),
     mine: flag(row.mine),
+    profileId: text(row.profile_id),
+    profileName: text(row.profile_name),
+    profileEmojis: row.profile_id
+      ? [String(row.emoji_1 ?? ""), String(row.emoji_2 ?? ""), String(row.emoji_3 ?? "")]
+      : null,
+    profileAvatar: flag(row.has_avatar),
   };
 }
 
@@ -163,10 +169,17 @@ const feedSelect = `
     a.name as album_name,
     p.event_id,
     e.name as event_name,
-    (p.shooter_token = $1) as mine
+    (p.shooter_token = $1) as mine,
+    r.id as profile_id,
+    r.username as profile_name,
+    r.emoji_1,
+    r.emoji_2,
+    r.emoji_3,
+    (r.avatar_image is not null or r.avatar_photo_id is not null) as has_avatar
   from photos p
   left join albums a on a.id = p.album_id
   left join events e on e.id = p.event_id
+  left join profiles r on r.shooter_token = p.shooter_token
 `;
 
 export async function listFeed(viewer: string): Promise<FeedItem[]> {
@@ -524,4 +537,140 @@ export async function getEvent(id: string, viewer: string): Promise<EventDetail 
 
 export function wantsDevClock(header: string | null): boolean {
   return devClockRequested(header);
+}
+
+const publicPhotoSql = `
+  select p.id
+  from photos p
+  left join events e on e.id = p.event_id
+  where p.id in (__IDS__)
+    and (
+      (p.event_id is null and p.published_at is not null)
+      or (p.event_id is not null and e.reveal_at <= now())
+    )
+`;
+
+async function publicPhotoIds(ids: string[]): Promise<string[]> {
+  if (ids.length === 0) return [];
+  const marks = ids.map((_, index) => `$${index + 1}`).join(", ");
+  const rows = await sql<{ id: string }>(publicPhotoSql.replace("__IDS__", marks), ids);
+  const open = new Set(rows.map((row) => String(row.id)));
+  return ids.filter((id) => open.has(id));
+}
+
+function parseCarousel(value: unknown): string[] {
+  if (typeof value !== "string" || value === "") return [];
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((item): item is string => typeof item === "string");
+  } catch {
+    return [];
+  }
+}
+
+function sharedProfile(row: Record<string, unknown>, carouselIds: string[]): SharedProfile {
+  const id = String(row.id);
+  const avatarPhotoId = text(row.avatar_photo_id);
+  const hasUpload = row.avatar_image != null && String(row.avatar_image) !== "";
+  let avatarUrl: string | null = null;
+  if (hasUpload) avatarUrl = `/api/profiles/${id}/avatar`;
+  else if (avatarPhotoId) avatarUrl = `/api/photos/${avatarPhotoId}/image`;
+  return {
+    id,
+    username: String(row.username),
+    emojis: [String(row.emoji_1), String(row.emoji_2), String(row.emoji_3)],
+    avatarPhotoId: hasUpload ? null : avatarPhotoId,
+    avatarUrl,
+    carouselIds,
+  };
+}
+
+async function profileRow(where: "id" | "shooter_token", value: string): Promise<Record<string, unknown> | null> {
+  const rows = await sql(
+    `select id, username, emoji_1, emoji_2, emoji_3, avatar_photo_id, avatar_image, carousel
+     from profiles
+     where ${where === "id" ? "id" : "shooter_token"} = $1`,
+    [value],
+  );
+  return rows[0] ?? null;
+}
+
+export async function readOwnProfile(token: string): Promise<SharedProfile | null> {
+  const row = await profileRow("shooter_token", token);
+  if (!row) return null;
+  return sharedProfile(row, parseCarousel(row.carousel));
+}
+
+export async function readPublicProfile(id: string): Promise<SharedProfile | null> {
+  const row = await profileRow("id", id);
+  if (!row) return null;
+  const stored = parseCarousel(row.carousel);
+  const carouselIds = await publicPhotoIds(stored);
+  const avatarPhotoId = text(row.avatar_photo_id);
+  if (avatarPhotoId) {
+    const stillPublic = await publicPhotoIds([avatarPhotoId]);
+    if (stillPublic.length === 0) row.avatar_photo_id = null;
+  }
+  return sharedProfile(row, carouselIds);
+}
+
+export async function saveOwnProfile(token: string, input: ProfileWrite): Promise<SharedProfile> {
+  const existing = await profileRow("shooter_token", token);
+  const id = existing ? String(existing.id) : randomUUID();
+  let avatarPhotoId = input.avatarPhotoId;
+  let avatarImage = input.avatarImageBase64;
+  if (input.keepUpload && existing) {
+    avatarPhotoId = text(existing.avatar_photo_id);
+    avatarImage = text(existing.avatar_image);
+  }
+  if (avatarPhotoId) {
+    const open = await publicPhotoIds([avatarPhotoId]);
+    if (open.length === 0) throw new HttpError(400, "That frame isn't on the feed.");
+    avatarImage = null;
+  }
+  if (avatarImage) avatarPhotoId = null;
+  const carouselIds = await publicPhotoIds(input.carouselIds);
+  await sql(
+    `insert into profiles (
+       id, shooter_token, username, emoji_1, emoji_2, emoji_3, avatar_photo_id, avatar_image, carousel
+     ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+     on conflict (shooter_token) do update set
+       username = excluded.username,
+       emoji_1 = excluded.emoji_1,
+       emoji_2 = excluded.emoji_2,
+       emoji_3 = excluded.emoji_3,
+       avatar_photo_id = excluded.avatar_photo_id,
+       avatar_image = excluded.avatar_image,
+       carousel = excluded.carousel,
+       updated_at = now()`,
+    [
+      id,
+      token,
+      input.username,
+      input.emojis[0],
+      input.emojis[1],
+      input.emojis[2],
+      avatarPhotoId,
+      avatarImage,
+      JSON.stringify(carouselIds),
+    ],
+  );
+  const saved = await readOwnProfile(token);
+  if (!saved) throw new HttpError(500, "The lab hit a snag.");
+  return saved;
+}
+
+export async function readAvatar(profileId: string): Promise<Buffer | null> {
+  const row = await profileRow("id", profileId);
+  if (!row) return null;
+  const image = text(row.avatar_image);
+  if (image) return Buffer.from(image, "base64");
+  const photoId = text(row.avatar_photo_id);
+  if (!photoId) return null;
+  const open = await publicPhotoIds([photoId]);
+  if (open.length === 0) return null;
+  const photo = await readImage(photoId, null);
+  if (!photo || photo.visibility !== "public") return null;
+  return photo.bytes;
 }

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import { fetchFeed } from "@/lib/api";
+import { fetchFeed, fetchOwnProfile, fetchPublicProfile, saveOwnProfile } from "@/lib/api";
 import {
   CAROUSEL_LIMIT,
   EMOJI_GROUPS,
@@ -13,7 +13,9 @@ import {
   loadProfile,
   moveCarouselId,
   portraitFromFile,
+  profileFromServer,
   profileReady,
+  profileWrite,
   profilesEqual,
   saveProfile,
   storeDraft,
@@ -41,26 +43,50 @@ export function Profile({ revision }: { revision: number }) {
   const [typed, setTyped] = useState("");
   const [typedHint, setTypedHint] = useState("");
   const [reading, setReading] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [moreFrames, setMoreFrames] = useState(false);
   const [pool, setPool] = useState<"all" | "mine">("all");
   const [index, setIndex] = useState(0);
   const [openId, setOpenId] = useState<string | null>(null);
   const mounted = useRef(true);
+  const write = useRef(0);
 
   useEffect(() => {
     mounted.current = true;
-    const saved = loadProfile();
-    const pending = loadDraft();
-    setProfile(saved);
-    if (pending && !profilesEqual(pending, saved)) {
-      setDraft(pending);
-      setMode("edit");
-    } else {
-      clearDraft();
-      setDraft(saved);
-      setMode(profileReady(saved) ? "page" : "edit");
+    let stop = false;
+    async function load() {
+      try {
+        const remote = await fetchOwnProfile();
+        if (stop) return;
+        let saved = remote ? profileFromServer(remote) : emptyProfile();
+        if (!remote && profileReady(loadProfile())) {
+          const created = await saveOwnProfile(profileWrite(loadProfile()));
+          if (stop) return;
+          saved = profileFromServer(created);
+          saveProfile(saved);
+        }
+        const pending = loadDraft();
+        setProfile(saved);
+        if (pending && !profilesEqual(pending, saved)) {
+          setDraft(pending);
+          setMode("edit");
+        } else {
+          clearDraft();
+          setDraft(saved);
+          setMode(profileReady(saved) ? "page" : "edit");
+        }
+      } catch (err) {
+        if (stop) return;
+        const local = loadProfile();
+        setProfile(local);
+        setDraft(loadDraft() && !profilesEqual(loadDraft() as Profile, local) ? (loadDraft() as Profile) : local);
+        setMode(profileReady(local) ? "page" : "edit");
+        setFormError(err instanceof Error ? err.message : "The lab didn't answer.");
+      }
     }
+    void load();
     return () => {
+      stop = true;
       mounted.current = false;
     };
   }, []);
@@ -118,18 +144,33 @@ export function Profile({ revision }: { revision: number }) {
     setMode("page");
   }
 
-  function onSave(event: FormEvent) {
+  async function onSave(event: FormEvent) {
     event.preventDefault();
+    if (saving) return;
     setFormError("");
+    setSaving(true);
     try {
-      const saved = saveProfile(draft);
-      setProfile(saved);
+      const saved = await persist(draft);
+      if (!saved) return;
+      clearDraft();
       setDraft(saved);
       setMode("page");
       setIndex(0);
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : "This device couldn't keep the profile.");
+      setFormError(err instanceof Error ? err.message : "The lab didn't answer.");
+    } finally {
+      if (mounted.current) setSaving(false);
     }
+  }
+
+  async function persist(next: Profile): Promise<Profile | null> {
+    const ticket = write.current + 1;
+    write.current = ticket;
+    const saved = profileFromServer(await saveOwnProfile(profileWrite(next)));
+    if (ticket !== write.current) return null;
+    saveProfile(saved);
+    setProfile(saved);
+    return saved;
   }
 
   function chooseEmoji(emoji: string) {
@@ -150,7 +191,7 @@ export function Profile({ revision }: { revision: number }) {
     try {
       const avatarDataUrl = await portraitFromFile(file);
       if (!mounted.current) return;
-      setDraft((current) => ({ ...current, avatarDataUrl, avatarPhotoId: null }));
+      setDraft((current) => ({ ...current, avatarDataUrl, avatarPhotoId: null, avatarUrl: null }));
     } catch (err) {
       if (mounted.current) setFormError(err instanceof Error ? err.message : "This photo can't be read.");
     } finally {
@@ -158,16 +199,17 @@ export function Profile({ revision }: { revision: number }) {
     }
   }
 
-  function updateCarousel(nextIds: string[]) {
+  async function updateCarousel(nextIds: string[]) {
     if (!profile) return;
     const previous = profile;
+    const optimistic = { ...profile, carouselIds: nextIds };
+    setProfile(optimistic);
     try {
-      const saved = saveProfile({ ...profile, carouselIds: nextIds });
-      setProfile(saved);
-      setFormError("");
+      const saved = await persist(optimistic);
+      if (saved) setFormError("");
     } catch (err) {
-      setProfile(previous);
-      setFormError(err instanceof Error ? err.message : "This device couldn't keep the profile.");
+      if (write.current) setProfile(previous);
+      setFormError(err instanceof Error ? err.message : "The lab didn't answer.");
     }
   }
 
@@ -222,7 +264,8 @@ export function Profile({ revision }: { revision: number }) {
           onFile={(file) => void onPortraitFile(file)}
           onMore={() => setMoreFrames(true)}
           onBack={discardEdit}
-          onSave={onSave}
+          onSave={(event) => void onSave(event)}
+          busy={saving}
         />
       ) : null}
       {mode === "arrange" ? (
@@ -311,7 +354,7 @@ function IdentityCard({ profile, onEditPhoto }: { profile: Profile; onEditPhoto?
           <span key={slot}>{emoji || "·"}</span>
         ))}
       </p>
-      <p className="stock-line">KEPT ON THIS DEVICE</p>
+      <p className="stock-line">RELAPSE 400</p>
     </figure>
   );
 }
@@ -322,6 +365,9 @@ function Portrait({ profile }: { profile: Profile }) {
   }
   if (profile.avatarPhotoId) {
     return <FrameImage id={profile.avatarPhotoId} alt="" missing="Missing" />;
+  }
+  if (profile.avatarUrl) {
+    return <img src={profile.avatarUrl} alt="" />;
   }
   return (
     <div className="portrait-empty" aria-hidden="true">
@@ -466,6 +512,7 @@ function ProfileEditor({
   onMore,
   onBack,
   onSave,
+  busy,
 }: {
   draft: Profile;
   saved: boolean;
@@ -485,6 +532,7 @@ function ProfileEditor({
   onMore: () => void;
   onBack: () => void;
   onSave: (event: FormEvent) => void;
+  busy: boolean;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const nameRef = useRef<HTMLInputElement>(null);
@@ -502,7 +550,7 @@ function ProfileEditor({
           ← Profile
         </button>
       ) : (
-        <p className="fine">It stays on this device. A name, a photo, and three emojis that describe you.</p>
+        <p className="fine">Anyone on the feed can open this. A name, a photo, and three emojis that describe you.</p>
       )}
       <div aria-hidden="true">
         <IdentityCard profile={draft} />
@@ -555,11 +603,11 @@ function ProfileEditor({
           onFile(file);
         }}
       />
-      {draft.avatarDataUrl || draft.avatarPhotoId ? (
+      {draft.avatarDataUrl || draft.avatarPhotoId || draft.avatarUrl ? (
         <button
           className="ghost"
           type="button"
-          onClick={() => onDraft({ ...draft, avatarDataUrl: null, avatarPhotoId: null })}
+          onClick={() => onDraft({ ...draft, avatarDataUrl: null, avatarPhotoId: null, avatarUrl: null })}
         >
           Remove photo
         </button>
@@ -585,6 +633,7 @@ function ProfileEditor({
                       ...draft,
                       avatarPhotoId: selected ? null : photo.id,
                       avatarDataUrl: null,
+                      avatarUrl: null,
                     })
                   }
                 >
@@ -660,8 +709,8 @@ function ProfileEditor({
           </div>
         </div>
       ))}
-      <button className="primary profile-save" type="submit" disabled={!ready}>
-        Save profile
+      <button className="primary profile-save" type="submit" disabled={!ready || busy}>
+        {busy ? "Saving…" : "Save profile"}
       </button>
     </form>
   );
@@ -836,6 +885,70 @@ function FrameDialog({
       <button ref={closeRef} className="ghost" type="button" onClick={onClose}>
         Close
       </button>
+    </div>
+  );
+}
+
+export function GuestProfile({ id, onBack }: { id: string; onBack: () => void }) {
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [error, setError] = useState("");
+  const [index, setIndex] = useState(0);
+  const [openId, setOpenId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let stop = false;
+    setProfile(null);
+    setError("");
+    setIndex(0);
+    fetchPublicProfile(id)
+      .then((row) => {
+        if (!stop) setProfile(profileFromServer(row));
+      })
+      .catch((err: unknown) => {
+        if (!stop) setError(err instanceof Error ? err.message : "That profile is gone.");
+      });
+    return () => {
+      stop = true;
+    };
+  }, [id]);
+
+  useEffect(() => {
+    if (!openId) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpenId(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [openId]);
+
+  const openPhoto = openId ? { id: openId, caption: "" } : null;
+
+  return (
+    <div className="scroll" data-screen="guest-profile">
+      <button className="ghost back" type="button" onClick={onBack}>
+        ← Back
+      </button>
+      {error ? <p className="error">{error}</p> : null}
+      {profile ? (
+        <>
+          <IdentityCard profile={profile} />
+          <div className="strip-head">
+            <h2 className="section">Carousel</h2>
+            <p className="fine">
+              {profile.carouselIds.length} of {CAROUSEL_LIMIT}
+            </p>
+          </div>
+          {profile.carouselIds.length === 0 ? (
+            <div className="empty">
+              <h2>Nothing on the strip.</h2>
+              <p>They haven't picked frames yet.</p>
+            </div>
+          ) : (
+            <Carousel ids={profile.carouselIds} photos={[]} index={index} onIndex={setIndex} onOpen={setOpenId} />
+          )}
+        </>
+      ) : null}
+      {openPhoto ? <FrameDialog photo={openPhoto} onClose={() => setOpenId(null)} /> : null}
     </div>
   );
 }
