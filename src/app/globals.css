@@ -91,6 +91,16 @@ h1, h2, h3, p { margin: 0; }
   position: relative;
 }
 
+.shoot-slot {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.shoot-slot[hidden] {
+  display: none;
+}
+
 .top {
   padding: calc(16px + var(--safe-top)) 16px 4px;
 }

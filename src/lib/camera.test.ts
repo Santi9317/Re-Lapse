@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  cameraWake,
   capturePlan,
   labeledDeviceIds,
   parseStoredCamera,
@@ -8,6 +9,7 @@ import {
   readCameraRecord,
   savedDeviceId,
   shouldRetryCamera,
+  streamHasLiveVideo,
   writeCameraRecord,
   type StoredCamera,
 } from "./camera.ts";
@@ -184,6 +186,34 @@ test("a refusal is not retried, and a missing saved camera is", () => {
   assert.equal(shouldRetryCamera("OverconstrainedError"), true);
   assert.equal(shouldRetryCamera("NotFoundError"), true);
   assert.equal(shouldRetryCamera("ConstraintNotSatisfiedError"), true);
+});
+
+test("leaving the home screen keeps a live track and does not ask again", () => {
+  for (const event of ["visibility-hidden", "pagehide", "blur", "leave-shoot"] as const) {
+    assert.equal(cameraWake(event, true), "keep");
+    assert.equal(cameraWake(event, false), "keep");
+  }
+  assert.equal(cameraWake("visibility-visible", true), "reuse");
+  assert.equal(cameraWake("pageshow", true), "reuse");
+  assert.equal(cameraWake("show-shoot", true), "reuse");
+  assert.equal(cameraWake("visibility-visible", false), "request");
+  assert.equal(cameraWake("pageshow", false), "request");
+  assert.equal(cameraWake("show-shoot", false), "request");
+});
+
+test("a live video track is the only reason to skip a new camera request", () => {
+  assert.equal(streamHasLiveVideo(null), false);
+  assert.equal(streamHasLiveVideo({ getVideoTracks: () => [] }), false);
+  assert.equal(streamHasLiveVideo({ getVideoTracks: () => [{ readyState: "ended" }] }), false);
+  assert.equal(streamHasLiveVideo({ getVideoTracks: () => [{ readyState: "live" }] }), true);
+  assert.equal(
+    streamHasLiveVideo({
+      getVideoTracks() {
+        throw new Error("gone");
+      },
+    }),
+    false,
+  );
 });
 
 test("corrupt site data does not become a grant", () => {

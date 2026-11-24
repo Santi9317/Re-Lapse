@@ -7,79 +7,50 @@ export type HowToSection = {
 export const HOW_TO: HowToSection[] = [
   {
     id: "shoot",
-    title: "Shooting",
-    body: [
-      "The round button is the shutter. Space bar too. The tally counts frames sent. This disposable does not run out. On an iPhone, flash starts on. The bolt turns it off. Back flash is the phone. Front flash is the screen.",
-    ],
-  },
-  {
-    id: "look",
-    title: "The film look",
-    body: [
-      "What leaves the camera is not the preview. A tall frame, a little warmer, fine grain, soft corners. The date stamp prints in that orange, unless you turn it off.",
-    ],
-  },
-  {
-    id: "preview",
-    title: "Front preview",
-    body: [
-      "The live front preview is a mirror. The shutter ignores the trick. The print stays true. The back camera is never mirrored.",
-    ],
-  },
-  {
-    id: "captions",
-    title: "Captions",
-    body: [
-      "Optional, eighty characters. It rides the print if you share. Leave it blank and the lab does not invent one. Enter sends the frame.",
-    ],
+    title: "Shoot",
+    body: ["The round button takes the picture. The little counter keeps score. This roll does not run out."],
   },
   {
     id: "wait",
-    title: "The develop wait",
+    title: "The wait",
     body: [
-      "A personal frame waits five to thirty minutes. You do not pick the number, and you do not peek. A dot means it is ready. Tap Develop. Still yours alone.",
-    ],
-  },
-  {
-    id: "feed",
-    title: "The feed",
-    body: [
-      "Developed is not shared. Send it when the frame deserves other people. Everyone with this link can see it for a week, then it lapses. Tap to open. Yours can be saved, deleted, or filed.",
+      "A frame you just shot is not ready. It takes five to thirty minutes, and you do not pick the number. No peeking. When the dot shows, tap Develop.",
     ],
   },
   {
     id: "albums",
     title: "Albums",
-    body: [
-      "Rolls are stacks you name. File a frame you shot into a roll you started. Event frames stay with their event.",
-    ],
-  },
-  {
-    id: "events",
-    title: "Events",
-    body: [
-      "A shared camera with a clock, from one hour to a day. Invite by code, link, or name. It seals for a day and nobody peeks. Then you pick what hits the feed.",
-    ],
+    body: ["Albums are stacks you name. File a frame you shot into one you started."],
   },
   {
     id: "stickers",
-    title: "Stickers",
+    title: "Frame stickers",
     body: [
-      "Double-tap someone else's photo. One emoji, and it stays. Pick again to change yours. Not on a frame you shot.",
+      "Double-tap a photo someone else shot. One emoji, and it stays. Tap again to change yours. A frame you shot does not take one.",
     ],
   },
   {
-    id: "updates",
-    title: "Updates",
+    id: "zoom",
+    title: "Pinch zoom",
+    body: ["Pinch the viewfinder. The picture keeps the view you had."],
+  },
+  {
+    id: "flip",
+    title: "Flip",
     body: [
-      "One dialog when a new version is waiting. Santi is in the lab. Develop the update reloads once. That version does not ask again.",
+      "Double-tap the viewfinder to swap the front camera and the back camera. The front preview stays a mirror. The saved photo does not.",
     ],
   },
   {
-    id: "home",
-    title: "Safari home screen",
+    id: "profile",
+    title: "Profile",
+    body: ["Your name, your photo, and three emojis. They show up on the frames you share."],
+  },
+  {
+    id: "menu",
+    title: "This menu",
     body: [
-      "Safari asks once. Yes, then Share, Add to Home Screen, Add. On a Mac, Share, then Add to Dock. Opened from the icon, it stays quiet.",
+      "You found it. Version is the number that moves when the camera changes. Inspiration hands you one line, then a different one next time.",
     ],
   },
 ];

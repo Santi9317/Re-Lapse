@@ -1,3 +1,11 @@
+/**
+ * Version shown in the You menu. Bump it on every merged PR.
+ * A small change adds 0.1 (1.36 then 1.37). A major change bumps the whole
+ * number and resets the decimal (2.0). On 1.x the decimal is this PR's number.
+ * Keep package.json "version" equal to this string.
+ */
+export const APP_VERSION = "1.0";
+
 export type Release = {
   version: string;
   sha: string;

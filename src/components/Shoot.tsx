@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { blobToBase64, sendPhoto } from "@/lib/api";
-import { isHardwareShutter, openCamera, releaseCamera } from "@/lib/camera";
+import { cameraWake, isHardwareShutter, openCamera, peekCamera, type CameraWake } from "@/lib/camera";
+import { shouldFlipOnDoubleTap } from "@/lib/tap";
 import { isIosDevice, setTorch, wait } from "@/lib/flash";
 import { renderDisposable } from "@/lib/filter";
 import { exposureLine, lapseQuip } from "@/lib/quips";
@@ -67,11 +68,13 @@ function clickSound() {
 }
 
 export function Shoot({
+  active,
   armed,
   devTimers,
   onDisarm,
   onSent,
 }: {
+  active: boolean;
   armed: EventRoll | null;
   devTimers: boolean;
   onDisarm: () => void;
@@ -104,6 +107,8 @@ export function Shoot({
   const [opened, setOpened] = useState(0);
   const finderRef = useRef<HTMLDivElement>(null);
   const suppressClickRef = useRef(false);
+  const flipRef = useRef<() => void>(() => {});
+  const lastFlip = useRef(0);
   const engineRef = useRef<ViewfinderZoom | null>(null);
   if (engineRef.current == null) {
     engineRef.current = createViewfinderZoom((state) => {
@@ -127,8 +132,41 @@ export function Shoot({
   const sealedRef = useRef(sealed);
   sealedRef.current = sealed;
 
+  const wakeRef = useRef<(event: CameraWake) => void>(() => {});
+  const openedShoot = useRef(false);
+
+  function attachStream(stream: MediaStream) {
+    streamRef.current = stream;
+    engineRef.current?.adopt(stream.getVideoTracks()[0] ?? null);
+    setOpened((value) => value + 1);
+    setMode("live");
+  }
+
+  function wake(event: CameraWake) {
+    const ready = peekCamera(facingRef.current);
+    const action = cameraWake(event, ready != null);
+    if (action === "keep") return;
+    if (action === "reuse" && ready) {
+      attachStream(ready);
+      return;
+    }
+    void openCamera(facingRef.current).then((stream) => {
+      if (!stream) {
+        if (!peekCamera(facingRef.current)) setMode("fallback");
+        return;
+      }
+      attachStream(stream);
+    });
+  }
+  wakeRef.current = wake;
+
   useEffect(() => {
     let cancel = false;
+    const ready = peekCamera(facing);
+    if (ready && cameraWake("show-shoot", true) === "reuse") {
+      attachStream(ready);
+      return;
+    }
     engineRef.current?.adopt(null);
     async function open() {
       const stream = await openCamera(facing);
@@ -139,10 +177,7 @@ export function Shoot({
         setMode("fallback");
         return;
       }
-      streamRef.current = stream;
-      engineRef.current?.adopt(stream.getVideoTracks()[0] ?? null);
-      setOpened((value) => value + 1);
-      setMode("live");
+      attachStream(stream);
     }
     setMode("opening");
     void open();
@@ -152,42 +187,32 @@ export function Shoot({
   }, [facing]);
 
   useEffect(() => {
-    const resume = () => {
-      if (document.visibilityState !== "visible") return;
-      void openCamera(facingRef.current).then((stream) => {
-        if (!stream) return;
-        streamRef.current = stream;
-        engineRef.current?.adopt(stream.getVideoTracks()[0] ?? null);
-        const video = videoRef.current;
-        if (video) {
-          video.srcObject = stream;
-          video.style.visibility = "";
-          void video.play().catch(() => undefined);
-        }
-        setMode("live");
-      });
-    };
-    const park = () => {
-      releaseCamera();
-      streamRef.current = null;
-      engineRef.current?.adopt(null);
-    };
+    // The re-prompt lived here. visibilitychange (hidden) and pagehide both
+    // called releaseCamera(), which stopped every track. Coming back ran
+    // openCamera(), and camera.ts request() called getUserMedia because no
+    // video track was still live. The effect cleanup did the same stop when
+    // Shoot unmounted. Keep the track. Ask only when none is live. pagehide
+    // and blur are not listened for, so they cannot stop it either.
     const onVisibility = () => {
-      if (document.visibilityState === "hidden") park();
-      else resume();
+      wakeRef.current(document.visibilityState === "hidden" ? "visibility-hidden" : "visibility-visible");
     };
+    const onPageShow = () => wakeRef.current("pageshow");
     document.addEventListener("visibilitychange", onVisibility);
-    window.addEventListener("pagehide", park);
-    window.addEventListener("pageshow", resume);
+    window.addEventListener("pageshow", onPageShow);
     return () => {
       document.removeEventListener("visibilitychange", onVisibility);
-      window.removeEventListener("pagehide", park);
-      window.removeEventListener("pageshow", resume);
-      releaseCamera();
-      streamRef.current = null;
-      engineRef.current?.adopt(null);
+      window.removeEventListener("pageshow", onPageShow);
     };
   }, []);
+
+  useEffect(() => {
+    if (!active) return;
+    if (!openedShoot.current) {
+      openedShoot.current = true;
+      return;
+    }
+    wakeRef.current("show-shoot");
+  }, [active]);
 
   useEffect(() => {
     const finder = finderRef.current;
@@ -195,9 +220,12 @@ export function Shoot({
     if (!finder || !engine) return;
 
     let session: { distance: number; zoom: number; moved: boolean } | null = null;
+    let lastTap: { x: number; y: number; at: number } | null = null;
+    let pinchGesture = false;
     const live = () => modeRef.current === "live" && !sealedRef.current;
 
     const onStart = (event: TouchEvent) => {
+      if (event.touches.length >= 2) pinchGesture = true;
       if (!live() || event.touches.length !== 2) return;
       const distance = pinchDistance(event.touches[0], event.touches[1]);
       if (!(distance > 0)) return;
@@ -223,6 +251,28 @@ export function Shoot({
         }, 500);
       }
       session = null;
+      if (event.touches.length > 0) return;
+      const pinched = pinchGesture;
+      pinchGesture = false;
+      if (pinched || !live()) return;
+      const touch = event.changedTouches[0];
+      if (!touch) return;
+      const onControl =
+        event.target instanceof Element && Boolean(event.target.closest("button, a, input, textarea, label"));
+      const next = { x: touch.clientX, y: touch.clientY, at: Date.now() };
+      if (shouldFlipOnDoubleTap({ live: true, onControl, pinched: false, previous: lastTap, next })) {
+        lastTap = null;
+        event.preventDefault();
+        flipRef.current();
+        return;
+      }
+      lastTap = onControl ? null : next;
+    };
+
+    const onCancel = (event: TouchEvent) => {
+      if (event.touches.length >= 2) return;
+      session = null;
+      if (event.touches.length === 0) pinchGesture = false;
     };
 
     const onWheel = (event: WheelEvent) => {
@@ -237,8 +287,8 @@ export function Shoot({
 
     finder.addEventListener("touchstart", onStart, { passive: true });
     finder.addEventListener("touchmove", onMove, { passive: false });
-    finder.addEventListener("touchend", onEnd);
-    finder.addEventListener("touchcancel", onEnd);
+    finder.addEventListener("touchend", onEnd, { passive: false });
+    finder.addEventListener("touchcancel", onCancel);
     finder.addEventListener("wheel", onWheel, { passive: false });
     finder.addEventListener("gesturestart", stopGesture, { passive: false });
     finder.addEventListener("gesturechange", stopGesture, { passive: false });
@@ -246,7 +296,7 @@ export function Shoot({
       finder.removeEventListener("touchstart", onStart);
       finder.removeEventListener("touchmove", onMove);
       finder.removeEventListener("touchend", onEnd);
-      finder.removeEventListener("touchcancel", onEnd);
+      finder.removeEventListener("touchcancel", onCancel);
       finder.removeEventListener("wheel", onWheel);
       finder.removeEventListener("gesturestart", stopGesture);
       finder.removeEventListener("gesturechange", stopGesture);
@@ -379,6 +429,7 @@ export function Shoot({
   const snapRef = useRef(snap);
   snapRef.current = snap;
   useEffect(() => {
+    if (!active) return;
     const onKey = (event: KeyboardEvent) => {
       const hardware = isHardwareShutter(event);
       if (event.code !== "Space" && !hardware) return;
@@ -389,7 +440,16 @@ export function Shoot({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [active]);
+
+  function flipCamera() {
+    if (modeRef.current !== "live" || sealedRef.current) return;
+    const now = Date.now();
+    if (now - lastFlip.current < 450) return;
+    lastFlip.current = now;
+    setFacing((side) => (side === "environment" ? "user" : "environment"));
+  }
+  flipRef.current = flipCamera;
 
   function retake() {
     bitmapRef.current?.close();
@@ -445,6 +505,11 @@ export function Shoot({
         data-zoom={zoom}
         data-zoom-mode={optical ? "optical" : "crop"}
         data-preview-scale={preview}
+        onDoubleClick={(event) => {
+          if (!(event.target instanceof Element)) return;
+          if (event.target.closest("button, a, input, textarea, label")) return;
+          flipCamera();
+        }}
         onClickCapture={(event) => {
           if (!suppressClickRef.current) return;
           suppressClickRef.current = false;

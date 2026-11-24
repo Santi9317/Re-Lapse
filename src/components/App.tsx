@@ -138,8 +138,9 @@ function CameraDesk() {
         ) : null}
         {devTimers ? <p className="devmark">Lab clock</p> : null}
         <div className="stage">
-          {tab === "shoot" ? (
+          <div className="shoot-slot" hidden={tab !== "shoot"}>
             <Shoot
+              active={tab === "shoot"}
               armed={armed}
               devTimers={devTimers}
               onDisarm={() => setArmed(null)}
@@ -148,7 +149,7 @@ function CameraDesk() {
                 chooseTab("lab");
               }}
             />
-          ) : null}
+          </div>
           {tab === "lab" ? (
             <Lab
               revision={labRevision}
