@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { normalizePin, profilePinHash } from "./pin.ts";
+import { PIN_RESTORE_LIMIT, normalizePin, pinRestoreOpen, profilePinHash } from "./pin.ts";
 
 test("a profile PIN is six digits", () => {
   assert.equal(normalizePin("048213"), "048213");
@@ -12,6 +12,13 @@ test("a profile PIN is six digits", () => {
   assert.equal(normalizePin("12ab56"), null);
   assert.equal(normalizePin(123456), null);
   assert.equal(normalizePin(""), null);
+});
+
+test("the gate stops checking PINs after a short shared run", () => {
+  assert.equal(pinRestoreOpen(0), true);
+  assert.equal(pinRestoreOpen(PIN_RESTORE_LIMIT - 1), true);
+  assert.equal(pinRestoreOpen(PIN_RESTORE_LIMIT), false);
+  assert.equal(pinRestoreOpen(Number.NaN), false);
 });
 
 test("the stored PIN is not the digits", () => {

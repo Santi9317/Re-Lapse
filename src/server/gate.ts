@@ -3,7 +3,6 @@ import { sql, withTransaction, type Sql } from "@/lib/db";
 import { HttpError } from "@/server/http";
 import { gateCookie, gateSecret, guessMayCompare, sameSecret } from "@/server/gate-key";
 import { JOIN_LIMITS, joinRoom } from "@/server/join-line";
-import { mintRoom } from "@/server/mint";
 import { cameraProof, provenCamera } from "@/server/quota";
 import { isUuid } from "@/server/validate";
 
@@ -57,8 +56,6 @@ export async function readMembership(request: Request): Promise<{ status: GateDe
   return findByToken(token);
 }
 
-const MINT_WINDOW_MS = 10 * 60_000;
-
 function countOf(value: unknown): number {
   return typeof value === "number" ? value : Number(value ?? 0);
 }
@@ -105,22 +102,18 @@ export async function askToJoin(request: Request, name: string, booth: string): 
   const token = randomUUID();
   const reserved = await withTransaction(async (q) => {
     await lockJoinLine(q);
-    const counts = await q<{ pending: number; recent: number; minted: number; booth_n: number }>(
+    const counts = await q<{ pending: number; recent: number }>(
       `select
          (select count(*)::int from join_requests where status = 'pending') as pending,
-         (select count(*)::int from join_requests where created_at > now() - ($1::int * interval '1 millisecond')) as recent,
-         (select count(*)::int from camera_mints where created_at > now() - ($2::int * interval '1 millisecond')) as minted,
-         (select count(*)::int from camera_mints where booth = $3 and created_at > now() - ($2::int * interval '1 millisecond')) as booth_n`,
-      [JOIN_LIMITS.windowMs, MINT_WINDOW_MS, booth.toLowerCase()],
+         (select count(*)::int from join_requests where created_at > now() - ($1::int * interval '1 millisecond')) as recent`,
+      [JOIN_LIMITS.windowMs],
     );
     const pending = countOf(counts[0]?.pending);
     const recent = countOf(counts[0]?.recent);
-    const minted = countOf(counts[0]?.minted);
-    const boothCount = countOf(counts[0]?.booth_n);
-    if (!joinRoom(pending, recent) || !mintRoom(boothCount, minted)) return false;
+    if (!joinRoom(pending, recent)) return false;
     await q(
-      `insert into camera_mints (token, created_at, booth) values ($1, now(), $2)`,
-      [token, booth.toLowerCase()],
+      `insert into cameras (token, created_at) values ($1, now()) on conflict (token) do nothing`,
+      [token],
     );
     await q(
       `insert into join_requests (id, camera_token, display_name, status) values ($1, $2, $3, 'pending')`,

@@ -19,7 +19,7 @@ export async function POST(request: Request) {
     const body = asRecord(await readJson(request));
     const pin = normalizePin(body.pin);
     if (!pin) return sealBooth(json({ error: "Enter the 6-digit PIN." }, 400), request, booth);
-    const result = await takePinRestore(booth, pin);
+    const result = await takePinRestore(pin);
     if (!result.ok) {
       await delay(GATE_GUESS_DELAY_MS);
       const blocked = result.reason === "blocked";
@@ -36,7 +36,6 @@ export async function POST(request: Request) {
     const membership = await ensureRestoredApproval(result.token, profile?.username ?? "Camera");
     const response = sealCamera(
       json({
-        token: result.token,
         status: membership.status,
         name: profile?.username || membership.name,
         profile,

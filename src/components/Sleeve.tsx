@@ -30,6 +30,7 @@ function writeLast(id: string) {
 export function Sleeve() {
   const [panel, setPanel] = useState<Panel | null>(null);
   const [quote, setQuote] = useState<Quote | null>(null);
+  const [recoverySet, setRecoverySet] = useState(false);
   const [recoveryPin, setRecoveryPin] = useState<string | null>(null);
   const backRef = useRef<HTMLButtonElement>(null);
   const markRef = useRef<HTMLButtonElement>(null);
@@ -58,15 +59,16 @@ export function Sleeve() {
   useEffect(() => {
     if (!panel) {
       setRecoveryPin(null);
+      setRecoverySet(false);
       return;
     }
     let stop = false;
     void fetchRecoveryPin()
-      .then((pin) => {
-        if (!stop) setRecoveryPin(pin);
+      .then((set) => {
+        if (!stop) setRecoverySet(set);
       })
       .catch(() => {
-        if (!stop) setRecoveryPin(null);
+        if (!stop) setRecoverySet(false);
       });
     return () => {
       stop = true;
@@ -112,9 +114,9 @@ export function Sleeve() {
             <span>A line for the next time you need one.</span>
           </button>
           <button type="button" data-sleeve-item="recovery" onClick={() => setPanel("recovery")}>
-            <strong>{recoveryPin ? "Change recovery PIN" : "Set a recovery PIN"}</strong>
+            <strong>{recoverySet || recoveryPin ? "Change recovery PIN" : "Set a recovery PIN"}</strong>
             <span className={recoveryPin ? "recovery-menu-pin" : undefined}>
-              {recoveryPin ? groupedPin(recoveryPin) : "You don't have one yet."}
+              {recoveryPin ? groupedPin(recoveryPin) : recoverySet ? "A PIN is set." : "You don't have one yet."}
             </span>
           </button>
         </div>
@@ -142,7 +144,16 @@ export function Sleeve() {
           ))}
         </article>
       ) : null}
-      {panel === "recovery" ? <RecoveryPinPanel pin={recoveryPin} onPin={setRecoveryPin} /> : null}
+      {panel === "recovery" ? (
+        <RecoveryPinPanel
+          saved={recoverySet}
+          pin={recoveryPin}
+          onPin={(pin) => {
+            setRecoveryPin(pin);
+            setRecoverySet(true);
+          }}
+        />
+      ) : null}
       {panel === "inspiration" ? (
         <div className="sleeve-copy" data-inspiration>
           <h2 className="section">Inspiration</h2>
