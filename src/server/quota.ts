@@ -89,7 +89,8 @@ export async function releaseUnusedCamera(token: string): Promise<void> {
        and not exists (select 1 from photos p where p.shooter_token = c.token)
        and not exists (select 1 from albums a where a.owner_token = c.token)
        and not exists (select 1 from events e where e.owner_token = c.token)
-       and not exists (select 1 from profiles r where r.shooter_token = c.token)`,
+       and not exists (select 1 from profiles r where r.shooter_token = c.token)
+       and not exists (select 1 from stickers s where s.shooter_token = c.token)`,
     [token],
   );
 }

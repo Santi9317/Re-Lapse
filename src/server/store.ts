@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { devClockRequested, eventTimes, FEED_DAYS, personalReadyAt } from "@/lib/clock";
 import { sql } from "@/lib/db";
-import type { Album, EventDetail, EventRoll, EventStatus, FeedItem, LabItem, LabState, ProfileWrite, SharedProfile } from "@/lib/types";
+import { isEmoji } from "@/lib/profile";
+import type { Album, EventDetail, EventRoll, EventStatus, FeedItem, FrameSticker, LabItem, LabState, ProfileWrite, SharedProfile } from "@/lib/types";
 import { HttpError } from "@/server/http";
 import { assertCreateAllowed, cameraIsYoung, noteCreate, releaseUnusedCamera } from "@/server/quota";
 import { cleanJpeg } from "@/server/validate";
@@ -95,7 +96,8 @@ async function runReclaim(): Promise<void> {
      where p.updated_at < now() - interval '24 hours'
        and not exists (select 1 from photos ph where ph.shooter_token = p.shooter_token)
        and not exists (select 1 from albums a where a.owner_token = p.shooter_token)
-       and not exists (select 1 from events e where e.owner_token = p.shooter_token)`,
+       and not exists (select 1 from events e where e.owner_token = p.shooter_token)
+       and not exists (select 1 from stickers s where s.shooter_token = p.shooter_token)`,
   );
   await sql(`delete from create_log where created_at < now() - interval '2 hours'`);
   await sql(
@@ -104,7 +106,8 @@ async function runReclaim(): Promise<void> {
        and not exists (select 1 from photos p where p.shooter_token = c.token)
        and not exists (select 1 from albums a where a.owner_token = c.token)
        and not exists (select 1 from events e where e.owner_token = c.token)
-       and not exists (select 1 from profiles r where r.shooter_token = c.token)`,
+       and not exists (select 1 from profiles r where r.shooter_token = c.token)
+       and not exists (select 1 from stickers s where s.shooter_token = c.token)`,
   );
 }
 
@@ -397,6 +400,7 @@ function feedItem(row: Record<string, unknown>): FeedItem {
       ? [String(row.emoji_1 ?? ""), String(row.emoji_2 ?? ""), String(row.emoji_3 ?? "")]
       : null,
     profileAvatar: flag(row.has_avatar),
+    stickers: [],
   };
 }
 
@@ -433,7 +437,67 @@ export async function listFeed(viewer: string): Promise<FeedItem[]> {
      limit 80`,
     [viewer],
   );
-  return rows.map(feedItem);
+  return attachStickers(rows.map(feedItem), viewer);
+}
+
+const STICKER_CAP = 24;
+
+async function attachStickers(items: FeedItem[], viewer: string): Promise<FeedItem[]> {
+  if (items.length === 0) return items;
+  const ids = items.map((item) => item.id);
+  const marks = ids.map((_, index) => `$${index + 2}`).join(", ");
+  const rows = await sql(
+    `select
+       s.photo_id,
+       s.emoji,
+       pr.id as profile_id,
+       pr.username as profile_name,
+       (s.shooter_token = $1) as mine
+     from stickers s
+     join profiles pr on pr.shooter_token = s.shooter_token
+     where s.photo_id in (${marks})
+     order by s.created_at, s.shooter_token`,
+    [viewer, ...ids],
+  );
+  const grouped = new Map<string, FrameSticker[]>();
+  for (const row of rows) {
+    const id = String(row.photo_id);
+    const list = grouped.get(id) ?? [];
+    list.push({
+      emoji: String(row.emoji),
+      profileId: String(row.profile_id),
+      profileName: String(row.profile_name ?? ""),
+      mine: flag(row.mine),
+    });
+    grouped.set(id, list);
+  }
+  return items.map((item) => ({ ...item, stickers: grouped.get(item.id) ?? [] }));
+}
+
+async function stickersFor(photoId: string, viewer: string): Promise<FrameSticker[]> {
+  const [item] = await attachStickers(
+    [
+      {
+        id: photoId,
+        caption: "",
+        createdAt: 0,
+        developedAt: null,
+        sortAt: 0,
+        albumId: null,
+        albumName: null,
+        eventId: null,
+        eventName: null,
+        mine: false,
+        profileId: null,
+        profileName: null,
+        profileEmojis: null,
+        profileAvatar: false,
+        stickers: [],
+      },
+    ],
+    viewer,
+  );
+  return item?.stickers ?? [];
 }
 
 export async function listLab(token: string): Promise<LabItem[]> {
@@ -615,6 +679,43 @@ export async function filePhoto(id: string, token: string, albumId: string | nul
   if (!rows[0]) throw new HttpError(409, "That frame can't be filed.");
 }
 
+// One sticker per camera per frame. Picking again replaces that camera's emoji.
+export async function setSticker(photoId: string, token: string, emoji: string): Promise<FrameSticker[]> {
+  if (!isEmoji(emoji)) throw new HttpError(400, "Pick an emoji.");
+  const profile = await readOwnProfile(token);
+  if (!profile) throw new HttpError(409, "Name yourself first.");
+  const frames = await sql<{ shooter_token: string; on_feed: boolean }>(
+    `select p.shooter_token, ${liveOnFeed} as on_feed
+     from photos p
+     left join events e on e.id = p.event_id
+     where p.id = $1`,
+    [photoId],
+  );
+  const frame = frames[0];
+  if (!frame) throw new HttpError(404, "That frame is gone.");
+  if (frame.shooter_token === token) throw new HttpError(403, "Stick a frame that isn't yours.");
+  if (!flag(frame.on_feed)) throw new HttpError(409, "That frame isn't on the feed.");
+  const existing = await sql<{ photo_id: string }>(
+    `select photo_id from stickers where photo_id = $1 and shooter_token = $2`,
+    [photoId, token],
+  );
+  if (!existing[0]) {
+    const counted = await sql<{ n: number }>(
+      `select count(*)::int as n from stickers where photo_id = $1`,
+      [photoId],
+    );
+    if (num(counted[0]?.n) >= STICKER_CAP) throw new HttpError(409, "This frame is covered.");
+  }
+  await sql(
+    `insert into stickers (photo_id, shooter_token, emoji)
+     values ($1, $2, $3)
+     on conflict (photo_id, shooter_token) do update
+       set emoji = excluded.emoji, updated_at = now()`,
+    [photoId, token, emoji],
+  );
+  return stickersFor(photoId, token);
+}
+
 export async function readImage(
   id: string,
   viewer: string | null,
@@ -731,7 +832,7 @@ export async function getAlbum(id: string, viewer: string): Promise<{ album: Alb
       createdAt: num(album.created_ms),
       frameCount: num(album.frame_count),
     },
-    photos: photos.map(feedItem),
+    photos: await attachStickers(photos.map(feedItem), viewer),
   };
 }
 
@@ -821,7 +922,7 @@ export async function getEvent(id: string, viewer: string): Promise<EventDetail 
      limit 80`,
     [viewer, id],
   );
-  return { ...event, photos: photos.map(feedItem) };
+  return { ...event, photos: await attachStickers(photos.map(feedItem), viewer) };
 }
 
 export function wantsDevClock(header: string | null): boolean {

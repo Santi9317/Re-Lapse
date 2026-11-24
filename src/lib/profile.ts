@@ -31,6 +31,9 @@ export const EMOJI_GROUPS: { label: string; emojis: string[] }[] = [
 
 export const EMOJI_CHOICES = EMOJI_GROUPS.flatMap((group) => group.emojis);
 
+/** Marks used when a sticker is the first time this camera names itself. */
+export const STARTER_EMOJIS: [string, string, string] = ["📷", "✨", "🌈"];
+
 export type Profile = {
   username: string;
   emojis: [string, string, string];

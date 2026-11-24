@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { deletePhoto, fetchAlbums, fetchFeed, filePhoto } from "@/lib/api";
-import type { Album, FeedItem } from "@/lib/types";
+import type { Album, FeedItem, FrameSticker } from "@/lib/types";
 import { Lightbox, PrintView } from "@/components/Print";
 
 export function Feed({ revision, onOpenProfile }: { revision: number; onOpenProfile: (id: string) => void }) {
@@ -11,23 +11,25 @@ export function Feed({ revision, onOpenProfile }: { revision: number; onOpenProf
   const [error, setError] = useState("");
   const [open, setOpen] = useState<FeedItem | null>(null);
   const removed = useRef(new Set<string>());
+  const generation = useRef(0);
 
   useEffect(() => {
     let stop = false;
     async function load() {
+      const ticket = ++generation.current;
       try {
         const [feed, rolls] = await Promise.all([fetchFeed(), fetchAlbums()]);
-        if (stop) return;
-        setPhotos(feed.photos.filter((photo) => !removed.current.has(photo.id)));
-        setOpen((current) =>
-          current && feed.photos.some((photo) => photo.id === current.id) && !removed.current.has(current.id)
-            ? current
-            : null,
-        );
+        if (stop || ticket !== generation.current) return;
+        const next = feed.photos.filter((photo) => !removed.current.has(photo.id));
+        setPhotos(next);
+        setOpen((current) => {
+          if (!current || removed.current.has(current.id)) return null;
+          return next.find((photo) => photo.id === current.id) ?? null;
+        });
         setAlbums(rolls);
         setError("");
       } catch (err) {
-        if (!stop) setError(err instanceof Error ? err.message : "The lab didn't answer.");
+        if (!stop && ticket === generation.current) setError(err instanceof Error ? err.message : "The lab didn't answer.");
       }
     }
     void load();
@@ -52,6 +54,12 @@ export function Feed({ revision, onOpenProfile }: { revision: number; onOpenProf
       setPhotos(previous);
       setError(err instanceof Error ? err.message : "That frame can't be filed.");
     }
+  }
+
+  function onStickers(id: string, stickers: FrameSticker[]) {
+    generation.current += 1;
+    setPhotos((current) => current.map((photo) => (photo.id === id ? { ...photo, stickers } : photo)));
+    setOpen((current) => (current && current.id === id ? { ...current, stickers } : current));
   }
 
   async function onDelete(id: string) {
@@ -91,12 +99,19 @@ export function Feed({ revision, onOpenProfile }: { revision: number; onOpenProf
               onOpen={setOpen}
               onOpenProfile={onOpenProfile}
               onDelete={onDelete}
+              onStickers={onStickers}
             />
           ))}
         </div>
       )}
       {open ? (
-        <Lightbox item={open} onClose={() => setOpen(null)} onOpenProfile={onOpenProfile} onDelete={onDelete} />
+        <Lightbox
+          item={open}
+          onClose={() => setOpen(null)}
+          onOpenProfile={onOpenProfile}
+          onDelete={onDelete}
+          onStickers={onStickers}
+        />
       ) : null}
     </div>
   );

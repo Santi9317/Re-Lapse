@@ -192,7 +192,14 @@ export function Rolls({
         ) : (
           <div className="grid">
             {albumDetail.photos.map((photo) => (
-              <PrintView key={photo.id} item={photo} onOpen={setOpen} onDelete={onDelete} compact />
+              <PrintView
+                key={photo.id}
+                item={photo}
+                onOpen={setOpen}
+                onOpenProfile={onOpenProfile}
+                onDelete={onDelete}
+                compact
+              />
             ))}
           </div>
         )}
