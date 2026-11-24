@@ -5,16 +5,18 @@ import { devFlagStored, fetchConfig, fetchLab, shooterToken } from "@/lib/api";
 import type { EventRoll } from "@/lib/types";
 import { Feed } from "@/components/Feed";
 import { Lab } from "@/components/Lab";
+import { Profile } from "@/components/Profile";
 import { Rolls } from "@/components/Rolls";
 import { Shoot } from "@/components/Shoot";
 
-type Tab = "shoot" | "lab" | "feed" | "rolls";
+type Tab = "shoot" | "lab" | "feed" | "rolls" | "you";
 type InstallPrompt = Event & { prompt: () => Promise<void> };
 
 const lede: Record<Exclude<Tab, "shoot">, string> = {
   lab: "Hidden until you develop them. Only the frames you send reach the feed.",
   feed: "Everyone with this link. Newest shared frames first.",
   rolls: "Little rolls, and events that come back from the lab.",
+  you: "Your profile, on this device.",
 };
 
 export function App() {
@@ -110,6 +112,7 @@ export function App() {
             />
           ) : null}
           {tab === "feed" ? <Feed revision={feedRevision} /> : null}
+          {tab === "you" ? <Profile revision={feedRevision} /> : null}
           {tab === "rolls" ? (
             <Rolls
               revision={feedRevision}
@@ -153,6 +156,7 @@ export function App() {
               ["lab", "Lab"],
               ["feed", "Feed"],
               ["rolls", "Rolls"],
+              ["you", "You"],
             ] as const
           ).map(([id, label]) => (
             <button key={id} type="button" aria-pressed={tab === id} onClick={() => setTab(id)}>

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { createAlbum, createEvent, fetchAlbum, fetchAlbums, fetchEvent, fetchEvents } from "@/lib/api";
 import { clockLabel, frames, longRemain } from "@/lib/format";
 import type { Album, EventDetail, EventRoll, EventStatus, FeedItem } from "@/lib/types";
+import { useSavedProfile } from "@/lib/useSavedProfile";
 import { Lightbox, PrintView } from "@/components/Print";
 
 function statusLine(event: EventRoll, now: number): string {
@@ -37,6 +38,7 @@ export function Rolls({
   const [eventDetail, setEventDetail] = useState<EventDetail | null>(null);
   const [open, setOpen] = useState<FeedItem | null>(null);
   const [tick, setTick] = useState(0);
+  const signature = useSavedProfile();
 
   useEffect(() => {
     const id = window.setInterval(() => setNow(Date.now()), 1000);
@@ -140,11 +142,11 @@ export function Rolls({
         ) : (
           <div className="grid">
             {albumDetail.photos.map((photo) => (
-              <PrintView key={photo.id} item={photo} onOpen={setOpen} compact />
+              <PrintView key={photo.id} item={photo} onOpen={setOpen} compact signature={signature} />
             ))}
           </div>
         )}
-        {open ? <Lightbox item={open} onClose={() => setOpen(null)} /> : null}
+        {open ? <Lightbox item={open} onClose={() => setOpen(null)} signature={signature} /> : null}
       </div>
     );
   }
@@ -193,13 +195,13 @@ export function Rolls({
             <p className="section">In the order they were shot</p>
             <div className="thread">
               {eventDetail.photos.map((photo) => (
-                <PrintView key={photo.id} item={photo} onOpen={setOpen} />
+                <PrintView key={photo.id} item={photo} onOpen={setOpen} signature={signature} />
               ))}
             </div>
           </>
         ) : null}
         {error ? <p className="error">{error}</p> : null}
-        {open ? <Lightbox item={open} onClose={() => setOpen(null)} /> : null}
+        {open ? <Lightbox item={open} onClose={() => setOpen(null)} signature={signature} /> : null}
       </div>
     );
   }
