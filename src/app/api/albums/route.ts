@@ -1,4 +1,5 @@
 import { asRecord, json, readJson, toErrorResponse } from "@/server/http";
+import { clientSource } from "@/server/quota";
 import { createAlbum, listAlbums } from "@/server/store";
 import { cleanName } from "@/server/validate";
 
@@ -16,7 +17,7 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const body = asRecord(await readJson(request));
-    const album = await createAlbum(cleanName(body.name));
+    const album = await createAlbum(cleanName(body.name), clientSource(request));
     return json(album, 201);
   } catch (error) {
     return toErrorResponse(error);

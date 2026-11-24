@@ -11,8 +11,6 @@ type Ctx = { params: Promise<{ id: string }> };
 function viewer(request: Request): string | null {
   const header = request.headers.get("x-shooter-token");
   if (header && isUuid(header)) return header.toLowerCase();
-  const token = new URL(request.url).searchParams.get("t");
-  if (token && isUuid(token)) return token.toLowerCase();
   return null;
 }
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { developPhoto, fetchLab, shooterToken } from "@/lib/api";
+import { developPhoto, fetchLab, fetchPrivateImage } from "@/lib/api";
 import { countdown, longRemain } from "@/lib/format";
 import type { LabItem } from "@/lib/types";
 
@@ -10,7 +10,6 @@ export function Lab({ revision, onDeveloped }: { revision: number; onDeveloped: 
   const [now, setNow] = useState(() => Date.now());
   const [error, setError] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
-  const [token] = useState(() => shooterToken());
 
   useEffect(() => {
     let stop = false;
@@ -67,10 +66,7 @@ export function Lab({ revision, onDeveloped }: { revision: number; onDeveloped: 
                 <div className="thumb sealed-thumb">Sealed</div>
               ) : (
                 <div className="thumb">
-                  <img
-                    src={`/api/photos/${item.id}/image?t=${encodeURIComponent(token)}`}
-                    alt="Your frame, still developing"
-                  />
+                  <PrivateFrame id={item.id} />
                   {!ready ? <div className="safelight" /> : null}
                 </div>
               )}
@@ -113,4 +109,27 @@ export function Lab({ revision, onDeveloped }: { revision: number; onDeveloped: 
       )}
     </div>
   );
+}
+
+function PrivateFrame({ id }: { id: string }) {
+  const [src, setSrc] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    let objectUrl = "";
+    fetchPrivateImage(id)
+      .then((blob) => {
+        if (cancelled) return;
+        objectUrl = URL.createObjectURL(blob);
+        setSrc(objectUrl);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [id]);
+
+  if (!src) return null;
+  return <img src={src} alt="Your frame, still developing" />;
 }
