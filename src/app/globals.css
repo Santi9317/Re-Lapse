@@ -146,6 +146,42 @@ h1, h2, h3, p { margin: 0; }
   padding: 6px 8px var(--safe-bottom);
 }
 
+/* Off Shoot, the tabs stay on screen and the page scrolls underneath them.
+   Shoot keeps the tabs in the column, under the viewfinder. */
+.phone.pin-tabs {
+  --tabbar: calc(64px + var(--safe-bottom));
+}
+@media (max-width: 559px) {
+  .phone.pin-tabs {
+    height: 100dvh;
+    max-height: 100dvh;
+  }
+}
+.phone.pin-tabs .nav {
+  position: absolute;
+  z-index: 8;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(to top, #0c0a16 0 72%, rgba(12, 10, 22, 0));
+}
+.phone.pin-tabs .scroll,
+.phone.pin-tabs .sleeve {
+  padding-bottom: calc(20px + var(--tabbar));
+}
+.phone.pin-tabs:has(.install) .scroll,
+.phone.pin-tabs:has(.install) .sleeve {
+  padding-bottom: calc(76px + var(--tabbar));
+}
+.phone.pin-tabs .install {
+  position: absolute;
+  z-index: 9;
+  left: 12px;
+  right: 12px;
+  bottom: calc(var(--tabbar) + 8px);
+  margin: 0;
+}
+
 .nav button {
   position: relative;
   display: flex;

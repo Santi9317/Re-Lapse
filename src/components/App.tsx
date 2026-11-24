@@ -129,7 +129,7 @@ function CameraDesk() {
 
   return (
     <div className="desk">
-      <div className="phone">
+      <div className={tab === "shoot" ? "phone" : "phone pin-tabs"}>
         {tab !== "shoot" ? (
           <header className="top">
             <h1 className="word">Re-Lapse ✨</h1>
