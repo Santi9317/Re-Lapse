@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { developPhoto, deletePhoto, fetchLab, fetchPrivateImage, publishPhoto } from "@/lib/api";
 import { countdown, longRemain } from "@/lib/format";
+import { lapseQuip } from "@/lib/quips";
 import { ensurePhotoFile, iosPhotosTarget, readyPhotoFile, rememberPhotoBlob, shareOrSave } from "@/lib/save";
 import type { LabItem, LabState } from "@/lib/types";
 
@@ -124,8 +125,8 @@ export function Lab({
       {error ? <p className="error">{error}</p> : null}
       {items.length === 0 ? (
         <div className="empty">
-          <h2>Nothing in the soup.</h2>
-          <p>Shoot a frame. It stays hidden here until the clock ends and you develop it.</p>
+          <h2>Nothing in the soup. 🧪</h2>
+          <p>Shoot a frame and let it lapse. The print comes back when the clock does.</p>
         </div>
       ) : (
         items.map((item) => {
@@ -138,22 +139,22 @@ export function Lab({
               ) : (
                 <div className="thumb sealed-thumb" data-hidden-frame={item.id}>
                   {state === "developing" ? <div className="safelight" /> : null}
-                  <span>{state === "sealed" ? "Sealed" : state === "ready" ? "Ready" : "In the soup"}</span>
+                  <span>{state === "sealed" ? "Sealed 🔒" : state === "ready" ? "Ready ✨" : "In the soup 🧪"}</span>
                 </div>
               )}
               <div>
                 {state === "sealed" ? (
                   <>
-                    <div className="kicker">Sealed</div>
+                    <div className="kicker">Sealed 🔒</div>
                     <h2 className="time" style={{ fontSize: 32 }}>{item.eventName}</h2>
                     <p>
                       Comes back with the roll
-                      {item.revealAt ? ` in ${longRemain(item.revealAt - now)}` : ""}. Nobody can see it yet.
+                      {item.revealAt ? ` in ${longRemain(item.revealAt - now)}` : ""}. The whole roll is on a lapse. 🌙
                     </p>
                   </>
                 ) : state === "developed" ? (
                   <>
-                    <div className="kicker">Developed</div>
+                    <div className="kicker">Developed 🌈</div>
                     <p>{item.caption || "No caption."}</p>
                     <button
                       className="primary"
@@ -162,13 +163,13 @@ export function Lab({
                       disabled={busy === item.id}
                       onClick={() => void publish(item.id)}
                     >
-                      {busy === item.id ? "Sending…" : "Send to the feed"}
+                      {busy === item.id ? "Sending…" : "Send to the feed 🚀"}
                     </button>
-                    <p>Only you can see it until you send it.</p>
+                    <p>Your eyes only, unless you lapse it onto the feed.</p>
                   </>
                 ) : state === "ready" ? (
                   <>
-                    <div className="kicker">Ready</div>
+                    <div className="kicker">Ready ✨</div>
                     <p>{item.caption || "No caption."}</p>
                     <button
                       className="primary"
@@ -177,15 +178,15 @@ export function Lab({
                       disabled={busy === item.id}
                       onClick={() => void develop(item.id)}
                     >
-                      {busy === item.id ? "Developing…" : "Develop"}
+                      {busy === item.id ? "Developing…" : "Develop ✨"}
                     </button>
-                    <p>Develop it to see the frame. The feed only gets it if you send it.</p>
+                    <p>The lapse is over. Pop the print, then decide who else gets a look.</p>
                   </>
                 ) : (
                   <>
-                    <div className="kicker">Developing</div>
+                    <div className="kicker">Developing 🌀</div>
                     <div className="time" data-countdown={item.id}>{countdown(remaining)}</div>
-                    <p>Still hidden. It stays off the feed.</p>
+                    <p>{lapseQuip(item.id)}</p>
                   </>
                 )}
                 <div className="lab-actions">
