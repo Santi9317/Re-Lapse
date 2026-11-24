@@ -69,6 +69,8 @@ export function Shoot({
   const [lamp, setLamp] = useState(false);
   const [frames, setFrames] = useState(0);
   const [now, setNow] = useState(() => Date.now());
+  // A fast camera switch can leave mode on "live", so this tells the preview to attach the new stream.
+  const [opened, setOpened] = useState(0);
 
   useEffect(() => {
     const stored = Number(localStorage.getItem("relapse.frames") || 0);
@@ -91,6 +93,7 @@ export function Shoot({
         return;
       }
       streamRef.current = stream;
+      setOpened((value) => value + 1);
       setMode("live");
     }
     setMode("opening");
@@ -142,7 +145,7 @@ export function Shoot({
     video.style.visibility = "";
     video.srcObject = stream;
     void video.play().catch(() => undefined);
-  }, [mode, sealed]);
+  }, [mode, sealed, opened]);
 
   useEffect(() => {
     return () => {
@@ -226,6 +229,7 @@ export function Shoot({
       still.height = video.videoHeight;
       const ctx = still.getContext("2d");
       if (!ctx) return;
+      // CSS mirrors the front preview. drawImage ignores that, so the JPEG stays in true orientation.
       ctx.drawImage(video, 0, 0);
       if (front) setScreenFlash(false);
       conceal();
@@ -320,7 +324,14 @@ export function Shoot({
         }}
       >
         {mode === "live" ? (
-          <video ref={videoRef} className={sealed ? "lens concealed" : "lens"} playsInline muted autoPlay />
+          <video
+            ref={videoRef}
+            className={["lens", facing === "user" ? "mirror" : "", sealed ? "concealed" : ""].filter(Boolean).join(" ")}
+            data-facing={facing}
+            playsInline
+            muted
+            autoPlay
+          />
         ) : (
           <div className="empty-lens">
             <h2>{mode === "opening" ? "Opening the lens… 📸" : "Lens cap on 😎"}</h2>
