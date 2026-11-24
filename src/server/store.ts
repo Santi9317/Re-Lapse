@@ -7,11 +7,15 @@ import { assertCreateAllowed, noteCreate } from "@/server/quota";
 import { cleanJpeg } from "@/server/validate";
 
 // A shared frame stays on the feed for a week and is then deleted. Each camera
-// only spends its own allowance. Nothing here refuses every visitor because a
-// shared table is full, and nothing deletes another camera's rows to make room.
+// can only hold so many of its own rows. The tables also have a hard size, so
+// a brand-new camera id cannot keep adding rows once that size is reached.
+// Making room deletes only the calling camera's own rows.
 const OWN_PHOTO_CAP = 24;
 const OWN_ALBUM_CAP = 8;
 const OWN_EVENT_CAP = 4;
+const PHOTO_CAP = 500;
+const ALBUM_CAP = 200;
+const EVENT_CAP = 200;
 
 let lastReclaim = 0;
 
@@ -73,6 +77,13 @@ async function runReclaim(): Promise<void> {
        )`,
   );
   await sql(`delete from create_log where created_at < now() - interval '2 hours'`);
+  await sql(
+    `delete from cameras c
+     where c.created_at < now() - interval '2 days'
+       and not exists (select 1 from photos p where p.shooter_token = c.token)
+       and not exists (select 1 from albums a where a.owner_token = c.token)
+       and not exists (select 1 from events e where e.owner_token = c.token)`,
+  );
 }
 
 async function reclaimNow(): Promise<void> {
@@ -83,6 +94,89 @@ async function reclaimNow(): Promise<void> {
 async function reclaimSoon(): Promise<void> {
   if (Date.now() - lastReclaim < 60_000) return;
   await reclaimNow();
+}
+
+async function countRows(table: "photos" | "albums" | "events"): Promise<number> {
+  const query =
+    table === "photos"
+      ? "select count(*)::int as n from photos"
+      : table === "albums"
+        ? "select count(*)::int as n from albums"
+        : "select count(*)::int as n from events";
+  const rows = await sql<{ n: number }>(query);
+  return num(rows[0]?.n);
+}
+
+async function releaseAbandonedFrames(): Promise<void> {
+  await sql(
+    `delete from photos
+     where event_id is null
+       and developed_at is null
+       and created_at < now() - interval '35 minutes'`,
+  );
+}
+
+async function fitPhotos(token: string): Promise<void> {
+  await trimOwnPhotos(token);
+  if ((await countRows("photos")) < PHOTO_CAP) return;
+  await releaseAbandonedFrames();
+  if ((await countRows("photos")) < PHOTO_CAP) return;
+  const own = await sql<{ n: number }>(
+    `select count(*)::int as n from photos where shooter_token = $1`,
+    [token],
+  );
+  if (num(own[0]?.n) < 1) throw new HttpError(429, "The lab is full.");
+  const dropped = await sql<{ id: string }>(
+    `delete from photos
+     where id = (
+       select id from photos where shooter_token = $1 order by created_at asc limit 1
+     )
+     returning id`,
+    [token],
+  );
+  if (!dropped[0] || (await countRows("photos")) >= PHOTO_CAP) {
+    throw new HttpError(429, "The lab is full.");
+  }
+}
+
+async function fitAlbums(token: string): Promise<void> {
+  await trimOwnAlbums(token);
+  if ((await countRows("albums")) < ALBUM_CAP) return;
+  const oldest = await sql<{ id: string }>(
+    `select id from albums where owner_token = $1 order by created_at asc limit 1`,
+    [token],
+  );
+  const id = oldest[0]?.id;
+  if (!id) throw new HttpError(429, "There are enough rolls already.");
+  await sql(`update photos set album_id = null where album_id = $1`, [id]);
+  await sql(`delete from albums where id = $1 and owner_token = $2`, [id, token]);
+  if ((await countRows("albums")) >= ALBUM_CAP) {
+    throw new HttpError(429, "There are enough rolls already.");
+  }
+}
+
+async function fitEvents(token: string): Promise<void> {
+  await trimOwnEvents(token);
+  if ((await countRows("events")) < EVENT_CAP) return;
+  const oldest = await sql<{ id: string }>(
+    `select e.id
+     from events e
+     where e.owner_token = $1
+       and not exists (
+         select 1 from photos p
+         where p.event_id = e.id and p.shooter_token <> $1
+       )
+     order by e.created_at asc
+     limit 1`,
+    [token],
+  );
+  const id = oldest[0]?.id;
+  if (!id) throw new HttpError(429, "There are enough events already.");
+  await sql(`delete from photos where event_id = $1 and shooter_token = $2`, [id, token]);
+  await sql(`delete from events where id = $1 and owner_token = $2`, [id, token]);
+  if ((await countRows("events")) >= EVENT_CAP) {
+    throw new HttpError(429, "There are enough events already.");
+  }
 }
 
 async function trimOwnPhotos(token: string): Promise<void> {
@@ -271,7 +365,7 @@ export async function createPhoto(input: {
   }
 
   await reclaimNow();
-  await trimOwnPhotos(input.token);
+  await fitPhotos(input.token);
 
   const id = randomUUID();
   const rows = await sql<{ created_ms: number; ready_ms: number }>(
@@ -429,7 +523,7 @@ export async function listAlbums(): Promise<Album[]> {
 export async function createAlbum(name: string, token: string): Promise<Album> {
   await assertCreateAllowed("album", token);
   await reclaimNow();
-  await trimOwnAlbums(token);
+  await fitAlbums(token);
   const id = randomUUID();
   const rows = await sql<{ created_ms: number }>(
     `insert into albums (id, name, owner_token) values ($1, $2, $3)
@@ -521,7 +615,7 @@ export async function listEvents(): Promise<EventRoll[]> {
 export async function createEvent(name: string, hours: number, dev: boolean, token: string): Promise<EventRoll> {
   await assertCreateAllowed("event", token);
   await reclaimNow();
-  await trimOwnEvents(token);
+  await fitEvents(token);
   const id = randomUUID();
   const times = eventTimes(Date.now(), hours, dev);
   const rows = await sql(
