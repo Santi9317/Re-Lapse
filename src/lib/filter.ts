@@ -1,4 +1,12 @@
 import { disposableDate } from "@/lib/format";
+import { applyReferenceGrade } from "@/lib/reference-grade";
+
+/**
+ * The camera prints with "lapse".
+ * "reference" is the standby grade in reference-grade.ts, already checked
+ * on a portrait. Set this to "reference" only when that upgrade is asked for.
+ */
+const GRADE = "lapse" as "lapse" | "reference";
 
 const WIDTH = 900;
 const HEIGHT = 1125;
@@ -108,53 +116,57 @@ export async function renderDisposable(
   ctx.fillRect(0, 0, WIDTH, HEIGHT);
   drawCover(ctx, source, source.width, source.height, WIDTH, HEIGHT);
 
-  const soft = document.createElement("canvas");
-  soft.width = Math.round(WIDTH * 0.9);
-  soft.height = Math.round(HEIGHT * 0.9);
-  const softCtx = soft.getContext("2d");
-  if (softCtx) {
-    softCtx.imageSmoothingEnabled = true;
-    softCtx.drawImage(canvas, 0, 0, soft.width, soft.height);
-    ctx.globalAlpha = LOOK.soften;
-    ctx.drawImage(soft, 0, 0, WIDTH, HEIGHT);
-    ctx.globalAlpha = 1;
-  }
-
-  const src = ctx.getImageData(0, 0, WIDTH, HEIGHT);
-  const out = ctx.createImageData(WIDTH, HEIGHT);
-  const s = src.data;
-  const o = out.data;
-  const grainW = Math.ceil(WIDTH / 2);
-  const grainH = Math.ceil(HEIGHT / 2);
-  const grainMap = new Float32Array(grainW * grainH);
-  const grainAmp = LOOK.grain / 255;
-  for (let i = 0; i < grainMap.length; i++) grainMap[i] = (Math.random() - 0.5) * grainAmp;
-
-  for (let y = 0; y < HEIGHT; y++) {
-    for (let x = 0; x < WIDTH; x++) {
-      const i = (y * WIDTH + x) * 4;
-      let [r, g, b] = gradeColor(
-        tone((s[i] ?? 0) / 255),
-        tone((s[i + 1] ?? 0) / 255),
-        tone((s[i + 2] ?? 0) / 255),
-      );
-      const luma = r * 0.299 + g * 0.587 + b * 0.114;
-      const nx = (x + 0.5) / WIDTH - 0.5;
-      const ny = (y + 0.5) / HEIGHT - 0.5;
-      const dist = Math.hypot(nx * 1.05, ny * 0.92);
-      const edge = Math.min(1, Math.max(0, (dist - 0.28) / 0.42));
-      const falloff = 1 - edge * edge * LOOK.vignette;
-      r *= falloff;
-      g *= falloff;
-      b *= falloff;
-      const grain = (grainMap[(y >> 1) * grainW + (x >> 1)] ?? 0) * (0.9 + (1 - luma) * 0.2);
-      o[i] = (r + grain) * 255;
-      o[i + 1] = (g + grain) * 255;
-      o[i + 2] = (b + grain * 0.85) * 255;
-      o[i + 3] = 255;
+  if (GRADE === "reference") {
+    applyReferenceGrade(ctx, WIDTH, HEIGHT);
+  } else {
+    const soft = document.createElement("canvas");
+    soft.width = Math.round(WIDTH * 0.9);
+    soft.height = Math.round(HEIGHT * 0.9);
+    const softCtx = soft.getContext("2d");
+    if (softCtx) {
+      softCtx.imageSmoothingEnabled = true;
+      softCtx.drawImage(canvas, 0, 0, soft.width, soft.height);
+      ctx.globalAlpha = LOOK.soften;
+      ctx.drawImage(soft, 0, 0, WIDTH, HEIGHT);
+      ctx.globalAlpha = 1;
     }
+
+    const src = ctx.getImageData(0, 0, WIDTH, HEIGHT);
+    const out = ctx.createImageData(WIDTH, HEIGHT);
+    const s = src.data;
+    const o = out.data;
+    const grainW = Math.ceil(WIDTH / 2);
+    const grainH = Math.ceil(HEIGHT / 2);
+    const grainMap = new Float32Array(grainW * grainH);
+    const grainAmp = LOOK.grain / 255;
+    for (let i = 0; i < grainMap.length; i++) grainMap[i] = (Math.random() - 0.5) * grainAmp;
+
+    for (let y = 0; y < HEIGHT; y++) {
+      for (let x = 0; x < WIDTH; x++) {
+        const i = (y * WIDTH + x) * 4;
+        let [r, g, b] = gradeColor(
+          tone((s[i] ?? 0) / 255),
+          tone((s[i + 1] ?? 0) / 255),
+          tone((s[i + 2] ?? 0) / 255),
+        );
+        const luma = r * 0.299 + g * 0.587 + b * 0.114;
+        const nx = (x + 0.5) / WIDTH - 0.5;
+        const ny = (y + 0.5) / HEIGHT - 0.5;
+        const dist = Math.hypot(nx * 1.05, ny * 0.92);
+        const edge = Math.min(1, Math.max(0, (dist - 0.28) / 0.42));
+        const falloff = 1 - edge * edge * LOOK.vignette;
+        r *= falloff;
+        g *= falloff;
+        b *= falloff;
+        const grain = (grainMap[(y >> 1) * grainW + (x >> 1)] ?? 0) * (0.9 + (1 - luma) * 0.2);
+        o[i] = (r + grain) * 255;
+        o[i + 1] = (g + grain) * 255;
+        o[i + 2] = (b + grain * 0.85) * 255;
+        o[i + 3] = 255;
+      }
+    }
+    ctx.putImageData(out, 0, 0);
   }
-  ctx.putImageData(out, 0, 0);
 
   if (options.dateStamp) {
     if (document.fonts?.load) {
