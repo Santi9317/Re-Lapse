@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { GATE_CLIENT_LIMIT, GATE_GUESS_LIMIT, gateCookie, gateGuessBlocked, guessMayCompare, resolveGateSecret, sameSecret } from "./gate-key.ts";
+import { GATE_GUESS_LIMIT, gateCookie, gateGuessBlocked, guessMayCompare, resolveGateSecret, sameSecret } from "./gate-key.ts";
 
 test("the gate stays shut until a token is configured", () => {
   assert.equal(resolveGateSecret(undefined), null);
@@ -17,14 +17,11 @@ test("wrong gate keys slow down after a short run of failures", () => {
   assert.equal(gateGuessBlocked(Number.NaN), false);
 });
 
-test("a full browser is not checked, and a new browser cannot slip past the others", () => {
-  assert.equal(guessMayCompare(0, 0, true), true);
-  assert.equal(guessMayCompare(GATE_GUESS_LIMIT - 1, 0, false), true);
-  assert.equal(guessMayCompare(GATE_GUESS_LIMIT, 0, false), false);
-  assert.equal(guessMayCompare(0, GATE_CLIENT_LIMIT - 1, true), true);
-  assert.equal(guessMayCompare(0, GATE_CLIENT_LIMIT, true), false);
-  assert.equal(guessMayCompare(1, GATE_CLIENT_LIMIT, false), true);
-  assert.equal(guessMayCompare(Number.NaN, 0, true), false);
+test("a full phone is not checked, and another phone still is", () => {
+  assert.equal(guessMayCompare(0), true);
+  assert.equal(guessMayCompare(GATE_GUESS_LIMIT - 1), true);
+  assert.equal(guessMayCompare(GATE_GUESS_LIMIT), false);
+  assert.equal(guessMayCompare(Number.NaN), false);
 });
 
 test("secret compare stays quiet about length", () => {

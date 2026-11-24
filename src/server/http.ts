@@ -65,6 +65,25 @@ export function sealBooth(response: NextResponse, request: Request, booth: strin
   return response;
 }
 
+/** The rescue this phone asked for. It is not a camera session. */
+export function readRescue(request: Request): string {
+  const value = cookieValue(request, "relapse_rescue");
+  if (BOOTH_UUID.test(value)) return value.toLowerCase();
+  return "";
+}
+
+export function sealRescue(response: NextResponse, request: Request, requestId: string) {
+  const secure = new URL(request.url).protocol === "https:";
+  response.cookies.set("relapse_rescue", requestId, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure,
+    path: "/",
+    maxAge: 60 * 60 * 48,
+  });
+  return response;
+}
+
 export function toErrorResponse(error: unknown) {
   if (error instanceof HttpError) return json({ error: error.message }, error.status);
   const message = error instanceof Error ? error.message : "unknown";

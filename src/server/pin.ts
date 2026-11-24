@@ -1,6 +1,6 @@
 import { createHmac } from "node:crypto";
 
-/** Wrong PIN checks for the whole gate, not one browser. A cookie cannot open another budget. */
+/** Wrong PIN checks for this phone. Another phone keeps its own. */
 export const PIN_RESTORE_LIMIT = 8;
 
 export function pinRestoreOpen(recentChecks: number): boolean {

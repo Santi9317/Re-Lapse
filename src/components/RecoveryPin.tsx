@@ -110,12 +110,12 @@ export function RecoveryPinPanel({
           <p className="pin-digits" data-recovery-pin={pin} aria-label={`Recovery PIN ${pin.split("").join(" ")}`}>
             {groupedPin(pin)}
           </p>
-          <p>Write it down. This menu will not show it again. The gate uses it to bring the profile back. A new one replaces it.</p>
+          <p>Write it down with this profile&apos;s name. This menu will not show the digits again. A new phone asks Santiago before the profile comes back.</p>
         </>
       ) : chosen ? (
         <p>A PIN is set for this profile. It is not shown again. A new one replaces it.</p>
       ) : (
-        <p>You don't have one yet. Pick six digits and keep them somewhere you trust. The gate uses them to bring this profile back.</p>
+        <p>You don't have one yet. Pick six digits and keep them with this profile&apos;s name. The same digits can belong to another name.</p>
       )}
       <RecoveryPinFields mode={chosen ? "change" : "choose"} onSaved={onPin} />
     </div>
@@ -167,8 +167,8 @@ export function ChoosePin({ onReady }: { onReady: () => void }) {
                 <p className="kicker">You're in</p>
                 <h2 className="section">Choose a recovery PIN</h2>
                 <p className="fine">
-                  Pick six digits and keep them somewhere you trust. This menu will not show them again. At the gate, this
-                  PIN brings this profile back onto a phone. It does not make a second one.
+                  Pick six digits and keep them with this profile&apos;s name. This menu will not show the digits again. A new
+                  phone asks Santiago before the profile comes back. The same digits can belong to another name.
                 </p>
                 <RecoveryPinFields
                   mode="choose"

@@ -9,8 +9,8 @@ import { isUuid, readCameraAuth } from "@/server/validate";
  * Each camera has its own photo, roll, event, profile, and invite window.
  * One camera cannot spend another's. A brand-new id is written to
  * camera_mints before any proof is returned. New ids are counted for the
- * browser booth that asked. Dropping that cookie still cannot pass the
- * shared ceiling. Unclaimed ids past a keep count are dropped. The proof lives
+ * browser booth that asked. Another phone's window does not close this one.
+ * Unclaimed ids past a keep count are dropped. The proof lives
  * in the httpOnly cookie. Sending an id without that cookie does not reveal the proof and
  * does not authorize the camera. Asking again with the cookie does not
  * spend a new-id window. Address headers are not read.
@@ -146,16 +146,11 @@ export async function issueCamera(
        where booth = $2::text
          and created_at > now() - ($3::int * interval '1 millisecond')
      ) < $4::int
-     and (
-       select count(*)::int
-       from camera_mints
-       where created_at > now() - ($3::int * interval '1 millisecond')
-     ) < $5::int
      returning token`,
-    [token, booth.toLowerCase(), MINT_WINDOW_MS, MINT_LIMITS.perBooth, MINT_LIMITS.global],
+    [token, booth.toLowerCase(), MINT_WINDOW_MS, MINT_LIMITS.perBooth],
   );
   const issued = minted[0]?.token;
-  if (!issued) throw new HttpError(429, "New cameras need a minute. Try again shortly.");
+  if (!issued) throw new HttpError(429, "This phone needs a minute. Try again shortly.");
   return { token: String(issued), proof: await cameraProof(String(issued)) };
 }
 

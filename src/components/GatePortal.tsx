@@ -19,6 +19,7 @@ export function GatePortal() {
   const [phase, setPhase] = useState<Phase>("checking");
   const [key, setKey] = useState("");
   const [requests, setRequests] = useState<Pending[]>([]);
+  const [recoveries, setRecoveries] = useState<Pending[]>([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [acting, setActing] = useState("");
@@ -28,7 +29,11 @@ export function GatePortal() {
       headers: { "x-relapse-gate": "1" },
       cache: "no-store",
     });
-    const data = (await response.json().catch(() => null)) as { requests?: Pending[]; error?: string } | null;
+    const data = (await response.json().catch(() => null)) as {
+      requests?: Pending[];
+      recoveries?: Pending[];
+      error?: string;
+    } | null;
     if (response.status === 503) {
       setPhase("down");
       setError(data?.error || "The gate isn't set up on this server.");
@@ -37,6 +42,7 @@ export function GatePortal() {
     if (response.status === 401) {
       setPhase("locked");
       setRequests([]);
+      setRecoveries([]);
       return;
     }
     if (!response.ok || !data?.requests) {
@@ -46,6 +52,7 @@ export function GatePortal() {
     setPhase("open");
     setError("");
     setRequests(data.requests);
+    setRecoveries(data.recoveries ?? []);
   }, []);
 
   useEffect(() => {
@@ -109,6 +116,7 @@ export function GatePortal() {
         return;
       }
       setRequests((current) => current.filter((item) => item.id !== id));
+      setRecoveries((current) => current.filter((item) => item.id !== id));
     } catch {
       setError("The lab didn't answer.");
     } finally {
@@ -121,7 +129,10 @@ export function GatePortal() {
       <div className="phone">
         <header className="top">
           <h1 className="word">Gate</h1>
-          <p className="lede">Cameras waiting to come in. Accept lets that camera shoot. Decline keeps it out.</p>
+          <p className="lede">
+            Cameras waiting to come in, and profiles asking to come back. Accept lets a new camera shoot. Approve puts
+            that profile on the phone that asked.
+          </p>
         </header>
         <div className="stage">
           <div className="scroll">
@@ -162,15 +173,17 @@ export function GatePortal() {
                     {error}
                   </p>
                 ) : null}
-                {requests.length === 0 ? (
+                {requests.length === 0 && recoveries.length === 0 ? (
                   <div className="empty">
                     <h2>Nobody waiting</h2>
                     <p>New requests show up here.</p>
                   </div>
-                ) : (
-                  <ul className="gate-list">
+                ) : null}
+                {requests.length > 0 ? (
+                  <ul className="gate-list" data-gate-list="join">
                     {requests.map((item) => (
                       <li key={item.id} className="event">
+                        <p className="kicker">New camera</p>
                         <h3>{item.name}</h3>
                         <time dateTime={new Date(item.createdAt).toISOString()}>{when(item.createdAt)}</time>
                         <div className="gate-actions">
@@ -194,7 +207,36 @@ export function GatePortal() {
                       </li>
                     ))}
                   </ul>
-                )}
+                ) : null}
+                {recoveries.length > 0 ? (
+                  <ul className="gate-list" data-gate-list="recover">
+                    {recoveries.map((item) => (
+                      <li key={item.id} className="event">
+                        <p className="kicker">Bring back</p>
+                        <h3>{item.name}</h3>
+                        <time dateTime={new Date(item.createdAt).toISOString()}>{when(item.createdAt)}</time>
+                        <div className="gate-actions">
+                          <button
+                            className="primary"
+                            type="button"
+                            disabled={acting === item.id}
+                            onClick={() => void decide(item.id, "accepted")}
+                          >
+                            Approve
+                          </button>
+                          <button
+                            className="ghost"
+                            type="button"
+                            disabled={acting === item.id}
+                            onClick={() => void decide(item.id, "declined")}
+                          >
+                            Decline
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
               </>
             ) : null}
           </div>

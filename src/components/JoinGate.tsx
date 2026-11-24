@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { fetchGate, requestToJoin, restoreWithPin } from "@/lib/api";
+import { fetchGate, fetchRescue, requestRecovery, requestToJoin } from "@/lib/api";
 
 type Phase = "checking" | "ask" | "pending" | "declined";
 
@@ -14,8 +14,11 @@ export function JoinGate({ onOpen }: { onOpen: () => void }) {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [pin, setPin] = useState("");
+  const [profileName, setProfileName] = useState("");
   const [pinError, setPinError] = useState("");
   const [pinBusy, setPinBusy] = useState(false);
+  const [rescue, setRescue] = useState<"form" | "pending" | "declined">("form");
+  const [rescueName, setRescueName] = useState("");
 
   useEffect(() => {
     let stop = false;
@@ -76,8 +79,39 @@ export function JoinGate({ onOpen }: { onOpen: () => void }) {
     }
   }
 
+  useEffect(() => {
+    if (rescue !== "pending") return;
+    let stop = false;
+    async function look() {
+      try {
+        const gate = await fetchRescue();
+        if (stop || !gate) return;
+        setRescueName(gate.name);
+        if (gate.status === "accepted") {
+          openRef.current();
+          return;
+        }
+        if (gate.status === "declined") setRescue("declined");
+      } catch (err: unknown) {
+        if (stop) return;
+        setPinError(err instanceof Error ? err.message : "The lab didn't answer.");
+      }
+    }
+    void look();
+    const id = window.setInterval(() => void look(), 3000);
+    return () => {
+      stop = true;
+      window.clearInterval(id);
+    };
+  }, [rescue]);
+
   async function submitPin(event: React.FormEvent) {
     event.preventDefault();
+    const trimmed = profileName.trim();
+    if (!trimmed) {
+      setPinError("Enter the profile name.");
+      return;
+    }
     if (pin.length !== 6) {
       setPinError("Enter the 6-digit PIN.");
       return;
@@ -85,16 +119,17 @@ export function JoinGate({ onOpen }: { onOpen: () => void }) {
     setPinBusy(true);
     setPinError("");
     try {
-      const gate = await restoreWithPin(pin);
+      const gate = await requestRecovery(trimmed, pin);
       setPin("");
-      setKept(gate.name);
+      setRescueName(gate.name);
       if (gate.status === "accepted") {
-        openRef.current();
+        const settled = await fetchRescue();
+        if (settled?.status === "accepted") openRef.current();
         return;
       }
-      setPhase(gate.status);
+      setRescue(gate.status === "declined" ? "declined" : "pending");
     } catch (err: unknown) {
-      setPinError(err instanceof Error ? err.message : "That PIN doesn't match a profile.");
+      setPinError(err instanceof Error ? err.message : "That name and PIN don't match a profile.");
     } finally {
       setPinBusy(false);
     }
@@ -155,38 +190,69 @@ export function JoinGate({ onOpen }: { onOpen: () => void }) {
                 <p>{kept ? `${kept} stays outside.` : "This camera stays outside."} A refresh keeps it that way.</p>
               </div>
             ) : null}
-            <section className="recovery-box" data-pin-entry="gate" aria-labelledby="recovery-title">
+            <section className="recovery-box" data-pin-entry="gate" data-rescue={rescue} aria-labelledby="recovery-title">
               <h2 id="recovery-title">Recovery</h2>
               <p className="fine" id="gate-pin-help">
-                Already have a profile? Enter its PIN. This puts that profile on this phone. It does not make a second one.
+                Enter that profile&apos;s name and PIN. Santiago approves the request before it comes back to this phone.
+                The same digits can belong to another name.
               </p>
-              <form className="stack" onSubmit={(event) => void submitPin(event)}>
-                <label className="section" htmlFor="gate-pin">
-                  6-digit PIN
-                </label>
-                <input
-                  id="gate-pin"
-                  className="field pin-field"
-                  name="pin"
-                  inputMode="numeric"
-                  autoComplete="off"
-                  autoCorrect="off"
-                  spellCheck={false}
-                  maxLength={6}
-                  aria-describedby="gate-pin-help"
-                  value={pin}
-                  onChange={(event) => setPin(event.target.value.replace(/\D/g, "").slice(0, 6))}
-                  placeholder="000000"
-                />
-                {pinError ? (
-                  <p className="error" role="alert">
-                    {pinError}
+              {rescue === "pending" ? (
+                <div className="empty">
+                  <h2>Waiting</h2>
+                  <p>
+                    {rescueName ? `${rescueName} is waiting on Santiago.` : "Santiago hasn't approved this yet."} This page
+                    checks on its own.
                   </p>
-                ) : null}
-                <button className="primary" type="submit" disabled={pinBusy || pin.length !== 6}>
-                  {pinBusy ? "Checking…" : "Bring my profile back"}
-                </button>
-              </form>
+                </div>
+              ) : null}
+              {rescue === "declined" ? (
+                <div className="empty">
+                  <h2>Not this time</h2>
+                  <p>{rescueName ? `${rescueName} stays where it was.` : "That profile stays where it was."}</p>
+                </div>
+              ) : null}
+              {rescue === "form" ? (
+                <form className="stack" onSubmit={(event) => void submitPin(event)}>
+                  <label className="section" htmlFor="gate-profile-name">
+                    Profile name
+                  </label>
+                  <input
+                    id="gate-profile-name"
+                    className="field"
+                    name="profile-name"
+                    autoComplete="nickname"
+                    maxLength={24}
+                    value={profileName}
+                    onChange={(event) => setProfileName(event.target.value)}
+                    placeholder="The name on the profile"
+                  />
+                  <label className="section" htmlFor="gate-pin">
+                    6-digit PIN
+                  </label>
+                  <input
+                    id="gate-pin"
+                    className="field pin-field"
+                    name="pin"
+                    inputMode="numeric"
+                    autoComplete="off"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    maxLength={6}
+                    aria-describedby="gate-pin-help"
+                    value={pin}
+                    onChange={(event) => setPin(event.target.value.replace(/\D/g, "").slice(0, 6))}
+                    placeholder="000000"
+                  />
+                  {pinError ? (
+                    <p className="error" role="alert">
+                      {pinError}
+                    </p>
+                  ) : null}
+                  <button className="primary" type="submit" disabled={pinBusy || pin.length !== 6 || profileName.trim().length === 0}>
+                    {pinBusy ? "Asking…" : "Ask to bring it back"}
+                  </button>
+                </form>
+              ) : null}
             </section>
           </div>
         </div>

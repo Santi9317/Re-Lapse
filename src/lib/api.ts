@@ -220,33 +220,45 @@ export async function saveRecoveryPin(pin: string): Promise<void> {
   }
 }
 
-export async function restoreWithPin(pin: string): Promise<{ status: GateStatus; name: string }> {
+export async function requestRecovery(name: string, pin: string): Promise<{ status: GateStatus; name: string }> {
   const response = await fetch("/api/gate/pin", {
     method: "POST",
     headers: { "content-type": "application/json" },
     cache: "no-store",
     credentials: "same-origin",
-    body: JSON.stringify({ pin }),
+    body: JSON.stringify({ name, pin }),
   });
+  const data = (await response.json().catch(() => null)) as { status?: string; name?: string; error?: string } | null;
+  if (data?.status !== "pending" && data?.status !== "accepted" && data?.status !== "declined") {
+    throw new Error(data?.error || "That name and PIN don't match a profile.");
+  }
+  return { status: data.status, name: typeof data.name === "string" ? data.name : "" };
+}
+
+export async function fetchRescue(): Promise<{ status: GateStatus; name: string } | null> {
+  const response = await fetch("/api/gate/pin", { cache: "no-store", credentials: "same-origin" });
   const data = (await response.json().catch(() => null)) as {
     status?: string;
     name?: string;
     profile?: SharedProfile;
     error?: string;
   } | null;
+  if (response.status === 404) return null;
   if (
     !response.ok ||
     (data?.status !== "pending" && data?.status !== "accepted" && data?.status !== "declined")
   ) {
-    throw new Error(data?.error || "That PIN doesn't match a profile.");
+    throw new Error(data?.error || "The lab didn't answer.");
   }
-  await ensureCamera();
-  if (data.profile) {
-    try {
-      const saved = profileFromServer(data.profile);
-      if (profileReady(saved)) saveProfile(saved);
-    } catch {
-      /* the server still has the profile */
+  if (data.status === "accepted") {
+    await ensureCamera();
+    if (data.profile) {
+      try {
+        const saved = profileFromServer(data.profile);
+        if (profileReady(saved)) saveProfile(saved);
+      } catch {
+        /* the server still has the profile */
+      }
     }
   }
   return { status: data.status, name: typeof data.name === "string" ? data.name : "" };
