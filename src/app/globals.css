@@ -648,6 +648,29 @@ button.sticker:active { transform: translate(-50%, -50%) rotate(var(--tilt)) sca
   color: var(--ink);
 }
 .emoji-compose { margin-top: 8px; }
+.quick-stickers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 8px;
+}
+.quick-stickers button {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  font-size: 22px;
+  line-height: 1;
+  color: #1a1028;
+  background: #fffdf8;
+  border: 1px solid #e4d5c4;
+  border-radius: 9px;
+  box-shadow: 0 2px 0 rgba(90, 60, 40, 0.18);
+  font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
+}
+.quick-stickers button:disabled { opacity: 0.45; }
+.quick-stickers button:active { transform: scale(0.94); }
 .emoji-compose .fine { color: #7a3b22; }
 .emoji-compose .field { color: var(--ink); margin-top: 8px; }
 .emoji-compose .ghost,
