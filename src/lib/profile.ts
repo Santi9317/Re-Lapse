@@ -1,3 +1,4 @@
+import { renderDisposable } from "@/lib/filter";
 import { snapshotPhone } from "@/lib/identity";
 import type { ProfileWrite, SharedProfile } from "@/lib/types";
 
@@ -326,34 +327,69 @@ export async function portraitFromFile(file: File): Promise<string> {
   }
   try {
     if (bitmap.width < 1 || bitmap.height < 1) throw new Error("This photo can't be read.");
-    let dataUrl = await renderJpeg(bitmap, 640, 0.82);
-    if (dataUrl.length > MAX_DATA_URL) dataUrl = await renderJpeg(bitmap, 480, 0.72);
-    if (!DATA_URL.test(dataUrl) || dataUrl.length > MAX_DATA_URL) {
-      throw new Error("That photo is too heavy. Try another.");
-    }
+    // Same print as a shot: renderDisposable in filter.ts. The date stamp stays a camera choice.
+    const printed = await renderDisposable(bitmap, { dateStamp: false });
+    const dataUrl = await fitPortrait(printed);
+    if (!portraitUrl(dataUrl)) throw new Error("That photo is too heavy. Try another.");
     return dataUrl;
   } finally {
     bitmap.close();
   }
 }
 
-async function renderJpeg(bitmap: ImageBitmap, maxEdge: number, quality: number): Promise<string> {
-  const scale = Math.min(1, maxEdge / Math.max(bitmap.width, bitmap.height));
-  const width = Math.max(1, Math.round(bitmap.width * scale));
-  const height = Math.max(1, Math.round(bitmap.height * scale));
+function portraitUrl(value: string): boolean {
+  return DATA_URL.test(value) && value.length <= MAX_DATA_URL;
+}
+
+/** The disposable print, squeezed only when it would not fit the portrait store. */
+async function fitPortrait(blob: Blob): Promise<string> {
+  const direct = await blobToDataUrl(blob);
+  if (portraitUrl(direct)) return direct;
+  const printed = await createImageBitmap(blob);
+  try {
+    const long = Math.max(printed.width, printed.height);
+    const steps = [
+      { edge: long, quality: 0.72 },
+      { edge: long, quality: 0.58 },
+      { edge: 640, quality: 0.72 },
+      { edge: 480, quality: 0.72 },
+    ];
+    let last = direct;
+    for (const step of steps) {
+      const scale = Math.min(1, step.edge / long);
+      const width = Math.max(1, Math.round(printed.width * scale));
+      const height = Math.max(1, Math.round(printed.height * scale));
+      last = await canvasDataUrl(printed, width, height, step.quality);
+      if (portraitUrl(last)) return last;
+    }
+    return last;
+  } finally {
+    printed.close();
+  }
+}
+
+async function canvasDataUrl(
+  source: CanvasImageSource,
+  width: number,
+  height: number,
+  quality: number,
+): Promise<string> {
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
   const context = canvas.getContext("2d");
   if (!context) throw new Error("This photo can't be read.");
-  context.drawImage(bitmap, 0, 0, width, height);
+  context.drawImage(source, 0, 0, width, height);
   const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
   if (!blob) throw new Error("This photo can't be read.");
-  const dataUrl = await new Promise<string>((resolve, reject) => {
+  return blobToDataUrl(blob);
+}
+
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result));
     reader.onerror = () => reject(new Error("This photo can't be read."));
     reader.readAsDataURL(blob);
   });
-  return dataUrl;
 }
