@@ -36,6 +36,11 @@ export function cleanName(value: unknown): string {
   return name;
 }
 
+export function cleanStickerEmoji(value: unknown): string {
+  if (typeof value !== "string" || !isEmoji(value)) throw new HttpError(400, "Pick an emoji.");
+  return value;
+}
+
 export function cleanCaption(value: unknown): string {
   const caption = scrub(value ?? "", 80, true);
   if (caption == null) throw new HttpError(400, "Keep the caption short.");
@@ -91,7 +96,14 @@ export function cleanHours(value: unknown): number {
   return hours;
 }
 
-const INVITE_CODE = /^[A-HJ-NP-Z2-9]{6}$/;
+const INVITE_CODE = /^[A-HJ-NP-Z2-9]{6,12}$/;
+const PROOF = /^[0-9a-f]{64}$/i;
+
+export function readProof(request: Request): string | null {
+  const value = request.headers.get("x-camera-proof");
+  if (!value || !PROOF.test(value)) return null;
+  return value.toLowerCase();
+}
 
 export function cleanInviteCode(value: unknown): string {
   if (typeof value !== "string") throw new HttpError(400, "That invite isn't one of ours.");
