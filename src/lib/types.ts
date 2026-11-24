@@ -34,6 +34,16 @@ export type SharedProfile = {
   galleries: GalleryCard[];
 };
 
+/** Fields present on a profile save. Omitted fields stay as they are. */
+export type ProfilePatch = {
+  username?: string;
+  emojis?: [string, string, string];
+  avatarPhotoId?: string | null;
+  avatarImageBase64?: string | null;
+  keepUpload?: boolean;
+  carouselIds?: string[];
+};
+
 export type ProfileWrite = {
   username: string;
   emojis: [string, string, string];
