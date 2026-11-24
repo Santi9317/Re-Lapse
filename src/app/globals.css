@@ -241,6 +241,13 @@ h1, h2, h3, p { margin: 0; }
   background: #fff8ee;
   animation: flash 90ms linear;
 }
+.screen-flash {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: #fff;
+  pointer-events: none;
+}
 @keyframes flash { from { opacity: 0.9; } to { opacity: 0; } }
 
 .vf-top, .vf-bottom {
