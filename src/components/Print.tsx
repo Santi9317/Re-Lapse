@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type RefObject } from "react";
 import { fetchOwnProfile, fetchPublicProfile, saveOwnProfile, setFrameSticker } from "@/lib/api";
 import { ago, leavesIn } from "@/lib/format";
 import {
+  EMOJI_CHOICES,
   NAME_LIMIT,
   STARTER_EMOJIS,
   emptyProfile,
@@ -15,6 +16,7 @@ import {
   takeEmoji,
   withCameraPortrait,
 } from "@/lib/profile";
+import { pickQuickStickers } from "@/lib/quick-stickers";
 import {
   ensurePhotoFile,
   fileFromImage,
@@ -252,6 +254,8 @@ function FrameFace({
   const [held, setHeld] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [quick, setQuick] = useState<string[]>([]);
+  const quickRef = useRef<string[]>([]);
   const reactable = Boolean(onStickers) && !item.mine;
   const nameId = `sticker-name-${item.id}`;
   const mineEmoji = item.stickers.find((sticker) => sticker.mine)?.emoji ?? "";
@@ -267,6 +271,9 @@ function FrameFace({
   function openKeyboard() {
     const input = inputRef.current;
     if (!input) return;
+    const next = pickQuickStickers(EMOJI_CHOICES, quickRef.current);
+    quickRef.current = next;
+    setQuick(next);
     input.value = "";
     input.classList.add("is-open");
     void input.getBoundingClientRect();
@@ -330,8 +337,8 @@ function FrameFace({
   );
   const label = reactable
     ? onOpen
-      ? "Open frame. Double tap to stick an emoji."
-      : "Double tap to stick an emoji."
+      ? "Open frame. Double tap for seven emojis, or type one."
+      : "Double tap for seven emojis, or type one."
     : "Open frame";
 
   return (
@@ -372,6 +379,23 @@ function FrameFace({
       ) : null}
       {composing ? (
         <div className="emoji-compose" data-emoji-compose={item.id}>
+          {quick.length > 0 ? (
+            <div className="quick-stickers" role="group" aria-label="Seven stickers" data-quick-stickers={item.id}>
+              {quick.map((emoji) => (
+                <button
+                  key={emoji}
+                  className="quick-sticker"
+                  type="button"
+                  data-quick-sticker={emoji}
+                  aria-label={`Stick ${emoji}`}
+                  disabled={busy}
+                  onClick={() => void place(emoji)}
+                >
+                  {emoji}
+                </button>
+              ))}
+            </div>
+          ) : null}
           <p className="fine">
             {mineEmoji ? `Yours is ${mineEmoji}. Pick again to change it.` : "One sticker. It stays on the frame."}
           </p>

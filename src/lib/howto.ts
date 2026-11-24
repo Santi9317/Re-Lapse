@@ -26,7 +26,7 @@ export const HOW_TO: HowToSection[] = [
     id: "stickers",
     title: "Frame stickers",
     body: [
-      "Double-tap a photo someone else shot. One emoji, and it stays. Tap again to change yours. A frame you shot does not take one.",
+      "Double-tap a photo someone else shot. Seven emojis show up to tap, or type your own. One sticker, and it stays. Double-tap again for a new seven and to change yours. A frame you shot does not take one.",
     ],
   },
   {
