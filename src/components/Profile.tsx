@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
+import { Sleeve } from "@/components/Sleeve";
 import { fetchFeed, fetchOwnProfile, fetchPublicProfile, saveOwnProfile } from "@/lib/api";
 import {
   CAROUSEL_LIMIT,
@@ -220,14 +221,22 @@ export function Profile({ revision }: { revision: number }) {
     updateCarousel(result.ids);
   }
 
-  if (!profile || !mode) return <div className="scroll" data-screen="profile" />;
+  if (!profile || !mode) {
+    return (
+      <div className="profile-screen" data-screen="profile">
+        <Sleeve />
+      </div>
+    );
+  }
 
   const openPhoto = openId
     ? photos.find((photo) => photo.id === openId) ?? { id: openId, caption: "" }
     : null;
 
   return (
-    <div className="scroll" data-screen="profile" data-mode={mode}>
+    <div className="profile-screen" data-screen="profile" data-mode={mode}>
+      <Sleeve />
+      <div className="scroll">
       {formError ? <p className="error">{formError}</p> : null}
       {mode === "page" ? (
         <ProfilePage
@@ -284,6 +293,7 @@ export function Profile({ revision }: { revision: number }) {
         />
       ) : null}
       {openPhoto ? <FrameDialog photo={openPhoto} onClose={() => setOpenId(null)} /> : null}
+      </div>
     </div>
   );
 }
