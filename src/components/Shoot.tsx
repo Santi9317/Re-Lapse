@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { blobToBase64, sendPhoto } from "@/lib/api";
 import { renderDisposable } from "@/lib/filter";
+import { lapseQuip } from "@/lib/quips";
 import type { EventRoll } from "@/lib/types";
 
 function clickSound() {
@@ -260,7 +261,7 @@ export function Shoot({
           <video ref={videoRef} className={sealed ? "lens concealed" : "lens"} playsInline muted autoPlay />
         ) : (
           <div className="empty-lens">
-            <h2>{mode === "opening" ? "Opening the lens…" : "The lens is covered"}</h2>
+            <h2>{mode === "opening" ? "Opening the lens… 📸" : "Lens cap on 😎"}</h2>
             <p>
               {mode === "opening"
                 ? "Asking the camera."
@@ -275,8 +276,8 @@ export function Shoot({
         {flash ? <div className="flash" /> : null}
         <div className="vf-top">
           <div>
-            <div className="brand">Relapse</div>
-            <div className="stock">DISPOSABLE</div>
+            <div className="brand">Relapse ✨</div>
+            <div className="stock">DISPOSABLE 💿</div>
           </div>
           <div className="counter">400 · {String(frames).padStart(2, "0")}</div>
         </div>
@@ -333,14 +334,14 @@ export function Shoot({
       {sealed ? (
         <div className="review" data-review="sealed">
           <div className="sealed-frame" aria-hidden="true">
-            <span>Exposed</span>
+            <span>Exposed 📸</span>
           </div>
           <p className="hint">
             {armed && !eventClosed
-              ? `Sealed with ${armed.name}. It stays hidden until a day after the event closes.`
+              ? `Sealed with ${armed.name}. The whole roll lapses back a day after close. 🔒`
               : devTimers
-                ? "Hidden until you develop it. A short lab clock is on for this local test."
-                : "Hidden until you develop it. The wait is 5 to 30 minutes, then you choose whether it goes on the feed."}
+                ? `Short lab clock is on. ${lapseQuip(String(frames))}`
+                : `${lapseQuip(String(frames))} Give it 5 to 30 minutes, then develop.`}
           </p>
           <label className="check">
             <input type="checkbox" checked={stamp} disabled={busy || rendering} onChange={() => void toggleStamp()} />
@@ -363,7 +364,7 @@ export function Shoot({
           {error ? <p className="error">{error}</p> : null}
           <div className="stack">
             <button className="primary" type="button" data-send disabled={busy || rendering} onClick={() => void send()}>
-              {busy ? "Sending…" : armed && !eventClosed ? "Send with the roll" : "Send to the lab"}
+              {busy ? "Sending…" : armed && !eventClosed ? "Send with the roll 🎞️" : "Send to the lab 🧪"}
             </button>
             <button className="ghost" type="button" onClick={retake} disabled={busy}>
               Retake
