@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { devFlagStored, ensureCamera, fetchConfig, fetchLab } from "@/lib/api";
+import { devFlagStored, ensureCamera, fetchConfig, fetchLab, joinEvent } from "@/lib/api";
 import type { EventRoll } from "@/lib/types";
 import { Feed } from "@/components/Feed";
 import { Lab } from "@/components/Lab";
@@ -15,7 +15,7 @@ type InstallPrompt = Event & { prompt: () => Promise<void> };
 const lede: Record<Exclude<Tab, "shoot">, string> = {
   lab: "Let them lapse. Develop when the clock hits zero. 🧪",
   feed: "Everyone with this link. A frame stays up for a week, then it lapses. ✨",
-  rolls: "Little rolls, and events that come back from their lapse. 🎞️",
+  rolls: "Invite people onto a roll, let it lapse, then pick the feed. 🎞️",
   you: "Set your name, photo, and three emojis. They show on the frames you share.",
 };
 
@@ -31,6 +31,8 @@ export function App() {
   const [hideInstall, setHideInstall] = useState(true);
   const [tokenReady, setTokenReady] = useState(0);
   const [guestId, setGuestId] = useState<string | null>(null);
+  const [focusEventId, setFocusEventId] = useState<string | null>(null);
+  const [joinNotice, setJoinNotice] = useState("");
 
   function chooseTab(next: Tab) {
     setGuestId(null);
@@ -53,6 +55,37 @@ export function App() {
     window.addEventListener("beforeinstallprompt", onPrompt);
     return () => window.removeEventListener("beforeinstallprompt", onPrompt);
   }, []);
+
+  useEffect(() => {
+    if (tokenReady === 0) return;
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get("join");
+    if (!code) return;
+    let stop = false;
+    void joinEvent(code)
+      .then((event) => {
+        if (stop) return;
+        params.delete("join");
+        const next = params.toString();
+        window.history.replaceState(null, "", next ? `/?${next}` : "/");
+        setJoinNotice("");
+        setFocusEventId(event.id);
+        setGuestId(null);
+        setTab("rolls");
+      })
+      .catch((err: unknown) => {
+        if (stop) return;
+        params.delete("join");
+        const next = params.toString();
+        window.history.replaceState(null, "", next ? `/?${next}` : "/");
+        setJoinNotice(err instanceof Error ? err.message : "That invite isn't one of ours.");
+        setGuestId(null);
+        setTab("rolls");
+      });
+    return () => {
+      stop = true;
+    };
+  }, [tokenReady]);
 
   useEffect(() => {
     let stop = false;
@@ -128,11 +161,15 @@ export function App() {
               {tab === "rolls" ? (
                 <Rolls
                   revision={feedRevision}
+                  focusEventId={focusEventId}
+                  joinNotice={joinNotice}
                   onArm={(event) => {
                     setArmed(event);
                     chooseTab("shoot");
                   }}
                   onOpenProfile={setGuestId}
+                  onShared={() => setFeedRevision((value) => value + 1)}
+                  onFocusConsumed={() => setFocusEventId(null)}
                 />
               ) : null}
             </>

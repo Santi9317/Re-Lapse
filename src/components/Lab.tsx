@@ -149,7 +149,7 @@ export function Lab({
                     <h2 className="time" style={{ fontSize: 32 }}>{item.eventName}</h2>
                     <p>
                       Comes back with the roll
-                      {item.revealAt ? ` in ${longRemain(item.revealAt - now)}` : ""}. The whole roll is on a lapse. 🌙
+                      {item.revealAt ? ` in ${longRemain(item.revealAt - now)}` : ""}. Then the frames for the feed get picked. 🌙
                     </p>
                   </>
                 ) : state === "developed" ? (

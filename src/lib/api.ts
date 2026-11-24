@@ -32,10 +32,18 @@ export function devFlagStored(): boolean {
   }
 }
 
+function rememberCamera(token: string) {
+  localStorage.setItem(TOKEN_KEY, token);
+  document.cookie = `relapse.shooter=${token}; Path=/; Max-Age=31536000; SameSite=Lax`;
+}
+
 export function shooterToken(): string {
   try {
     const existing = localStorage.getItem(TOKEN_KEY);
-    if (existing && UUID.test(existing)) return existing;
+    if (existing && UUID.test(existing)) {
+      document.cookie = `relapse.shooter=${existing}; Path=/; Max-Age=31536000; SameSite=Lax`;
+      return existing;
+    }
   } catch {
     /* storage can be blocked */
   }
@@ -65,7 +73,7 @@ async function requestCamera(): Promise<string> {
   if (!response.ok || !data?.token || !UUID.test(data.token)) {
     throw new Error(data?.error || "The lab didn't answer.");
   }
-  localStorage.setItem(TOKEN_KEY, data.token);
+  rememberCamera(data.token);
   return data.token;
 }
 
@@ -180,7 +188,7 @@ export async function fetchAlbum(id: string): Promise<{ album: Album; photos: Fe
 }
 
 export async function fetchEvents(): Promise<EventRoll[]> {
-  const data = await request<{ events: EventRoll[] }>("/api/events");
+  const data = await request<{ events: EventRoll[] }>("/api/events", { headers: await headers(false) });
   return data.events;
 }
 
@@ -194,6 +202,30 @@ export async function createEvent(name: string, durationHours: number): Promise<
 
 export async function fetchEvent(id: string): Promise<EventDetail> {
   return request(`/api/events/${id}`, { headers: await headers(false) });
+}
+
+export async function joinEvent(code: string): Promise<EventDetail> {
+  return request("/api/events/join", {
+    method: "POST",
+    headers: await headers(true),
+    body: JSON.stringify({ code }),
+  });
+}
+
+export async function inviteToEvent(id: string, username: string): Promise<EventDetail> {
+  return request(`/api/events/${id}/invites`, {
+    method: "POST",
+    headers: await headers(true),
+    body: JSON.stringify({ username }),
+  });
+}
+
+export async function publishEventFeed(id: string, photoIds: string[]): Promise<EventDetail> {
+  return request(`/api/events/${id}/feed`, {
+    method: "POST",
+    headers: await headers(true),
+    body: JSON.stringify({ photoIds }),
+  });
 }
 
 export async function blobToBase64(blob: Blob): Promise<string> {
