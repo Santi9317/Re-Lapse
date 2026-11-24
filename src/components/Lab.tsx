@@ -202,6 +202,9 @@ export function Lab({
                   ) : null}
                   {confirmId === item.id ? (
                     <>
+                      <button type="button" disabled={busy === item.id} onClick={() => setConfirmId(null)}>
+                        Keep
+                      </button>
                       <button
                         type="button"
                         data-confirm-delete={item.id}
@@ -209,9 +212,6 @@ export function Lab({
                         onClick={() => void remove(item.id)}
                       >
                         {busy === item.id ? "Deleting…" : "Delete"}
-                      </button>
-                      <button type="button" disabled={busy === item.id} onClick={() => setConfirmId(null)}>
-                        Keep
                       </button>
                     </>
                   ) : (

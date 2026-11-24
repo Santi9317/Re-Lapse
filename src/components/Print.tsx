@@ -74,11 +74,11 @@ function FrameActions({
       {confirming ? (
         <>
           <p className="meta">Gone for good.</p>
-          <button type="button" data-confirm-delete={item.id} disabled={saving} onClick={() => void confirmDelete()}>
-            {saving ? "Deleting…" : "Delete"}
-          </button>
           <button type="button" disabled={saving} onClick={() => setConfirming(false)}>
             Keep
+          </button>
+          <button type="button" data-confirm-delete={item.id} disabled={saving} onClick={() => void confirmDelete()}>
+            {saving ? "Deleting…" : "Delete"}
           </button>
         </>
       ) : (
