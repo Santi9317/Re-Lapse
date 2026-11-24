@@ -1,13 +1,15 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { fetchRecoveryPin } from "@/lib/api";
 import { HOW_TO } from "@/lib/howto";
 import { pickQuote, type Quote } from "@/lib/quotes";
 import { APP_VERSION } from "@/lib/release";
+import { groupedPin, RecoveryPinPanel } from "@/components/RecoveryPin";
 
 const LAST_KEY = "relapse.inspiration";
 
-type Panel = "menu" | "version" | "howto" | "inspiration";
+type Panel = "menu" | "version" | "howto" | "inspiration" | "recovery";
 
 function readLast(): string | null {
   try {
@@ -28,6 +30,7 @@ function writeLast(id: string) {
 export function Sleeve() {
   const [panel, setPanel] = useState<Panel | null>(null);
   const [quote, setQuote] = useState<Quote | null>(null);
+  const [recoveryPin, setRecoveryPin] = useState<string | null>(null);
   const backRef = useRef<HTMLButtonElement>(null);
   const markRef = useRef<HTMLButtonElement>(null);
   const opened = useRef(false);
@@ -52,6 +55,24 @@ export function Sleeve() {
     setQuote(next);
   }, [panel]);
 
+  useEffect(() => {
+    if (!panel) {
+      setRecoveryPin(null);
+      return;
+    }
+    let stop = false;
+    void fetchRecoveryPin()
+      .then((pin) => {
+        if (!stop) setRecoveryPin(pin);
+      })
+      .catch(() => {
+        if (!stop) setRecoveryPin(null);
+      });
+    return () => {
+      stop = true;
+    };
+  }, [panel]);
+
   if (!panel) {
     return (
       <button ref={markRef} className="sleeve-mark" type="button" data-profile-menu aria-label="Profile menu" onClick={() => setPanel("menu")}>
@@ -61,7 +82,15 @@ export function Sleeve() {
   }
 
   const title =
-    panel === "menu" ? "Menu" : panel === "version" ? "Version tracker" : panel === "howto" ? "How To" : "Inspiration";
+    panel === "menu"
+      ? "Menu"
+      : panel === "version"
+        ? "Version tracker"
+        : panel === "howto"
+          ? "How To"
+          : panel === "recovery"
+            ? "Recovery PIN"
+            : "Inspiration";
 
   return (
     <div className="sleeve" role="dialog" aria-modal="true" aria-label={title} data-sleeve-panel={panel}>
@@ -81,6 +110,12 @@ export function Sleeve() {
           <button type="button" data-sleeve-item="inspiration" onClick={() => setPanel("inspiration")}>
             <strong>Inspiration</strong>
             <span>A line for the next time you need one.</span>
+          </button>
+          <button type="button" data-sleeve-item="recovery" onClick={() => setPanel("recovery")}>
+            <strong>{recoveryPin ? "Change recovery PIN" : "Set a recovery PIN"}</strong>
+            <span className={recoveryPin ? "recovery-menu-pin" : undefined}>
+              {recoveryPin ? groupedPin(recoveryPin) : "You don't have one yet."}
+            </span>
           </button>
         </div>
       ) : null}
@@ -107,6 +142,7 @@ export function Sleeve() {
           ))}
         </article>
       ) : null}
+      {panel === "recovery" ? <RecoveryPinPanel pin={recoveryPin} onPin={setRecoveryPin} /> : null}
       {panel === "inspiration" ? (
         <div className="sleeve-copy" data-inspiration>
           <h2 className="section">Inspiration</h2>

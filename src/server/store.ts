@@ -4,7 +4,6 @@ import { sql } from "@/lib/db";
 import { isEmoji } from "@/lib/profile";
 import type { Album, EventDetail, EventRoll, EventStatus, FeedItem, FrameSticker, LabItem, LabState, ProfileWrite, RollMember, SharedProfile } from "@/lib/types";
 import { HttpError } from "@/server/http";
-import { allocateProfilePin } from "@/server/profile-pin";
 import { assertCreateAllowed, assertJoinAllowed, claimCamera, noteCreate } from "@/server/quota";
 import { cleanJpeg } from "@/server/validate";
 
@@ -1214,18 +1213,11 @@ async function fitNewProfile(token: string): Promise<void> {
   }
 }
 
-function isPinCollision(error: unknown): boolean {
-  if (!error || typeof error !== "object") return false;
-  const row = error as { code?: unknown; constraint?: unknown; message?: unknown };
-  if (row.code !== "23505") return false;
-  return `${row.constraint ?? ""} ${row.message ?? ""}`.includes("pin_hash");
-}
-
 export async function saveOwnProfile(
   token: string,
   input: ProfileWrite,
   proof: string | null,
-): Promise<{ profile: SharedProfile; pin: string | null }> {
+): Promise<SharedProfile> {
   const existing = await profileRow("shooter_token", token);
   await assertCreateAllowed("profile", token, proof);
   if (!existing) {
@@ -1247,51 +1239,35 @@ export async function saveOwnProfile(
   }
   if (avatarImage) avatarPhotoId = null;
   const carouselIds = await publicPhotoIds(input.carouselIds);
-  let revealed: string | null = null;
-  const attempts = existing ? 1 : 6;
-  for (let attempt = 0; attempt < attempts; attempt += 1) {
-    const minted = existing ? null : await allocateProfilePin();
-    try {
-      const rows = await sql<{ pin_hash: string | null }>(
-        `insert into profiles (
-           id, shooter_token, username, emoji_1, emoji_2, emoji_3, avatar_photo_id, avatar_image, carousel, pin_hash
-         ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-         on conflict (shooter_token) do update set
-           username = excluded.username,
-           emoji_1 = excluded.emoji_1,
-           emoji_2 = excluded.emoji_2,
-           emoji_3 = excluded.emoji_3,
-           avatar_photo_id = excluded.avatar_photo_id,
-           avatar_image = excluded.avatar_image,
-           carousel = excluded.carousel,
-           pin_hash = profiles.pin_hash,
-           updated_at = now()
-         returning pin_hash`,
-        [
-          id,
-          token,
-          input.username,
-          input.emojis[0],
-          input.emojis[1],
-          input.emojis[2],
-          avatarPhotoId,
-          avatarImage,
-          JSON.stringify(carouselIds),
-          minted?.hash ?? null,
-        ],
-      );
-      const stored = rows[0]?.pin_hash ? String(rows[0].pin_hash) : "";
-      revealed = minted && stored === minted.hash ? minted.pin : null;
-      break;
-    } catch (error) {
-      if (minted && isPinCollision(error) && attempt + 1 < attempts) continue;
-      throw error;
-    }
-  }
+  await sql(
+    `insert into profiles (
+       id, shooter_token, username, emoji_1, emoji_2, emoji_3, avatar_photo_id, avatar_image, carousel
+     ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+     on conflict (shooter_token) do update set
+       username = excluded.username,
+       emoji_1 = excluded.emoji_1,
+       emoji_2 = excluded.emoji_2,
+       emoji_3 = excluded.emoji_3,
+       avatar_photo_id = excluded.avatar_photo_id,
+       avatar_image = excluded.avatar_image,
+       carousel = excluded.carousel,
+       updated_at = now()`,
+    [
+      id,
+      token,
+      input.username,
+      input.emojis[0],
+      input.emojis[1],
+      input.emojis[2],
+      avatarPhotoId,
+      avatarImage,
+      JSON.stringify(carouselIds),
+    ],
+  );
   await noteCreate("profile", token);
   const saved = await readOwnProfile(token);
   if (!saved) throw new HttpError(500, "The lab hit a snag.");
-  return { profile: saved, pin: revealed };
+  return saved;
 }
 
 export async function readAvatar(profileId: string): Promise<Buffer | null> {

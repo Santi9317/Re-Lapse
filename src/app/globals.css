@@ -1429,6 +1429,14 @@ button.byline .byline-name { text-decoration: underline; text-underline-offset: 
   letter-spacing: 0.04em;
   line-height: 1.4;
 }
+.sleeve-list .recovery-menu-pin {
+  margin-top: 8px;
+  color: var(--amber);
+  font-family: var(--display);
+  font-size: 22px;
+  letter-spacing: 0.18em;
+  line-height: 1.2;
+}
 .sleeve-copy, .quote-card { overflow-wrap: break-word; }
 .sleeve-copy p {
   color: var(--muted);
@@ -1502,6 +1510,21 @@ button.byline .byline-name { text-decoration: underline; text-underline-offset: 
   text-align: center;
 }
 
+.recovery-box {
+  margin-top: 22px;
+  padding: 16px;
+  border-radius: 18px;
+  background: #140c24;
+  border: 1px solid rgba(255, 176, 106, 0.45);
+}
+.recovery-box h2 {
+  margin: 0 0 8px;
+  color: var(--amber);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-size: 11px;
+  font-weight: 500;
+}
 .pin-form { margin-top: 22px; }
 .gate-or {
   margin: 0;
@@ -1518,6 +1541,7 @@ button.byline .byline-name { text-decoration: underline; text-underline-offset: 
   font-size: 22px;
 }
 .pin-slip { z-index: 50; }
+.sleeve-copy .pin-digits,
 .pin-digits {
   margin: 4px 0 14px;
   text-align: center;
