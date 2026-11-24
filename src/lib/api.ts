@@ -1,5 +1,13 @@
 import { snapshotPhone } from "@/lib/identity";
-import { loadProfile, profileFromServer, profileReady, saveProfile, storeCameraProfile, withCameraPortrait } from "@/lib/profile";
+import {
+  clearStoredProfile,
+  loadProfile,
+  profileFromServer,
+  profileReady,
+  saveProfile,
+  storeCameraProfile,
+  withCameraPortrait,
+} from "@/lib/profile";
 import type { Album, EventDetail, EventRoll, FeedItem, FrameSticker, LabItem, ProfileWrite, SharedProfile } from "@/lib/types";
 
 const DEV_KEY = "relapse.devtimers";
@@ -165,18 +173,39 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return data as T;
 }
 
+export class ProfileRemovedError extends Error {
+  readonly removed = true;
+  constructor() {
+    super("That profile is gone.");
+    this.name = "ProfileRemovedError";
+  }
+}
+
+export function isProfileRemoved(error: unknown): error is ProfileRemovedError {
+  return error instanceof ProfileRemovedError;
+}
+
 export async function fetchOwnProfile(): Promise<SharedProfile | null> {
   const response = await fetch("/api/profile", { headers: await headers(false), cache: "no-store" });
   if (response.status === 404) return null;
-  const data = (await response.json().catch(() => null)) as (SharedProfile & { error?: string }) | null;
+  const data = (await response.json().catch(() => null)) as (SharedProfile & { error?: string; removed?: boolean }) | null;
+  if (response.status === 410 && data?.removed === true) {
+    await clearStoredProfile();
+    throw new ProfileRemovedError();
+  }
   if (!response.ok) throw new Error(data?.error || "The lab didn't answer.");
   return data as SharedProfile;
 }
 
-export async function saveOwnProfile(profile: ProfileWrite): Promise<SharedProfile> {
+export async function saveOwnProfile(
+  profile: ProfileWrite,
+  options?: { replaceRemoved?: boolean },
+): Promise<SharedProfile> {
+  const requestHeaders = await headers(true);
+  if (options?.replaceRemoved) requestHeaders["x-relapse-replace-profile"] = "1";
   const response = await fetch("/api/profile", {
     method: "PUT",
-    headers: await headers(true),
+    headers: requestHeaders,
     body: JSON.stringify(profile),
     cache: "no-store",
   });

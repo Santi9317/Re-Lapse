@@ -1,6 +1,6 @@
 import { asRecord, HttpError, json, PHOTO_BODY_BYTES, readJson, toErrorResponse } from "@/server/http";
 import { requireMember } from "@/server/gate";
-import { readOwnProfile, saveOwnProfile } from "@/server/store";
+import { profileWasRemoved, readOwnProfile, saveOwnProfile } from "@/server/store";
 import { cleanProfileWrite, readProof } from "@/server/validate";
 
 export const runtime = "nodejs";
@@ -12,9 +12,11 @@ function shooter(request: Request): Promise<string> {
 
 export async function GET(request: Request) {
   try {
-    const profile = await readOwnProfile(await shooter(request));
-    if (!profile) throw new HttpError(404, "No profile yet.");
-    return json(profile);
+    const token = await shooter(request);
+    const profile = await readOwnProfile(token);
+    if (profile) return json(profile);
+    if (await profileWasRemoved(token)) return json({ removed: true, error: "That profile is gone." }, 410);
+    throw new HttpError(404, "No profile yet.");
   } catch (error) {
     return toErrorResponse(error);
   }
@@ -23,7 +25,13 @@ export async function GET(request: Request) {
 export async function PUT(request: Request) {
   try {
     const body = asRecord(await readJson(request, PHOTO_BODY_BYTES));
-    const saved = await saveOwnProfile(await shooter(request), cleanProfileWrite(body), readProof(request));
+    const replaceRemoved = request.headers.get("x-relapse-replace-profile") === "1";
+    const saved = await saveOwnProfile(
+      await shooter(request),
+      cleanProfileWrite(body),
+      readProof(request),
+      replaceRemoved,
+    );
     return json(saved);
   } catch (error) {
     return toErrorResponse(error);

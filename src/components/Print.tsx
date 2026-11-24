@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type RefObject } from "react";
-import { fetchOwnProfile, fetchPublicProfile, saveOwnProfile, setFrameSticker } from "@/lib/api";
+import { fetchOwnProfile, fetchPublicProfile, isProfileRemoved, saveOwnProfile, setFrameSticker } from "@/lib/api";
 import { ago, leavesIn } from "@/lib/format";
 import {
   EMOJI_CHOICES,
@@ -90,8 +90,16 @@ function useFrameTap(onSingle: (() => void) | null, onDouble: (() => void) | nul
   };
 }
 
-async function ensureStickerIdentity(typedName: string): Promise<void> {
-  const remote = await fetchOwnProfile();
+async function ensureStickerIdentity(typedName: string, naming: boolean): Promise<void> {
+  let remote: Awaited<ReturnType<typeof fetchOwnProfile>> = null;
+  try {
+    remote = await fetchOwnProfile();
+  } catch (err) {
+    if (!isProfileRemoved(err) || !naming) throw err;
+    const source = { ...emptyProfile(), username: typedName.trim(), emojis: STARTER_EMOJIS };
+    saveProfile(profileFromServer(await saveOwnProfile(profileWrite(source), { replaceRemoved: true })));
+    return;
+  }
   if (remote) {
     const next = withCameraPortrait(profileFromServer(remote), loadProfile());
     if (profileReady(next)) saveProfile(next);
@@ -301,7 +309,11 @@ function FrameFace({
         }
         setNeedsName(false);
       })
-      .catch(() => undefined);
+      .catch((err: unknown) => {
+        if (stop || !isProfileRemoved(err)) return;
+        setNeedsName(true);
+        setName("");
+      });
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") closeKeyboard();
     };
@@ -322,11 +334,15 @@ function FrameFace({
     setBusy(true);
     setError("");
     try {
-      await ensureStickerIdentity(name);
+      await ensureStickerIdentity(name, needsName);
       const result = await setFrameSticker(item.id, emoji);
       onStickers?.(item.id, result.stickers);
       closeKeyboard();
     } catch (err) {
+      if (isProfileRemoved(err)) {
+        setNeedsName(true);
+        setName("");
+      }
       setError(err instanceof Error ? err.message : "That sticker didn't stick.");
       setBusy(false);
     }

@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { devClockRequested, eventTimes, FEED_DAYS, personalReadyAt } from "@/lib/clock";
-import { sql } from "@/lib/db";
+import { sql, withTransaction } from "@/lib/db";
 import { isEmoji } from "@/lib/profile";
 import type { Album, EventDetail, EventRoll, EventStatus, FeedItem, FrameSticker, LabItem, LabState, ProfileWrite, RollMember, SharedProfile } from "@/lib/types";
 import { HttpError } from "@/server/http";
@@ -1203,6 +1203,64 @@ export async function readOwnProfile(token: string): Promise<SharedProfile | nul
   return sharedProfile(row, parseCarousel(row.carousel));
 }
 
+export type ActiveProfile = {
+  id: string;
+  username: string;
+  emojis: [string, string, string];
+  updatedAt: number;
+};
+
+/** Profiles still in the app. Reclaim has already dropped the ones that lapsed. */
+export async function listActiveProfiles(): Promise<ActiveProfile[]> {
+  await reclaimSoon();
+  const rows = await sql<{
+    id: string;
+    username: string;
+    emoji_1: string;
+    emoji_2: string;
+    emoji_3: string;
+    updated_ms: number | string;
+  }>(
+    `select id, username, emoji_1, emoji_2, emoji_3,
+            (extract(epoch from updated_at) * 1000) as updated_ms
+     from profiles
+     order by lower(username) asc, id asc`,
+  );
+  return rows.map((row) => ({
+    id: String(row.id),
+    username: String(row.username),
+    emojis: [String(row.emoji_1), String(row.emoji_2), String(row.emoji_3)],
+    updatedAt: Math.round(Number(row.updated_ms)),
+  }));
+}
+
+export async function profileWasRemoved(token: string): Promise<boolean> {
+  const rows = await sql<{ shooter_token: string }>(
+    `select shooter_token from profile_removals where shooter_token = $1`,
+    [token],
+  );
+  return Boolean(rows[0]);
+}
+
+/** Deletes the profile row. Frames stay. The name leaves the feed and the lab. */
+export async function removeProfile(id: string): Promise<boolean> {
+  return withTransaction(async (q) => {
+    const rows = await q<{ shooter_token: string }>(
+      `delete from profiles where id = $1 returning shooter_token`,
+      [id],
+    );
+    const token = rows[0]?.shooter_token ? String(rows[0].shooter_token) : "";
+    if (!token) return false;
+    await q(
+      `insert into profile_removals (shooter_token, removed_at)
+       values ($1, now())
+       on conflict (shooter_token) do update set removed_at = now()`,
+      [token],
+    );
+    return true;
+  });
+}
+
 export async function readPublicProfile(id: string): Promise<SharedProfile | null> {
   const row = await profileRow("id", id);
   if (!row) return null;
@@ -1235,7 +1293,10 @@ export async function saveOwnProfile(
   token: string,
   input: ProfileWrite,
   proof: string | null,
+  replaceRemoved = false,
 ): Promise<SharedProfile> {
+  const removed = await profileWasRemoved(token);
+  if (removed && !replaceRemoved) throw new HttpError(409, "That profile is gone.");
   const existing = await profileRow("shooter_token", token);
   await assertCreateAllowed("profile", token, proof);
   if (!existing) {
@@ -1282,6 +1343,7 @@ export async function saveOwnProfile(
       JSON.stringify(carouselIds),
     ],
   );
+  if (removed) await sql(`delete from profile_removals where shooter_token = $1`, [token]);
   await noteCreate("profile", token);
   const saved = await readOwnProfile(token);
   if (!saved) throw new HttpError(500, "The lab hit a snag.");

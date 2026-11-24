@@ -3,7 +3,33 @@
 import { useCallback, useEffect, useState } from "react";
 
 type Pending = { id: string; name: string; createdAt: number };
+type ActiveProfile = {
+  id: string;
+  username: string;
+  emojis: [string, string, string];
+  updatedAt: number;
+};
 type Phase = "checking" | "locked" | "open" | "down";
+
+function asProfiles(value: unknown): ActiveProfile[] {
+  if (!Array.isArray(value)) return [];
+  const profiles: ActiveProfile[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== "object") continue;
+    const row = item as Record<string, unknown>;
+    if (typeof row.id !== "string" || typeof row.username !== "string") continue;
+    const marks = Array.isArray(row.emojis) ? row.emojis.slice(0, 3).map((part) => String(part ?? "")) : [];
+    while (marks.length < 3) marks.push("");
+    const updatedAt = typeof row.updatedAt === "number" ? row.updatedAt : Number(row.updatedAt);
+    profiles.push({
+      id: row.id,
+      username: row.username,
+      emojis: [marks[0] ?? "", marks[1] ?? "", marks[2] ?? ""] as [string, string, string],
+      updatedAt: Number.isFinite(updatedAt) ? updatedAt : 0,
+    });
+  }
+  return profiles;
+}
 
 function when(ms: number): string {
   if (!Number.isFinite(ms) || ms <= 0) return "";
@@ -20,6 +46,8 @@ export function GatePortal() {
   const [key, setKey] = useState("");
   const [requests, setRequests] = useState<Pending[]>([]);
   const [recoveries, setRecoveries] = useState<Pending[]>([]);
+  const [profiles, setProfiles] = useState<ActiveProfile[]>([]);
+  const [confirmId, setConfirmId] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [acting, setActing] = useState("");
@@ -32,6 +60,7 @@ export function GatePortal() {
     const data = (await response.json().catch(() => null)) as {
       requests?: Pending[];
       recoveries?: Pending[];
+      profiles?: unknown;
       error?: string;
     } | null;
     if (response.status === 503) {
@@ -43,16 +72,21 @@ export function GatePortal() {
       setPhase("locked");
       setRequests([]);
       setRecoveries([]);
+      setProfiles([]);
+      setConfirmId("");
       return;
     }
-    if (!response.ok || !data?.requests) {
+    if (!response.ok || !data?.requests || !Array.isArray(data.profiles)) {
       setError(data?.error || "The lab didn't answer.");
       return;
     }
+    const nextProfiles = asProfiles(data.profiles);
     setPhase("open");
     setError("");
     setRequests(data.requests);
     setRecoveries(data.recoveries ?? []);
+    setProfiles(nextProfiles);
+    setConfirmId((current) => (current && nextProfiles.some((item) => item.id === current) ? current : ""));
   }, []);
 
   useEffect(() => {
@@ -124,6 +158,34 @@ export function GatePortal() {
     }
   }
 
+  async function removeProfile(id: string) {
+    setActing(id);
+    setError("");
+    try {
+      const response = await fetch(`/api/gate/admin/profiles/${id}`, {
+        method: "DELETE",
+        headers: { "x-relapse-gate": "1" },
+      });
+      const data = (await response.json().catch(() => null)) as { error?: string } | null;
+      if (!response.ok) {
+        if (response.status === 401) {
+          setPhase("locked");
+          setProfiles([]);
+          setConfirmId("");
+        }
+        setError(data?.error || "The lab didn't answer.");
+        if (response.status === 404) await load();
+        return;
+      }
+      setProfiles((current) => current.filter((item) => item.id !== id));
+      setConfirmId("");
+    } catch {
+      setError("The lab didn't answer.");
+    } finally {
+      setActing("");
+    }
+  }
+
   return (
     <div className="desk">
       <div className="phone">
@@ -131,7 +193,7 @@ export function GatePortal() {
           <h1 className="word">Gate</h1>
           <p className="lede">
             Cameras waiting to come in, and profiles asking to come back. Accept lets a new camera shoot. Approve puts
-            that profile on the phone that asked.
+            that profile on the phone that asked. Every profile already in the app is listed below. Delete takes it out.
           </p>
         </header>
         <div className="stage">
@@ -237,6 +299,60 @@ export function GatePortal() {
                     ))}
                   </ul>
                 ) : null}
+                <section className="gate-profiles" data-gate-profiles>
+                  <h2 className="section">Profiles</h2>
+                  {profiles.length === 0 ? (
+                    <div className="empty">
+                      <h2>No profiles yet</h2>
+                      <p>When someone names themselves, they show up here.</p>
+                    </div>
+                  ) : (
+                    <ul className="gate-list" data-gate-list="profiles">
+                      {profiles.map((item) => (
+                        <li key={item.id} className="event" data-profile-id={item.id}>
+                          <p className="kicker">In the app</p>
+                          <h3 data-profile-name={item.username}>{item.username}</h3>
+                          <p className="gate-marks">{item.emojis.filter((emoji) => emoji.length > 0).join(" ")}</p>
+                          <time dateTime={new Date(item.updatedAt).toISOString()}>{when(item.updatedAt)}</time>
+                          <div className="gate-actions">
+                            {confirmId === item.id ? (
+                              <>
+                                <button
+                                  className="ghost"
+                                  type="button"
+                                  disabled={acting === item.id}
+                                  onClick={() => setConfirmId("")}
+                                >
+                                  Keep
+                                </button>
+                                <button
+                                  className="ghost"
+                                  type="button"
+                                  data-confirm-delete-profile={item.id}
+                                  disabled={acting === item.id}
+                                  onClick={() => void removeProfile(item.id)}
+                                >
+                                  {acting === item.id ? "Deleting…" : "Delete"}
+                                </button>
+                              </>
+                            ) : (
+                              <button
+                                className="ghost"
+                                type="button"
+                                data-delete-profile={item.id}
+                                aria-label={`Delete ${item.username}`}
+                                onClick={() => setConfirmId(item.id)}
+                              >
+                                Delete
+                              </button>
+                            )}
+                          </div>
+                          {confirmId === item.id ? <p>This takes {item.username} out of the app.</p> : null}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </section>
               </>
             ) : null}
           </div>
