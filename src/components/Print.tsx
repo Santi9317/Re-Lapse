@@ -12,6 +12,30 @@ import {
 } from "@/lib/save";
 import type { Album, FeedItem } from "@/lib/types";
 
+function ProfileLink({ item, onOpenProfile }: { item: FeedItem; onOpenProfile?: (id: string) => void }) {
+  if (!item.profileId || !item.profileName || !item.profileEmojis) return null;
+  const marks = item.profileEmojis.join(" ");
+  const inner = (
+    <>
+      {item.profileAvatar ? <img className="byline-avatar" src={`/api/profiles/${item.profileId}/avatar`} alt="" /> : null}
+      <span className="byline-name">{item.profileName}</span>
+      <span className="byline-marks">{marks}</span>
+    </>
+  );
+  if (!onOpenProfile) return <p className="byline">{inner}</p>;
+  return (
+    <button
+      className="byline"
+      type="button"
+      data-profile-id={item.profileId}
+      aria-label={`Open ${item.profileName}'s profile`}
+      onClick={() => onOpenProfile(item.profileId as string)}
+    >
+      {inner}
+    </button>
+  );
+}
+
 function place(item: FeedItem): string {
   return item.eventName || item.albumName || "";
 }
@@ -115,6 +139,7 @@ export function PrintView({
   albums,
   onFile,
   onOpen,
+  onOpenProfile,
   onDelete,
   compact = false,
 }: {
@@ -122,6 +147,7 @@ export function PrintView({
   albums?: Album[];
   onFile?: (id: string, albumId: string | null) => void;
   onOpen?: (item: FeedItem) => void;
+  onOpenProfile?: (id: string) => void;
   onDelete?: (id: string) => Promise<void> | void;
   compact?: boolean;
 }) {
@@ -159,6 +185,7 @@ export function PrintView({
         image
       )}
       {!compact && item.caption ? <figcaption className="caption">{item.caption}</figcaption> : null}
+      {!compact ? <ProfileLink item={item} onOpenProfile={onOpenProfile} /> : null}
       <p className="meta">{meta}</p>
       {!compact ? <p className="stock-line">RE-LAPSE 400</p> : null}
       <FrameActions item={item} getImage={() => imageRef.current} onDelete={onDelete} />
@@ -190,10 +217,12 @@ export function PrintView({
 export function Lightbox({
   item,
   onClose,
+  onOpenProfile,
   onDelete,
 }: {
   item: FeedItem;
   onClose: () => void;
+  onOpenProfile?: (id: string) => void;
   onDelete?: (id: string) => Promise<void> | void;
 }) {
   const imageRef = useRef<HTMLImageElement>(null);
@@ -204,6 +233,7 @@ export function Lightbox({
       <figure className="print" onClick={(event) => event.stopPropagation()}>
         <img ref={imageRef} src={`/api/photos/${item.id}/image`} alt={item.caption || "Developed frame"} />
         {item.caption ? <figcaption className="caption">{item.caption}</figcaption> : null}
+        <ProfileLink item={item} onOpenProfile={onOpenProfile} />
         <p className="meta">{meta}</p>
         <FrameActions item={item} getImage={() => imageRef.current} onDelete={onDelete} />
       </figure>

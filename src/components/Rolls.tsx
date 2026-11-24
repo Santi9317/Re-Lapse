@@ -21,9 +21,11 @@ function eventMeta(event: EventRoll): string {
 export function Rolls({
   revision,
   onArm,
+  onOpenProfile,
 }: {
   revision: number;
   onArm: (event: EventRoll) => void;
+  onOpenProfile: (id: string) => void;
 }) {
   const [albums, setAlbums] = useState<Album[]>([]);
   const [events, setEvents] = useState<EventRoll[]>([]);
@@ -194,7 +196,9 @@ export function Rolls({
             ))}
           </div>
         )}
-        {open ? <Lightbox item={open} onClose={() => setOpen(null)} onDelete={onDelete} /> : null}
+        {open ? (
+          <Lightbox item={open} onClose={() => setOpen(null)} onOpenProfile={onOpenProfile} onDelete={onDelete} />
+        ) : null}
       </div>
     );
   }
@@ -243,13 +247,21 @@ export function Rolls({
             <p className="section">In the order they were shot</p>
             <div className="thread">
               {eventDetail.photos.map((photo) => (
-                <PrintView key={photo.id} item={photo} onOpen={setOpen} onDelete={onDelete} />
+                <PrintView
+                  key={photo.id}
+                  item={photo}
+                  onOpen={setOpen}
+                  onOpenProfile={onOpenProfile}
+                  onDelete={onDelete}
+                />
               ))}
             </div>
           </>
         ) : null}
         {error ? <p className="error">{error}</p> : null}
-        {open ? <Lightbox item={open} onClose={() => setOpen(null)} onDelete={onDelete} /> : null}
+        {open ? (
+          <Lightbox item={open} onClose={() => setOpen(null)} onOpenProfile={onOpenProfile} onDelete={onDelete} />
+        ) : null}
       </div>
     );
   }

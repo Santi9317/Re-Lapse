@@ -5,16 +5,18 @@ import { devFlagStored, fetchConfig, fetchLab, shooterToken } from "@/lib/api";
 import type { EventRoll } from "@/lib/types";
 import { Feed } from "@/components/Feed";
 import { Lab } from "@/components/Lab";
+import { GuestProfile, Profile } from "@/components/Profile";
 import { Rolls } from "@/components/Rolls";
 import { Shoot } from "@/components/Shoot";
 
-type Tab = "shoot" | "lab" | "feed" | "rolls";
+type Tab = "shoot" | "lab" | "feed" | "rolls" | "you";
 type InstallPrompt = Event & { prompt: () => Promise<void> };
 
 const lede: Record<Exclude<Tab, "shoot">, string> = {
   lab: "Let them lapse. Develop when the clock hits zero. 🧪",
   feed: "Everyone with this link. A frame stays up for a week, then it lapses. ✨",
   rolls: "Little rolls, and events that come back from their lapse. 🎞️",
+  you: "Set your name, photo, and three emojis. They show on the frames you share.",
 };
 
 export function App() {
@@ -28,6 +30,12 @@ export function App() {
   const [install, setInstall] = useState<InstallPrompt | null>(null);
   const [hideInstall, setHideInstall] = useState(true);
   const [tokenReady, setTokenReady] = useState(0);
+  const [guestId, setGuestId] = useState<string | null>(null);
+
+  function chooseTab(next: Tab) {
+    setGuestId(null);
+    setTab(next);
+  }
 
   useEffect(() => {
     shooterToken();
@@ -83,7 +91,7 @@ export function App() {
         {tab !== "shoot" ? (
           <header className="top">
             <h1 className="word">Re-Lapse ✨</h1>
-            <p className="lede">{lede[tab]}</p>
+            <p className="lede">{guestId ? "Their profile, from a frame they shared." : lede[tab]}</p>
           </header>
         ) : null}
         {devTimers ? <p className="devmark">Lab clock</p> : null}
@@ -95,7 +103,7 @@ export function App() {
               onDisarm={() => setArmed(null)}
               onSent={() => {
                 setLabRevision((value) => value + 1);
-                setTab("lab");
+                chooseTab("lab");
               }}
             />
           ) : null}
@@ -105,21 +113,29 @@ export function App() {
               onPublished={() => {
                 setFeedRevision((value) => value + 1);
                 setLabRevision((value) => value + 1);
-                setTab("feed");
+                chooseTab("feed");
               }}
               onDeleted={() => setLabCount((count) => Math.max(0, count - 1))}
             />
           ) : null}
-          {tab === "feed" ? <Feed revision={feedRevision} /> : null}
-          {tab === "rolls" ? (
-            <Rolls
-              revision={feedRevision}
-              onArm={(event) => {
-                setArmed(event);
-                setTab("shoot");
-              }}
-            />
-          ) : null}
+          {guestId ? (
+            <GuestProfile id={guestId} onBack={() => setGuestId(null)} />
+          ) : (
+            <>
+              {tab === "feed" ? <Feed revision={feedRevision} onOpenProfile={setGuestId} /> : null}
+              {tab === "you" ? <Profile revision={feedRevision} /> : null}
+              {tab === "rolls" ? (
+                <Rolls
+                  revision={feedRevision}
+                  onArm={(event) => {
+                    setArmed(event);
+                    chooseTab("shoot");
+                  }}
+                  onOpenProfile={setGuestId}
+                />
+              ) : null}
+            </>
+          )}
         </div>
         {!hideInstall ? (
           <div className="install">
@@ -154,9 +170,10 @@ export function App() {
               ["lab", "Lab", "🧪"],
               ["feed", "Feed", "✨"],
               ["rolls", "Rolls", "🎞️"],
+              ["you", "You", "🪪"],
             ] as const
           ).map(([id, label, emoji]) => (
-            <button key={id} type="button" aria-pressed={tab === id} onClick={() => setTab(id)}>
+            <button key={id} type="button" aria-pressed={tab === id && !guestId} onClick={() => chooseTab(id)}>
               <span className="nav-emoji" aria-hidden="true">{emoji}</span>
               {label}
               {id === "lab" && labReady ? <i className="dot" aria-label="Ready to develop" /> : null}

@@ -5,7 +5,7 @@ import { deletePhoto, fetchAlbums, fetchFeed, filePhoto } from "@/lib/api";
 import type { Album, FeedItem } from "@/lib/types";
 import { Lightbox, PrintView } from "@/components/Print";
 
-export function Feed({ revision }: { revision: number }) {
+export function Feed({ revision, onOpenProfile }: { revision: number; onOpenProfile: (id: string) => void }) {
   const [photos, setPhotos] = useState<FeedItem[]>([]);
   const [albums, setAlbums] = useState<Album[]>([]);
   const [error, setError] = useState("");
@@ -83,11 +83,21 @@ export function Feed({ revision }: { revision: number }) {
       ) : (
         <div className="thread">
           {photos.map((photo) => (
-            <PrintView key={photo.id} item={photo} albums={albums} onFile={onFile} onOpen={setOpen} onDelete={onDelete} />
+            <PrintView
+              key={photo.id}
+              item={photo}
+              albums={albums}
+              onFile={onFile}
+              onOpen={setOpen}
+              onOpenProfile={onOpenProfile}
+              onDelete={onDelete}
+            />
           ))}
         </div>
       )}
-      {open ? <Lightbox item={open} onClose={() => setOpen(null)} onDelete={onDelete} /> : null}
+      {open ? (
+        <Lightbox item={open} onClose={() => setOpen(null)} onOpenProfile={onOpenProfile} onDelete={onDelete} />
+      ) : null}
     </div>
   );
 }

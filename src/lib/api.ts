@@ -1,4 +1,4 @@
-import type { Album, EventDetail, EventRoll, FeedItem, LabItem } from "@/lib/types";
+import type { Album, EventDetail, EventRoll, FeedItem, LabItem, ProfileWrite, SharedProfile } from "@/lib/types";
 
 const DEV_KEY = "relapse.devtimers";
 const TOKEN_KEY = "relapse.shooter";
@@ -57,6 +57,26 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const data = (await response.json().catch(() => null)) as (T & { error?: string }) | null;
   if (!response.ok) throw new Error(data?.error || "The lab didn't answer.");
   return data as T;
+}
+
+export async function fetchOwnProfile(): Promise<SharedProfile | null> {
+  const response = await fetch("/api/profile", { headers: headers(false), cache: "no-store" });
+  if (response.status === 404) return null;
+  const data = (await response.json().catch(() => null)) as (SharedProfile & { error?: string }) | null;
+  if (!response.ok) throw new Error(data?.error || "The lab didn't answer.");
+  return data as SharedProfile;
+}
+
+export function saveOwnProfile(profile: ProfileWrite): Promise<SharedProfile> {
+  return request("/api/profile", {
+    method: "PUT",
+    headers: headers(true),
+    body: JSON.stringify(profile),
+  });
+}
+
+export function fetchPublicProfile(id: string): Promise<SharedProfile> {
+  return request(`/api/profiles/${id}`);
 }
 
 export function fetchConfig(): Promise<{ devTimers: boolean }> {
