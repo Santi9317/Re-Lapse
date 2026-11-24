@@ -4,7 +4,7 @@
  * number and resets the decimal (2.0). On 1.x the decimal is this PR's number.
  * Keep package.json "version" equal to this string.
  */
-export const APP_VERSION = "1.42";
+export const APP_VERSION = "1.51";
 
 export type Release = {
   version: string;
