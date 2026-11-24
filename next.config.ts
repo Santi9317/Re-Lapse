@@ -15,14 +15,14 @@ function git(args: string[]): string {
   }
 }
 
-function shippingRelease(): { version: string; sha: string; at: string } {
+function shippingRelease(): { version: string; sha: string; at: string } | null {
   const pkg = JSON.parse(readFileSync(join(process.cwd(), "package.json"), "utf8")) as { version?: string };
   const version = typeof pkg.version === "string" ? pkg.version : "";
   const sha = (process.env.VERCEL_GIT_COMMIT_SHA || git(["rev-parse", "HEAD"])).trim();
   const at = (process.env.RELEASE_COMMITTED_AT || git(["log", "-1", "--format=%cI"])).trim();
-  if (!version || !sha || Number.isNaN(Date.parse(at))) {
-    throw new Error("Re-Lapse could not read the shipping commit date.");
-  }
+  // A publish build may not have the git checkout. The version panel already
+  // explains a missing stamp, so the build itself has to finish.
+  if (!version || !sha || Number.isNaN(Date.parse(at))) return null;
   return { version, sha, at };
 }
 
@@ -31,11 +31,13 @@ const release = shippingRelease();
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   devIndicators: false,
-  env: {
-    NEXT_PUBLIC_RELEASE_VERSION: release.version,
-    NEXT_PUBLIC_RELEASE_SHA: release.sha,
-    NEXT_PUBLIC_RELEASE_AT: release.at,
-  },
+  env: release
+    ? {
+        NEXT_PUBLIC_RELEASE_VERSION: release.version,
+        NEXT_PUBLIC_RELEASE_SHA: release.sha,
+        NEXT_PUBLIC_RELEASE_AT: release.at,
+      }
+    : {},
   serverExternalPackages: ["@electric-sql/pglite", "pg"],
   async headers() {
     return [
