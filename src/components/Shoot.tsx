@@ -5,7 +5,7 @@ import { blobToBase64, sendPhoto } from "@/lib/api";
 import { isHardwareShutter, openCamera, releaseCamera } from "@/lib/camera";
 import { isIosDevice, setTorch, wait } from "@/lib/flash";
 import { renderDisposable } from "@/lib/filter";
-import { lapseQuip } from "@/lib/quips";
+import { exposureLine, lapseQuip } from "@/lib/quips";
 import type { EventRoll } from "@/lib/types";
 
 function FlashMark({ on }: { on: boolean }) {
@@ -20,6 +20,24 @@ function FlashMark({ on }: { on: boolean }) {
       )}
     </svg>
   );
+}
+
+const LAST_EXPOSURE_KEY = "relapse.exposure";
+
+function readLastExposure(): string | null {
+  try {
+    return localStorage.getItem(LAST_EXPOSURE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function writeLastExposure(line: string) {
+  try {
+    localStorage.setItem(LAST_EXPOSURE_KEY, line);
+  } catch {
+    /* the next shot can repeat if this device refuses storage */
+  }
 }
 
 function clickSound() {
@@ -68,6 +86,7 @@ export function Shoot({
   const [ios, setIos] = useState(false);
   const [lamp, setLamp] = useState(false);
   const [frames, setFrames] = useState(0);
+  const [sealLine, setSealLine] = useState("");
   const [now, setNow] = useState(() => Date.now());
   // A fast camera switch can leave mode on "live", so this tells the preview to attach the new stream.
   const [opened, setOpened] = useState(0);
@@ -160,6 +179,9 @@ export function Shoot({
   }, [armed]);
 
   function conceal() {
+    const line = exposureLine(readLastExposure());
+    writeLastExposure(line);
+    setSealLine(line);
     setSealed(true);
     const video = videoRef.current;
     if (!video) return;
@@ -419,7 +441,7 @@ export function Shoot({
       {sealed ? (
         <div className="review" data-review="sealed">
           <div className="sealed-frame" aria-hidden="true">
-            <span>Exposed 📸</span>
+            <span>{sealLine}</span>
           </div>
           <p className="hint">
             {armed && !eventClosed
