@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { HOW_TO } from "@/lib/howto";
 import { pickQuote, type Quote } from "@/lib/quotes";
-import { loadRelease, type Release } from "@/lib/release";
+import { APP_VERSION } from "@/lib/release";
 
 const LAST_KEY = "relapse.inspiration";
 
@@ -31,7 +31,6 @@ export function Sleeve() {
   const backRef = useRef<HTMLButtonElement>(null);
   const markRef = useRef<HTMLButtonElement>(null);
   const opened = useRef(false);
-  const release: Release | null = panel === "version" ? loadRelease() : null;
 
   useEffect(() => {
     if (panel) {
@@ -73,11 +72,11 @@ export function Sleeve() {
         <div className="sleeve-list">
           <button type="button" data-sleeve-item="version" onClick={() => setPanel("version")}>
             <strong>Version tracker</strong>
-            <span>The camera in your hands, and the day it shipped.</span>
+            <span>{APP_VERSION}</span>
           </button>
           <button type="button" data-sleeve-item="howto" onClick={() => setPanel("howto")}>
             <strong>How To</strong>
-            <span>Every trick currently on this roll.</span>
+            <span>A short tour of the camera.</span>
           </button>
           <button type="button" data-sleeve-item="inspiration" onClick={() => setPanel("inspiration")}>
             <strong>Inspiration</strong>
@@ -88,25 +87,16 @@ export function Sleeve() {
       {panel === "version" ? (
         <div className="sleeve-copy" data-version-tracker>
           <h2 className="section">Version tracker</h2>
-          {release ? (
-            <>
-              <p className="release-version" data-release-version={release.version} data-release-sha={release.sha}>
-                {release.version} · {release.short}
-              </p>
-              <p className="release-date" data-release-iso={release.iso}>
-                {release.date}
-              </p>
-              <p>The commit in this camera, and the day it shipped.</p>
-            </>
-          ) : (
-            <p className="error">This camera could not read the commit it shipped with.</p>
-          )}
+          <p className="release-version" data-release-version={APP_VERSION}>
+            {APP_VERSION}
+          </p>
+          <p>The camera in your hands.</p>
         </div>
       ) : null}
       {panel === "howto" ? (
         <article className="sleeve-copy" data-howto>
           <h2 className="section">How To</h2>
-          <p>The disposable, with the waiting left in.</p>
+          <p>From the icon on your home screen.</p>
           {HOW_TO.map((section) => (
             <section key={section.id} data-howto-section={section.id}>
               <h3>{section.title}</h3>

@@ -117,8 +117,10 @@ function forgetGrant() {
 /**
  * A labeled camera means this origin still holds the grant. Site data from the
  * last launch does not. iOS Home Screen apps drop the grant when the process
- * dies, and the next getUserMedia prompts; Safari's per-site Allow does not
- * apply there (WebKit bug 327237).
+ * dies (a full swipe away), and the next getUserMedia prompts. Leaving for the
+ * Home Screen without swiping the shortcut away must not stop the live track:
+ * that stop is what made the prompt fire on the way back. Safari's per-site
+ * Allow does not apply to the shortcut (WebKit bug 327237).
  */
 export function permissionFromSignals(input: {
   permissionState: CameraPermission | null;
@@ -166,14 +168,50 @@ function failureName(error: unknown): string {
   return "";
 }
 
+export type CameraWake =
+  | "visibility-hidden"
+  | "pagehide"
+  | "blur"
+  | "leave-shoot"
+  | "visibility-visible"
+  | "pageshow"
+  | "show-shoot";
+
+/**
+ * A live track stays up across the Home Screen, a blur, and leaving Shoot.
+ * getUserMedia runs only when that track is already gone. A swipe-away ends
+ * the process, so the next launch has nothing left to reuse.
+ */
+export function cameraWake(event: CameraWake, hasLiveTrack: boolean): "keep" | "reuse" | "request" {
+  if (event === "visibility-hidden" || event === "pagehide" || event === "blur" || event === "leave-shoot") {
+    return "keep";
+  }
+  return hasLiveTrack ? "reuse" : "request";
+}
+
+export function streamHasLiveVideo(
+  stream: { getVideoTracks(): Array<{ readyState?: string }> } | null | undefined,
+): boolean {
+  if (!stream) return false;
+  try {
+    return stream.getVideoTracks().some((track) => track.readyState === "live");
+  } catch {
+    return false;
+  }
+}
+
 function liveStream(facing: Facing): MediaStream | null {
   if (!held || held.facing !== facing) return null;
-  const live = held.stream.getVideoTracks().some((track) => track.readyState === "live");
-  if (!live) {
+  if (!streamHasLiveVideo(held.stream)) {
     held = null;
     return null;
   }
   return held.stream;
+}
+
+/** The live stream for this facing, or null. Does not call getUserMedia. */
+export function peekCamera(facing: Facing): MediaStream | null {
+  return liveStream(facing);
 }
 
 function stopHeld() {
@@ -181,6 +219,7 @@ function stopHeld() {
   held = null;
 }
 
+/** Stops the held track. Shoot must not call this on hide, blur, pagehide, or a tab change. */
 export function releaseCamera() {
   stopHeld();
 }
@@ -232,6 +271,9 @@ async function request(facing: Facing, mine: number): Promise<MediaStream | null
     return null;
   }
 
+  // Only getUserMedia in the app. openCamera skips this while peekCamera
+  // still has a live video track for the same facing. Stopping here is for a
+  // different camera (a flip), or a track that has already ended.
   stopHeld();
   for (let index = 0; index < plan.length; index += 1) {
     if (mine !== ticket) return liveStream(facing);

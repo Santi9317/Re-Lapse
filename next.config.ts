@@ -1,7 +1,6 @@
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import type { NextConfig } from "next";
+import { APP_VERSION } from "./src/lib/release";
 
 function git(args: string[]): string {
   try {
@@ -16,12 +15,11 @@ function git(args: string[]): string {
 }
 
 function shippingRelease(): { version: string; sha: string; at: string } | null {
-  const pkg = JSON.parse(readFileSync(join(process.cwd(), "package.json"), "utf8")) as { version?: string };
-  const version = typeof pkg.version === "string" ? pkg.version : "";
+  const version = APP_VERSION;
   const sha = (process.env.VERCEL_GIT_COMMIT_SHA || git(["rev-parse", "HEAD"])).trim();
   const at = (process.env.RELEASE_COMMITTED_AT || git(["log", "-1", "--format=%cI"])).trim();
-  // A publish build may not have the git checkout. The version panel already
-  // explains a missing stamp, so the build itself has to finish.
+  // A publish build may not have the git checkout. The You menu reads
+  // APP_VERSION directly, so a missing git stamp must not fail the build.
   if (!version || !sha || Number.isNaN(Date.parse(at))) return null;
   return { version, sha, at };
 }
