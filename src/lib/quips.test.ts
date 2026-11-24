@@ -24,6 +24,11 @@ test("the next shot on this device skips the line it just showed", () => {
   assert.notEqual(exposureLine(shown, () => 0), shown);
 });
 
+test("some lines are playfully vain", () => {
+  const vain = EXPOSURE_LINES.filter((line) => /vain/i.test(line));
+  assert.ok(vain.length >= 12);
+});
+
 test("exposure lines stay in the lab voice and off the develop clock", () => {
   for (const line of EXPOSURE_LINES) {
     assert.ok(line.trim().length > 0);

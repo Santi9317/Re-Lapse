@@ -83,6 +83,22 @@ export const EXPOSURE_LINES = [
   "A click with witnesses. 👀",
   "Ordinary, and somehow magic. ✨",
   "On the roll, on purpose. 🎞️",
+  "A little vain. The frame agrees. 💅",
+  "Caught you being vain. Iconic. 📸",
+  "Vain, and the light is into it. ✨",
+  "Be vain. The negative can take it. 😎",
+  "That angle was vain on purpose. 💫",
+  "Permission to be vain: granted. ✅",
+  "The roll likes you vain. 😉",
+  "Main character, mildly vain. 🌟",
+  "Vanity, sealed with love. 💌",
+  "Vain looks good on this roll. 🎞️",
+  "The shutter clocked the vanity. 😏",
+  "A vain little forever. ♾️",
+  "You were vain. It was correct. 📸",
+  "Soft vanity, hard keeper. 💎",
+  "Serve the vain. We'll keep it. 💿",
+  "Be vain. The lab is flattered. 🧪",
 ];
 
 export function exposureLine(last: string | null, random: () => number = Math.random): string {
