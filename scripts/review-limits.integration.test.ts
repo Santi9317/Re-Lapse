@@ -57,6 +57,13 @@ test("a new browser cannot mint booths or joins, and the right gate key still op
   const joined = await askToJoin(cameraRequest(member.token, member.proof, quiet), "Bea", quiet);
   assert.equal(joined.status, "pending");
   assert.equal(joined.token, member.token);
+  const boothOnly = new Request("http://127.0.0.1/api/gate", {
+    headers: { cookie: `relapse_booth=${quiet}` },
+  });
+  await assert.rejects(
+    () => askToJoin(boothOnly, "Bea", quiet),
+    (error: unknown) => error instanceof HttpError && error.status === 409,
+  );
 
   const pending = await sql<{ n: number }>(`select count(*)::int as n from join_requests where status = 'pending'`);
   const have = Number(pending[0]?.n ?? 0);

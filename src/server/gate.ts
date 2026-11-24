@@ -139,7 +139,9 @@ export async function askToJoin(request: Request, name: string, booth: string): 
       [boothId],
     );
     const waiting = pending[0]?.camera_token ? String(pending[0].camera_token) : "";
-    if (isUuid(waiting)) return waiting;
+    // The booth id is not a camera proof. Handing back the waiting token and a
+    // new signature would let anyone who learned the id take that camera.
+    if (isUuid(waiting)) throw new HttpError(409, "This phone already asked.", boothId);
     await assertJoinRoom(q, boothId);
     const token = randomUUID();
     await q(
