@@ -1,13 +1,14 @@
 /**
- * New camera ids are counted per browser booth, an httpOnly cookie the server
- * sets. One booth cannot spend the whole lab's budget. Address headers are
- * not a booth: they can be written by the caller. The global number is only
- * a ceiling so throwing the cookie away cannot mint without a bound.
+ * New camera ids are counted for one browser booth, the httpOnly cookie the
+ * server sets. Another booth's cameras do not close this booth's window.
+ * Address headers are not a booth: the caller can write them. Unclaimed ids
+ * past a keep count are dropped so a visitor cannot fill a shared allowance.
  */
-export const MINT_LIMITS = { perBooth: 4, global: 80 } as const;
+export const MINT_LIMITS = { perBooth: 4 } as const;
 
-export function mintRoom(boothCount: number, globalCount: number): boolean {
-  if (!Number.isFinite(boothCount) || !Number.isFinite(globalCount)) return false;
-  if (boothCount < 0 || globalCount < 0) return false;
-  return boothCount < MINT_LIMITS.perBooth && globalCount < MINT_LIMITS.global;
+export const UNCLAIMED_MINT_KEEP = 400;
+
+export function mintRoom(boothCount: number): boolean {
+  if (!Number.isFinite(boothCount) || boothCount < 0) return false;
+  return boothCount < MINT_LIMITS.perBooth;
 }

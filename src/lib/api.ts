@@ -3,7 +3,6 @@ import type { Album, EventDetail, EventRoll, FeedItem, FrameSticker, LabItem, Pr
 const DEV_KEY = "relapse.devtimers";
 const TOKEN_KEY = "relapse.shooter";
 const PROOF_KEY = "relapse.shooter.proof";
-const PROOF = /^[0-9a-f]{64}$/i;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function localHost(): boolean {
@@ -44,17 +43,6 @@ function rememberCamera(token: string) {
   clearReadableCameraCookie();
 }
 
-/** A proof left in localStorage by an older camera. Read once, then drop it. */
-function legacyProof(): string {
-  try {
-    const proof = localStorage.getItem(PROOF_KEY) ?? "";
-    if (PROOF.test(proof)) return proof.toLowerCase();
-  } catch {
-    /* storage can be blocked */
-  }
-  return "";
-}
-
 function dropLegacyProof() {
   try {
     localStorage.removeItem(PROOF_KEY);
@@ -63,19 +51,18 @@ function dropLegacyProof() {
   }
 }
 
+dropLegacyProof();
+
 export type GateStatus = "pending" | "accepted" | "declined";
 
 export async function fetchGate(): Promise<{ status: GateStatus; name: string } | null> {
   const token = shooterToken();
-  const proof = legacyProof();
   const headers: Record<string, string> = {};
   if (token) headers["x-shooter-token"] = token;
-  if (proof) headers["x-camera-proof"] = proof;
   const response = await fetch("/api/gate", {
     headers,
     cache: "no-store",
   });
-  if (response.ok) dropLegacyProof();
   if (response.status === 404) return null;
   const data = (await response.json().catch(() => null)) as { status?: string; name?: string; error?: string } | null;
   if (!response.ok) throw new Error(data?.error || "The lab didn't answer.");
@@ -88,9 +75,7 @@ export async function fetchGate(): Promise<{ status: GateStatus; name: string } 
 export async function requestToJoin(name: string): Promise<{ status: GateStatus; name: string }> {
   const headers: Record<string, string> = { "content-type": "application/json" };
   const token = shooterToken();
-  const proof = legacyProof();
   if (token) headers["x-shooter-token"] = token;
-  if (proof) headers["x-camera-proof"] = proof;
   const response = await fetch("/api/gate", {
     method: "POST",
     headers,
@@ -140,10 +125,8 @@ export function ensureCamera(): Promise<string> {
 async function requestCamera(): Promise<string> {
   clearReadableCameraCookie();
   const existing = shooterToken();
-  const proof = legacyProof();
   const headers: Record<string, string> = {};
   if (existing) headers["x-shooter-token"] = existing;
-  if (proof) headers["x-camera-proof"] = proof;
   const response = await fetch("/api/camera", {
     method: "POST",
     cache: "no-store",

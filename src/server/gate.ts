@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { sql } from "@/lib/db";
 import { HttpError } from "@/server/http";
-import { gateCookie, gateGuessBlocked, gateSecret, sameSecret } from "@/server/gate-key";
+import { GATE_GUESS_LIMIT, gateCookie, gateSecret, sameSecret } from "@/server/gate-key";
 import { cameraProof, issueCamera, provenCamera } from "@/server/quota";
 
 export type GateDecision = "pending" | "accepted" | "declined";
@@ -154,22 +154,52 @@ export async function decideRequest(id: string, status: "accepted" | "declined")
 
 const GUESS_WINDOW_MS = 15 * 60_000;
 
-export async function recentGateGuesses(): Promise<number> {
-  const rows = await sql<{ n: number }>(
-    `select count(*)::int as n
-     from gate_guess
-     where created_at > now() - ($1::int * interval '1 millisecond')`,
-    [GUESS_WINDOW_MS],
-  );
-  const n = rows[0]?.n;
-  return typeof n === "number" ? n : Number(n ?? 0);
+function guessFlag(value: unknown): boolean {
+  return value === true || value === "t" || value === "true" || value === 1;
 }
 
-/** Records a wrong key. The key itself is not written. */
-export async function noteGateGuess(): Promise<void> {
-  const recent = await recentGateGuesses();
-  if (gateGuessBlocked(recent)) return;
-  await sql(`insert into gate_guess (id, created_at) values ($1, now())`, [randomUUID()]);
+/**
+ * Counts this wrong key under a row lock, so parallel guesses cannot all
+ * read the old total and slip past. The key itself is not written.
+ * Returns whether the window was already full before this guess.
+ */
+export async function recordGateGuess(): Promise<boolean> {
+  await sql(
+    `insert into gate_guess_slot (id, window_start, n)
+     values (1, now(), 0)
+     on conflict (id) do nothing`,
+  );
+  const rows = await sql<{ blocked: boolean | string | number }>(
+    `with prev as (
+       select n, window_start
+       from gate_guess_slot
+       where id = 1
+       for update
+     ),
+     upd as (
+       update gate_guess_slot as slot
+       set
+         window_start = case
+           when prev.window_start <= now() - ($1::int * interval '1 millisecond') then now()
+           else prev.window_start
+         end,
+         n = case
+           when prev.window_start <= now() - ($1::int * interval '1 millisecond') then 1
+           when prev.n >= $2::int then prev.n
+           else prev.n + 1
+         end
+       from prev
+       where slot.id = 1
+     )
+     select
+       case
+         when prev.window_start <= now() - ($1::int * interval '1 millisecond') then false
+         else prev.n >= $2::int
+       end as blocked
+     from prev`,
+    [GUESS_WINDOW_MS, GATE_GUESS_LIMIT],
+  );
+  return guessFlag(rows[0]?.blocked);
 }
 
 export function assertGate(request: Request): void {
