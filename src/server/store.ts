@@ -3,16 +3,14 @@ import { devClockRequested, eventTimes, FEED_DAYS, personalReadyAt } from "@/lib
 import { sql } from "@/lib/db";
 import type { Album, EventDetail, EventRoll, EventStatus, FeedItem, LabItem, LabState, ProfileWrite, SharedProfile } from "@/lib/types";
 import { HttpError } from "@/server/http";
-import { assertCreateAllowed, cameraIsYoung, noteCreate } from "@/server/quota";
+import { assertCreateAllowed, cameraIsYoung, noteCreate, releaseUnusedCamera } from "@/server/quota";
 import { cleanJpeg } from "@/server/validate";
 
 // A shared frame stays on the feed for a week and is then deleted. Each camera
-// can only hold so many of its own rows. Cameras that have been here a day use
-// the main pool and, when it is full, replace only their own rows. A camera
-// newer than a day, including a brand-new id, uses a small day-one pool. When
-// that pool is full, the oldest day-one frame past the develop timer is
-// retired so a newcomer still gets a slot. A settled camera's frame is never
-// removed to make that room. Address headers are not read.
+// can only hold so many of its own rows, and each camera spends only its own
+// create window. Cameras newer than a day use a small day-one pool. When that
+// pool is full, this camera can replace its own oldest row and nothing of
+// anyone else's. Address headers are not read.
 const OWN_PHOTO_CAP = 24;
 const OWN_ALBUM_CAP = 8;
 const OWN_EVENT_CAP = 4;
@@ -160,56 +158,58 @@ async function countAged(table: "photos" | "albums" | "events", young: boolean):
   return num(rows[0]?.n);
 }
 
-async function dropOldestYoungPhoto(): Promise<boolean> {
+async function dropOwnYoungPhoto(token: string): Promise<boolean> {
   const rows = await sql<{ id: string }>(
     `delete from photos
      where id = (
        select p.id
        from photos p
-       join cameras c on c.token = p.shooter_token
-       where c.created_at > now() - interval '24 hours'
+       where p.shooter_token = $1
          and p.created_at < now() - interval '35 minutes'
-       order by (p.published_at is null) desc, p.created_at asc
+       order by p.created_at asc
        limit 1
      )
      returning id`,
+    [token],
   );
   return Boolean(rows[0]);
 }
 
-async function dropOldestYoungAlbum(): Promise<boolean> {
+async function dropOwnYoungAlbum(token: string): Promise<boolean> {
   const oldest = await sql<{ id: string }>(
-    `select a.id
-     from albums a
-     join cameras c on c.token = a.owner_token
-     where c.created_at > now() - interval '24 hours'
-     order by a.created_at asc
-     limit 1`,
+    `select id from albums where owner_token = $1 order by created_at asc limit 1`,
+    [token],
   );
   const id = oldest[0]?.id;
   if (!id) return false;
   await sql(`update photos set album_id = null where album_id = $1`, [id]);
-  const dropped = await sql<{ id: string }>(`delete from albums where id = $1 returning id`, [id]);
+  const dropped = await sql<{ id: string }>(
+    `delete from albums where id = $1 and owner_token = $2 returning id`,
+    [id, token],
+  );
   return Boolean(dropped[0]);
 }
 
-async function dropOldestYoungEvent(): Promise<boolean> {
+async function dropOwnYoungEvent(token: string): Promise<boolean> {
   const oldest = await sql<{ id: string }>(
     `select e.id
      from events e
-     join cameras c on c.token = e.owner_token
-     where c.created_at > now() - interval '24 hours'
+     where e.owner_token = $1
        and not exists (
          select 1 from photos p
-         where p.event_id = e.id and p.shooter_token <> e.owner_token
+         where p.event_id = e.id and p.shooter_token <> $1
        )
      order by e.created_at asc
      limit 1`,
+    [token],
   );
   const id = oldest[0]?.id;
   if (!id) return false;
-  await sql(`delete from photos where event_id = $1`, [id]);
-  const dropped = await sql<{ id: string }>(`delete from events where id = $1 returning id`, [id]);
+  await sql(`delete from photos where event_id = $1 and shooter_token = $2`, [id, token]);
+  const dropped = await sql<{ id: string }>(
+    `delete from events where id = $1 and owner_token = $2 returning id`,
+    [id, token],
+  );
   return Boolean(dropped[0]);
 }
 
@@ -223,7 +223,7 @@ async function fitPhotos(token: string): Promise<void> {
     const ceiling = young ? YOUNG_PHOTO_CAP : PHOTO_CAP - YOUNG_PHOTO_CAP;
     if (aged < ceiling && total < PHOTO_CAP) return;
     if (young) {
-      if (!(await dropOldestYoungPhoto())) break;
+      if (!(await dropOwnYoungPhoto(token))) break;
       continue;
     }
     const dropped = await sql<{ id: string }>(
@@ -253,7 +253,7 @@ async function fitAlbums(token: string): Promise<void> {
     const ceiling = young ? YOUNG_ALBUM_CAP : ALBUM_CAP - YOUNG_ALBUM_CAP;
     if (aged < ceiling && total < ALBUM_CAP) return;
     if (young) {
-      if (!(await dropOldestYoungAlbum())) break;
+      if (!(await dropOwnYoungAlbum(token))) break;
       continue;
     }
     const oldest = await sql<{ id: string }>(
@@ -282,7 +282,7 @@ async function fitEvents(token: string): Promise<void> {
     const ceiling = young ? YOUNG_EVENT_CAP : EVENT_CAP - YOUNG_EVENT_CAP;
     if (aged < ceiling && total < EVENT_CAP) return;
     if (young) {
-      if (!(await dropOldestYoungEvent())) break;
+      if (!(await dropOwnYoungEvent(token))) break;
       continue;
     }
     const oldest = await sql<{ id: string }>(
@@ -484,6 +484,7 @@ export async function createPhoto(input: {
   dev: boolean;
 }): Promise<{ id: string; readyAt: number; createdAt: number; labState: LabState; eventId: string | null }> {
   const image = cleanJpeg(input.imageBase64);
+  try {
   await assertCreateAllowed("photo", input.token);
 
   let readyAt = personalReadyAt(Date.now(), input.dev);
@@ -530,6 +531,10 @@ export async function createPhoto(input: {
     labState,
     eventId: input.eventId,
   };
+  } catch (error) {
+    await releaseUnusedCamera(input.token);
+    throw error;
+  }
 }
 
 export async function developPhoto(id: string, token: string): Promise<{ developedAt: number }> {
@@ -583,14 +588,27 @@ export async function deletePhoto(id: string, token: string): Promise<void> {
 }
 
 export async function filePhoto(id: string, token: string, albumId: string | null): Promise<void> {
+  const frames = await sql<{ shooter_token: string; event_id: string | null; published_at: string | null }>(
+    `select shooter_token, event_id, published_at from photos where id = $1`,
+    [id],
+  );
+  const frame = frames[0];
+  if (!frame) throw new HttpError(404, "That frame is already gone.");
+  if (frame.shooter_token !== token) throw new HttpError(403, "Only the person who shot it can file it.");
+  if (frame.event_id || frame.published_at == null) throw new HttpError(409, "That frame can't be filed.");
+  if (albumId) {
+    const albums = await sql<{ owner_token: string | null }>(
+      `select owner_token from albums where id = $1`,
+      [albumId],
+    );
+    const album = albums[0];
+    if (!album) throw new HttpError(409, "That roll is gone.");
+    if (album.owner_token !== token) throw new HttpError(403, "Only the person who started this roll can file into it.");
+  }
   const rows = await sql<{ id: string }>(
     `update photos
      set album_id = $1
-     where id = $2
-       and shooter_token = $3
-       and event_id is null
-       and published_at is not null
-       and ($1::text is null or exists (select 1 from albums where id = $1))
+     where id = $2 and shooter_token = $3
      returning id`,
     [albumId, id, token],
   );
@@ -665,17 +683,22 @@ export async function listAlbums(): Promise<Album[]> {
 }
 
 export async function createAlbum(name: string, token: string): Promise<Album> {
-  await assertCreateAllowed("album", token);
-  await reclaimNow();
-  await fitAlbums(token);
-  const id = randomUUID();
-  const rows = await sql<{ created_ms: number }>(
-    `insert into albums (id, name, owner_token) values ($1, $2, $3)
-     returning (extract(epoch from created_at) * 1000) as created_ms`,
-    [id, name, token],
-  );
-  await noteCreate("album", token);
-  return { id, name, createdAt: num(rows[0]?.created_ms), frameCount: 0 };
+  try {
+    await assertCreateAllowed("album", token);
+    await reclaimNow();
+    await fitAlbums(token);
+    const id = randomUUID();
+    const rows = await sql<{ created_ms: number }>(
+      `insert into albums (id, name, owner_token) values ($1, $2, $3)
+       returning (extract(epoch from created_at) * 1000) as created_ms`,
+      [id, name, token],
+    );
+    await noteCreate("album", token);
+    return { id, name, createdAt: num(rows[0]?.created_ms), frameCount: 0 };
+  } catch (error) {
+    await releaseUnusedCamera(token);
+    throw error;
+  }
 }
 
 export async function getAlbum(id: string, viewer: string): Promise<{ album: Album; photos: FeedItem[] } | null> {
@@ -757,6 +780,7 @@ export async function listEvents(): Promise<EventRoll[]> {
 }
 
 export async function createEvent(name: string, hours: number, dev: boolean, token: string): Promise<EventRoll> {
+  try {
   await assertCreateAllowed("event", token);
   await reclaimNow();
   await fitEvents(token);
@@ -774,6 +798,10 @@ export async function createEvent(name: string, hours: number, dev: boolean, tok
   const row = created[0];
   if (!row) throw new HttpError(500, "The lab hit a snag.");
   return eventFrom(row);
+  } catch (error) {
+    await releaseUnusedCamera(token);
+    throw error;
+  }
 }
 
 export async function getEvent(id: string, viewer: string): Promise<EventDetail | null> {
@@ -877,24 +905,6 @@ export async function readPublicProfile(id: string): Promise<SharedProfile | nul
 }
 
 async function fitNewProfile(): Promise<void> {
-  for (let attempt = 0; attempt < 4; attempt += 1) {
-    const rows = await sql<{ n: number }>(`select count(*)::int as n from profiles`);
-    if (num(rows[0]?.n) < PROFILE_CAP) return;
-    const dropped = await sql<{ id: string }>(
-      `delete from profiles
-       where id = (
-         select p.id
-         from profiles p
-         where not exists (select 1 from photos ph where ph.shooter_token = p.shooter_token)
-           and not exists (select 1 from albums a where a.owner_token = p.shooter_token)
-           and not exists (select 1 from events e where e.owner_token = p.shooter_token)
-         order by p.updated_at asc
-         limit 1
-       )
-       returning id`,
-    );
-    if (!dropped[0]) break;
-  }
   const rows = await sql<{ n: number }>(`select count(*)::int as n from profiles`);
   if (num(rows[0]?.n) >= PROFILE_CAP) {
     throw new HttpError(429, "The lab needs a minute. Try again shortly.");
@@ -902,6 +912,7 @@ async function fitNewProfile(): Promise<void> {
 }
 
 export async function saveOwnProfile(token: string, input: ProfileWrite): Promise<SharedProfile> {
+  try {
   const existing = await profileRow("shooter_token", token);
   await assertCreateAllowed("profile", token);
   if (!existing) {
@@ -951,6 +962,10 @@ export async function saveOwnProfile(token: string, input: ProfileWrite): Promis
   const saved = await readOwnProfile(token);
   if (!saved) throw new HttpError(500, "The lab hit a snag.");
   return saved;
+  } catch (error) {
+    await releaseUnusedCamera(token);
+    throw error;
+  }
 }
 
 export async function readAvatar(profileId: string): Promise<Buffer | null> {
