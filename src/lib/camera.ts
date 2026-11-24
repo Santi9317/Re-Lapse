@@ -2,36 +2,168 @@ const CAMERA_KEY = "relapse.camera";
 
 export type Facing = "environment" | "user";
 
-type SavedCameras = Partial<Record<Facing, string>>;
+export type CameraPermission = "granted" | "denied" | "prompt";
+
+export type VideoInput = { deviceId: string; label: string };
+
+export type StoredCamera = {
+  origin: string | null;
+  granted: boolean;
+  devices: Partial<Record<Facing, string>>;
+};
 
 type Held = { facing: Facing; stream: MediaStream };
 
+const EMPTY_RECORD: StoredCamera = { origin: null, granted: false, devices: {} };
+
 let held: Held | null = null;
 let opening: { facing: Facing; promise: Promise<MediaStream | null> } | null = null;
+let ticket = 0;
 
-function readSaved(): SavedCameras {
-  if (typeof localStorage === "undefined") return {};
+function browserStorage(): Storage | null {
   try {
-    const raw = localStorage.getItem(CAMERA_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw) as SavedCameras;
-    if (!parsed || typeof parsed !== "object") return {};
-    return parsed;
+    if (typeof localStorage === "undefined") return null;
+    return localStorage;
   } catch {
-    return {};
+    return null;
   }
 }
 
-function remember(facing: Facing, deviceId: string) {
-  if (!deviceId || typeof localStorage === "undefined") return;
-  const saved = readSaved();
-  saved[facing] = deviceId;
-  localStorage.setItem(CAMERA_KEY, JSON.stringify(saved));
+function readOrigin(): string {
+  try {
+    if (typeof location === "undefined") return "";
+    return location.origin;
+  } catch {
+    return "";
+  }
+}
+
+function deviceIdOf(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+export function parseStoredCamera(raw: string | null): StoredCamera {
+  if (!raw) return EMPTY_RECORD;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return EMPTY_RECORD;
+    const record = parsed as Record<string, unknown>;
+    const environment = deviceIdOf(record.environment);
+    const user = deviceIdOf(record.user);
+    return {
+      origin: typeof record.origin === "string" && record.origin.length > 0 ? record.origin : null,
+      granted: record.granted === true,
+      devices: {
+        ...(environment ? { environment } : {}),
+        ...(user ? { user } : {}),
+      },
+    };
+  } catch {
+    return EMPTY_RECORD;
+  }
+}
+
+export function readCameraRecord(storage: Pick<Storage, "getItem"> | null): StoredCamera {
+  if (!storage) return EMPTY_RECORD;
+  try {
+    return parseStoredCamera(storage.getItem(CAMERA_KEY));
+  } catch {
+    return EMPTY_RECORD;
+  }
+}
+
+export function writeCameraRecord(storage: Pick<Storage, "setItem"> | null, record: StoredCamera) {
+  if (!storage) return;
+  try {
+    const body: Record<string, string | boolean | null> = {
+      origin: record.origin,
+      granted: record.granted,
+    };
+    if (record.devices.environment) body.environment = record.devices.environment;
+    if (record.devices.user) body.user = record.devices.user;
+    storage.setItem(CAMERA_KEY, JSON.stringify(body));
+  } catch {
+    /* private mode */
+  }
+}
+
+export function savedDeviceId(stored: StoredCamera, facing: Facing, origin: string): string | null {
+  if (stored.origin && origin && stored.origin !== origin) return null;
+  return stored.devices[facing] ?? null;
 }
 
 export function savedCameraId(facing: Facing): string | null {
-  const id = readSaved()[facing];
-  return typeof id === "string" && id.length > 0 ? id : null;
+  return savedDeviceId(readCameraRecord(browserStorage()), facing, readOrigin());
+}
+
+function rememberGrant(facing: Facing, deviceId: string | undefined) {
+  const storage = browserStorage();
+  const previous = readCameraRecord(storage);
+  const id = deviceId && deviceId.length > 0 ? deviceId : previous.devices[facing];
+  writeCameraRecord(storage, {
+    origin: readOrigin() || previous.origin,
+    granted: true,
+    devices: id ? { ...previous.devices, [facing]: id } : previous.devices,
+  });
+}
+
+function forgetGrant() {
+  const storage = browserStorage();
+  const current = readCameraRecord(storage);
+  if (!current.granted) return;
+  writeCameraRecord(storage, { ...current, granted: false });
+}
+
+/**
+ * A labeled camera means this origin still holds the grant. Site data from the
+ * last launch does not. iOS Home Screen apps drop the grant when the process
+ * dies, and the next getUserMedia prompts; Safari's per-site Allow does not
+ * apply there (WebKit bug 327237).
+ */
+export function permissionFromSignals(input: {
+  permissionState: CameraPermission | null;
+  videoInputs: VideoInput[];
+}): CameraPermission {
+  if (input.permissionState === "denied") return "denied";
+  if (input.permissionState === "granted") return "granted";
+  if (input.videoInputs.some((device) => device.label.trim().length > 0)) return "granted";
+  return "prompt";
+}
+
+export function labeledDeviceIds(inputs: VideoInput[]): string[] {
+  return inputs
+    .filter((device) => device.label.trim().length > 0 && device.deviceId.length > 0)
+    .map((device) => device.deviceId);
+}
+
+export function capturePlan(input: {
+  permission: CameraPermission;
+  facing: Facing;
+  savedDeviceId: string | null;
+  visibleDeviceIds: string[];
+}): MediaTrackConstraints[] | null {
+  if (input.permission === "denied") return null;
+  const byFacing: MediaTrackConstraints = {
+    facingMode: { ideal: input.facing },
+    width: { ideal: 1600 },
+    height: { ideal: 1200 },
+  };
+  if (input.permission !== "granted") return [byFacing];
+  const saved = input.savedDeviceId;
+  if (saved && input.visibleDeviceIds.includes(saved)) {
+    return [{ deviceId: { exact: saved }, width: { ideal: 1600 }, height: { ideal: 1200 } }, byFacing];
+  }
+  return [byFacing];
+}
+
+export function shouldRetryCamera(errorName: string): boolean {
+  return errorName === "OverconstrainedError" || errorName === "NotFoundError" || errorName === "ConstraintNotSatisfiedError";
+}
+
+function failureName(error: unknown): string {
+  if (typeof DOMException !== "undefined" && error instanceof DOMException) return error.name;
+  if (error instanceof Error) return error.name;
+  return "";
 }
 
 function liveStream(facing: Facing): MediaStream | null {
@@ -44,30 +176,81 @@ function liveStream(facing: Facing): MediaStream | null {
   return held.stream;
 }
 
-export function releaseCamera() {
+function stopHeld() {
   held?.stream.getTracks().forEach((track) => track.stop());
   held = null;
 }
 
-async function request(facing: Facing): Promise<MediaStream | null> {
-  if (!navigator.mediaDevices?.getUserMedia) return null;
-  releaseCamera();
-  const savedId = savedCameraId(facing);
-  const attempts: MediaTrackConstraints[] = [];
-  if (savedId) {
-    attempts.push({ deviceId: { exact: savedId }, width: { ideal: 1600 }, height: { ideal: 1200 } });
+export function releaseCamera() {
+  stopHeld();
+}
+
+async function queryCameraPermission(): Promise<CameraPermission | null> {
+  try {
+    if (typeof navigator === "undefined" || !navigator.permissions?.query) return null;
+    const status = await navigator.permissions.query({ name: "camera" });
+    if (status.state === "granted" || status.state === "denied" || status.state === "prompt") return status.state;
+    return null;
+  } catch {
+    return null;
   }
-  attempts.push({ facingMode: { ideal: facing }, width: { ideal: 1600 }, height: { ideal: 1200 } });
-  for (const video of attempts) {
+}
+
+async function listVideoInputs(): Promise<VideoInput[]> {
+  try {
+    if (typeof navigator === "undefined" || !navigator.mediaDevices?.enumerateDevices) return [];
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    return devices
+      .filter((device) => device.kind === "videoinput")
+      .map((device) => ({ deviceId: device.deviceId, label: device.label }));
+  } catch {
+    return [];
+  }
+}
+
+async function request(facing: Facing, mine: number): Promise<MediaStream | null> {
+  const media = typeof navigator === "undefined" ? undefined : navigator.mediaDevices;
+  if (!media?.getUserMedia) return null;
+
+  const videoInputs = await listVideoInputs();
+  if (mine !== ticket) return liveStream(facing);
+  const permission = permissionFromSignals({
+    permissionState: await queryCameraPermission(),
+    videoInputs,
+  });
+  if (mine !== ticket) return liveStream(facing);
+
+  const stored = readCameraRecord(browserStorage());
+  const plan = capturePlan({
+    permission,
+    facing,
+    savedDeviceId: savedDeviceId(stored, facing, readOrigin()),
+    visibleDeviceIds: labeledDeviceIds(videoInputs),
+  });
+  if (!plan) {
+    if (permission === "denied") forgetGrant();
+    return null;
+  }
+
+  stopHeld();
+  for (let index = 0; index < plan.length; index += 1) {
+    if (mine !== ticket) return liveStream(facing);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: false, video });
+      const stream = await media.getUserMedia({ audio: false, video: plan[index] });
       const track = stream.getVideoTracks()[0];
       const deviceId = track?.getSettings?.().deviceId;
-      if (deviceId) remember(facing, deviceId);
+      rememberGrant(facing, deviceId);
+      if (mine !== ticket) {
+        stream.getTracks().forEach((trackToStop) => trackToStop.stop());
+        return liveStream(facing);
+      }
       held = { facing, stream };
       return stream;
-    } catch {
-      /* the saved camera can disappear; the next attempt asks by facing */
+    } catch (error) {
+      const name = failureName(error);
+      if (index < plan.length - 1 && shouldRetryCamera(name)) continue;
+      if (name === "NotAllowedError") forgetGrant();
+      return null;
     }
   }
   return null;
@@ -77,7 +260,8 @@ export function openCamera(facing: Facing): Promise<MediaStream | null> {
   const existing = liveStream(facing);
   if (existing) return Promise.resolve(existing);
   if (opening?.facing === facing) return opening.promise;
-  const promise = request(facing).finally(() => {
+  const mine = ++ticket;
+  const promise = request(facing, mine).finally(() => {
     if (opening?.promise === promise) opening = null;
   });
   opening = { facing, promise };
