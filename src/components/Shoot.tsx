@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { blobToBase64, sendPhoto } from "@/lib/api";
+import { isHardwareShutter, openCamera, releaseCamera } from "@/lib/camera";
 import { isIosDevice, setTorch, wait } from "@/lib/flash";
 import { renderDisposable } from "@/lib/filter";
 import { lapseQuip } from "@/lib/quips";
@@ -63,6 +64,7 @@ export function Shoot({
   const [rendering, setRendering] = useState(false);
   const [error, setError] = useState("");
   const [burst, setBurst] = useState(false);
+  const [screenFlash, setScreenFlash] = useState(false);
   const [ios, setIos] = useState(false);
   const [lamp, setLamp] = useState(false);
   const [frames, setFrames] = useState(0);
@@ -76,41 +78,62 @@ export function Shoot({
     if (apple) setLamp(true);
   }, []);
 
+  const facingRef = useRef(facing);
+  facingRef.current = facing;
+
   useEffect(() => {
     let cancel = false;
     async function open() {
-      if (!navigator.mediaDevices?.getUserMedia) {
-        if (!cancel) setMode("fallback");
+      const stream = await openCamera(facing);
+      if (cancel) return;
+      if (!stream) {
+        setMode("fallback");
         return;
       }
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          audio: false,
-          video: {
-            facingMode: { ideal: facing },
-            width: { ideal: 1600 },
-            height: { ideal: 1200 },
-          },
-        });
-        if (cancel) {
-          stream.getTracks().forEach((track) => track.stop());
-          return;
-        }
-        streamRef.current?.getTracks().forEach((track) => track.stop());
-        streamRef.current = stream;
-        setMode("live");
-      } catch {
-        if (!cancel) setMode("fallback");
-      }
+      streamRef.current = stream;
+      setMode("live");
     }
     setMode("opening");
     void open();
     return () => {
       cancel = true;
-      streamRef.current?.getTracks().forEach((track) => track.stop());
-      streamRef.current = null;
     };
   }, [facing]);
+
+  useEffect(() => {
+    const resume = () => {
+      if (document.visibilityState !== "visible") return;
+      void openCamera(facingRef.current).then((stream) => {
+        if (!stream) return;
+        streamRef.current = stream;
+        const video = videoRef.current;
+        if (video) {
+          video.srcObject = stream;
+          video.style.visibility = "";
+          void video.play().catch(() => undefined);
+        }
+        setMode("live");
+      });
+    };
+    const park = () => {
+      releaseCamera();
+      streamRef.current = null;
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") park();
+      else resume();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("pagehide", park);
+    window.addEventListener("pageshow", resume);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("pagehide", park);
+      window.removeEventListener("pageshow", resume);
+      releaseCamera();
+      streamRef.current = null;
+    };
+  }, []);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -182,25 +205,35 @@ export function Shoot({
     }
     const video = videoRef.current;
     const track = streamRef.current?.getVideoTracks()[0] ?? null;
-    const fire = lamp && facing === "environment";
-    const lit = fire ? await setTorch(track, true) : false;
+    const rear = lamp && facing === "environment";
+    const front = lamp && facing === "user";
+    const lit = rear ? await setTorch(track, true) : false;
     if (lit) await wait(180);
+    if (front) {
+      setScreenFlash(true);
+      await yieldFrame();
+      await wait(320);
+    }
     try {
       clickSound();
       navigator.vibrate?.(15);
-      setBurst(true);
-      window.setTimeout(() => setBurst(false), 90);
+      if (!front) {
+        setBurst(true);
+        window.setTimeout(() => setBurst(false), 90);
+      }
       const still = document.createElement("canvas");
       still.width = video.videoWidth;
       still.height = video.videoHeight;
       const ctx = still.getContext("2d");
       if (!ctx) return;
       ctx.drawImage(video, 0, 0);
+      if (front) setScreenFlash(false);
       conceal();
       await yieldFrame();
       await takeBitmap(await createImageBitmap(still));
     } finally {
       if (lit) await setTorch(track, false);
+      if (front) setScreenFlash(false);
     }
   }
 
@@ -221,9 +254,10 @@ export function Shoot({
   snapRef.current = snap;
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.code !== "Space") return;
+      const hardware = isHardwareShutter(event);
+      if (event.code !== "Space" && !hardware) return;
       const tag = (event.target as HTMLElement | null)?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      if (!hardware && (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT")) return;
       event.preventDefault();
       void snapRef.current();
     };
@@ -302,6 +336,7 @@ export function Shoot({
         <div className="vignette" />
         <div className="grain" />
         {burst ? <div className="flash" /> : null}
+        {screenFlash ? <div className="screen-flash" /> : null}
         <div className="vf-top">
           <div>
             <div className="brand">Re-Lapse ✨</div>
@@ -309,7 +344,7 @@ export function Shoot({
           </div>
           <div className="counter">400 · {String(frames).padStart(2, "0")}</div>
         </div>
-        {ios && mode === "live" && facing === "environment" && !sealed ? (
+        {ios && mode === "live" && !sealed ? (
           <button
             className="lamp"
             type="button"
