@@ -1219,16 +1219,16 @@ button.byline .byline-name { text-decoration: underline; text-underline-offset: 
   font-size: 11px;
   font-weight: 500;
 }
-.release-version {
+.sleeve-copy .release-version {
   font-family: var(--display);
-  font-size: 26px;
+  font-size: 22px;
   letter-spacing: 0.04em;
   line-height: 1.15;
   color: var(--blue);
   text-shadow: 0 0 18px rgba(142, 236, 255, 0.35);
   margin: 8px 0 6px;
 }
-.release-date {
+.sleeve-copy .release-date {
   color: var(--amber);
   font-size: 16px;
   line-height: 1.4;
