@@ -377,7 +377,7 @@ export function Shoot({
           </div>
           <p className="hint">
             {armed && !eventClosed
-              ? `Sealed with ${armed.name}. The whole roll lapses back a day after close. 🔒`
+              ? `Sealed with ${armed.name}. The roll comes back a day after it closes, and then the frames for the feed get picked. 🔒`
               : devTimers
                 ? `Short lab clock is on. ${lapseQuip(String(frames))}`
                 : `${lapseQuip(String(frames))} Give it 5 to 30 minutes, then develop.`}

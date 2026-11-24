@@ -34,9 +34,9 @@ export function devFlagStored(): boolean {
 
 export function shooterToken(): string {
   const existing = localStorage.getItem(TOKEN_KEY);
-  if (existing && UUID.test(existing)) return existing;
-  const token = crypto.randomUUID();
-  localStorage.setItem(TOKEN_KEY, token);
+  const token = existing && UUID.test(existing) ? existing : crypto.randomUUID();
+  if (token !== existing) localStorage.setItem(TOKEN_KEY, token);
+  document.cookie = `relapse.shooter=${token}; Path=/; Max-Age=31536000; SameSite=Lax`;
   return token;
 }
 
@@ -150,7 +150,7 @@ export function fetchAlbum(id: string): Promise<{ album: Album; photos: FeedItem
 }
 
 export async function fetchEvents(): Promise<EventRoll[]> {
-  const data = await request<{ events: EventRoll[] }>("/api/events");
+  const data = await request<{ events: EventRoll[] }>("/api/events", { headers: headers(false) });
   return data.events;
 }
 
@@ -164,6 +164,30 @@ export function createEvent(name: string, durationHours: number): Promise<EventR
 
 export function fetchEvent(id: string): Promise<EventDetail> {
   return request(`/api/events/${id}`, { headers: headers(false) });
+}
+
+export function joinEvent(code: string): Promise<EventDetail> {
+  return request("/api/events/join", {
+    method: "POST",
+    headers: headers(true),
+    body: JSON.stringify({ code }),
+  });
+}
+
+export function inviteToEvent(id: string, username: string): Promise<EventDetail> {
+  return request(`/api/events/${id}/invites`, {
+    method: "POST",
+    headers: headers(true),
+    body: JSON.stringify({ username }),
+  });
+}
+
+export function publishEventFeed(id: string, photoIds: string[]): Promise<EventDetail> {
+  return request(`/api/events/${id}/feed`, {
+    method: "POST",
+    headers: headers(true),
+    body: JSON.stringify({ photoIds }),
+  });
 }
 
 export async function blobToBase64(blob: Blob): Promise<string> {
