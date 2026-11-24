@@ -2,11 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { devFlagStored, fetchConfig, fetchLab, shooterToken } from "@/lib/api";
+import { isSafariUa } from "@/lib/shell";
 import type { EventRoll } from "@/lib/types";
 import { Feed } from "@/components/Feed";
 import { Lab } from "@/components/Lab";
 import { GuestProfile, Profile } from "@/components/Profile";
 import { Rolls } from "@/components/Rolls";
+import { ShellPrompts } from "@/components/Shell";
 import { Shoot } from "@/components/Shoot";
 
 type Tab = "shoot" | "lab" | "feed" | "rolls" | "you";
@@ -40,12 +42,11 @@ export function App() {
   useEffect(() => {
     shooterToken();
     setTokenReady((value) => value + 1);
-    setHideInstall(localStorage.getItem("relapse.hideInstall") === "1" || window.matchMedia("(display-mode: standalone)").matches);
+    const standalone = window.matchMedia("(display-mode: standalone)").matches || (navigator as Navigator & { standalone?: boolean }).standalone === true;
+    setHideInstall(localStorage.getItem("relapse.hideInstall") === "1" || standalone);
     void fetchConfig().then((config) => setDevTimers(config.devTimers && devFlagStored()));
-    if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("/sw.js").catch(() => undefined);
-    }
     const onPrompt = (event: Event) => {
+      if (isSafariUa(navigator.userAgent)) return;
       event.preventDefault();
       setInstall(event as InstallPrompt);
     };
@@ -83,7 +84,7 @@ export function App() {
     setHideInstall(true);
   }
 
-  const ios = typeof navigator !== "undefined" && /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const safari = typeof navigator !== "undefined" && isSafariUa(navigator.userAgent);
 
   return (
     <div className="desk">
@@ -137,14 +138,10 @@ export function App() {
             </>
           )}
         </div>
-        {!hideInstall ? (
+        {!hideInstall && !safari ? (
           <div className="install">
             <span>
-              {install
-                ? "Keep the camera on your home screen."
-                : ios
-                  ? "Share, then Add to Home Screen."
-                  : <>Add <span className="namemark">Re-Lapse</span> to your home screen.</>}
+              {install ? "Keep the camera on your home screen." : <>Add <span className="namemark">Re-Lapse</span> to your home screen.</>}
             </span>
             {install ? (
               <button
@@ -181,6 +178,7 @@ export function App() {
             </button>
           ))}
         </nav>
+        <ShellPrompts />
       </div>
     </div>
   );
