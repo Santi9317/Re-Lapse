@@ -2,9 +2,24 @@
 
 import { useEffect, useRef, useState } from "react";
 import { blobToBase64, sendPhoto } from "@/lib/api";
+import { isIosDevice, setTorch, wait } from "@/lib/flash";
 import { renderDisposable } from "@/lib/filter";
 import { lapseQuip } from "@/lib/quips";
 import type { EventRoll } from "@/lib/types";
+
+function FlashMark({ on }: { on: boolean }) {
+  return (
+    <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
+      <path
+        d="M13.4 2.2 4.8 13.1h5.4l-1.1 8.7 8.8-11.2h-5.5L13.4 2.2Z"
+        fill="currentColor"
+      />
+      {on ? null : (
+        <path d="M5 4.5 19 19.5" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+      )}
+    </svg>
+  );
+}
 
 function clickSound() {
   const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
@@ -47,13 +62,18 @@ export function Shoot({
   const [busy, setBusy] = useState(false);
   const [rendering, setRendering] = useState(false);
   const [error, setError] = useState("");
-  const [flash, setFlash] = useState(false);
+  const [burst, setBurst] = useState(false);
+  const [ios, setIos] = useState(false);
+  const [lamp, setLamp] = useState(false);
   const [frames, setFrames] = useState(0);
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
     const stored = Number(localStorage.getItem("relapse.frames") || 0);
     if (Number.isFinite(stored)) setFrames(stored);
+    const apple = isIosDevice();
+    setIos(apple);
+    if (apple) setLamp(true);
   }, []);
 
   useEffect(() => {
@@ -160,20 +180,28 @@ export function Shoot({
       cameraInput.current?.click();
       return;
     }
-    clickSound();
-    navigator.vibrate?.(15);
-    setFlash(true);
-    window.setTimeout(() => setFlash(false), 90);
     const video = videoRef.current;
-    const still = document.createElement("canvas");
-    still.width = video.videoWidth;
-    still.height = video.videoHeight;
-    const ctx = still.getContext("2d");
-    if (!ctx) return;
-    ctx.drawImage(video, 0, 0);
-    conceal();
-    await yieldFrame();
-    await takeBitmap(await createImageBitmap(still));
+    const track = streamRef.current?.getVideoTracks()[0] ?? null;
+    const fire = lamp && facing === "environment";
+    const lit = fire ? await setTorch(track, true) : false;
+    if (lit) await wait(180);
+    try {
+      clickSound();
+      navigator.vibrate?.(15);
+      setBurst(true);
+      window.setTimeout(() => setBurst(false), 90);
+      const still = document.createElement("canvas");
+      still.width = video.videoWidth;
+      still.height = video.videoHeight;
+      const ctx = still.getContext("2d");
+      if (!ctx) return;
+      ctx.drawImage(video, 0, 0);
+      conceal();
+      await yieldFrame();
+      await takeBitmap(await createImageBitmap(still));
+    } finally {
+      if (lit) await setTorch(track, false);
+    }
   }
 
   async function takeFile(file: File | undefined) {
@@ -273,7 +301,7 @@ export function Shoot({
         <div className="sprockets right" />
         <div className="vignette" />
         <div className="grain" />
-        {flash ? <div className="flash" /> : null}
+        {burst ? <div className="flash" /> : null}
         <div className="vf-top">
           <div>
             <div className="brand">Re-Lapse ✨</div>
@@ -281,6 +309,17 @@ export function Shoot({
           </div>
           <div className="counter">400 · {String(frames).padStart(2, "0")}</div>
         </div>
+        {ios && mode === "live" && facing === "environment" && !sealed ? (
+          <button
+            className="lamp"
+            type="button"
+            aria-pressed={lamp}
+            aria-label={lamp ? "Flash on" : "Flash off"}
+            onClick={() => setLamp((on) => !on)}
+          >
+            <FlashMark on={lamp} />
+          </button>
+        ) : null}
         {armed ? (
           <div className="tape">
             {armed.name} · {eventClosed ? "closed" : "open"}

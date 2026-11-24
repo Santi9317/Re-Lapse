@@ -337,6 +337,25 @@ h1, h2, h3, p { margin: 0; }
   bottom: 28px;
   z-index: 3;
 }
+.lamp {
+  position: absolute;
+  z-index: 3;
+  top: calc(54px + var(--safe-top));
+  right: 30px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: rgba(255, 214, 176, 0.46);
+  background: rgba(7, 6, 15, 0.28);
+  border: 1px solid rgba(255, 176, 106, 0.16);
+}
+.lamp[aria-pressed="true"] {
+  color: #ffe0bf;
+  background: rgba(255, 176, 106, 0.14);
+  box-shadow: 0 0 14px rgba(255, 176, 106, 0.2);
+}
 
 .tape {
   position: absolute;
