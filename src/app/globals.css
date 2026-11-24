@@ -192,6 +192,7 @@ h1, h2, h3, p { margin: 0; }
   flex: 1;
   min-height: 0;
   overflow: hidden;
+  touch-action: none;
   background:
     radial-gradient(ellipse at 50% 40%, rgba(180, 75, 255, 0.22), transparent 42%),
     radial-gradient(ellipse at 50% 48%, #24143f 0%, #07060f 70%);
@@ -203,11 +204,28 @@ h1, h2, h3, p { margin: 0; }
   width: 100%;
   height: 100%;
   object-fit: cover;
+  transform-origin: center center;
   background: #000;
 }
 /* Front camera only. The shutter copies the raw frame, so this flip never reaches the print. */
 .lens.mirror { transform: scaleX(-1); }
 .lens.concealed { visibility: hidden; }
+
+.zoom-readout {
+  position: absolute;
+  z-index: 3;
+  left: 50%;
+  bottom: 128px;
+  transform: translateX(-50%);
+  color: var(--amber);
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(7, 6, 15, 0.55);
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.65);
+  pointer-events: none;
+}
 
 .sprockets {
   position: absolute;

@@ -7,6 +7,16 @@ import { isIosDevice, setTorch, wait } from "@/lib/flash";
 import { renderDisposable } from "@/lib/filter";
 import { lapseQuip } from "@/lib/quips";
 import type { EventRoll } from "@/lib/types";
+import {
+  captureFrame,
+  createViewfinderZoom,
+  formatZoom,
+  lensTransform,
+  pinchDistance,
+  previewScale,
+  zoomIsRest,
+  type ViewfinderZoom,
+} from "@/lib/zoom";
 
 function FlashMark({ on }: { on: boolean }) {
   return (
@@ -69,8 +79,19 @@ export function Shoot({
   const [lamp, setLamp] = useState(false);
   const [frames, setFrames] = useState(0);
   const [now, setNow] = useState(() => Date.now());
+  const [zoom, setZoom] = useState(1);
+  const [optical, setOptical] = useState(false);
   // A fast camera switch can leave mode on "live", so this tells the preview to attach the new stream.
   const [opened, setOpened] = useState(0);
+  const finderRef = useRef<HTMLDivElement>(null);
+  const suppressClickRef = useRef(false);
+  const engineRef = useRef<ViewfinderZoom | null>(null);
+  if (engineRef.current == null) {
+    engineRef.current = createViewfinderZoom((state) => {
+      setZoom(state.zoom);
+      setOptical(state.optical);
+    });
+  }
 
   useEffect(() => {
     const stored = Number(localStorage.getItem("relapse.frames") || 0);
@@ -82,17 +103,25 @@ export function Shoot({
 
   const facingRef = useRef(facing);
   facingRef.current = facing;
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
+  const sealedRef = useRef(sealed);
+  sealedRef.current = sealed;
 
   useEffect(() => {
     let cancel = false;
+    engineRef.current?.adopt(null);
     async function open() {
       const stream = await openCamera(facing);
       if (cancel) return;
       if (!stream) {
+        streamRef.current = null;
+        engineRef.current?.adopt(null);
         setMode("fallback");
         return;
       }
       streamRef.current = stream;
+      engineRef.current?.adopt(stream.getVideoTracks()[0] ?? null);
       setOpened((value) => value + 1);
       setMode("live");
     }
@@ -109,6 +138,7 @@ export function Shoot({
       void openCamera(facingRef.current).then((stream) => {
         if (!stream) return;
         streamRef.current = stream;
+        engineRef.current?.adopt(stream.getVideoTracks()[0] ?? null);
         const video = videoRef.current;
         if (video) {
           video.srcObject = stream;
@@ -121,6 +151,7 @@ export function Shoot({
     const park = () => {
       releaseCamera();
       streamRef.current = null;
+      engineRef.current?.adopt(null);
     };
     const onVisibility = () => {
       if (document.visibilityState === "hidden") park();
@@ -135,6 +166,71 @@ export function Shoot({
       window.removeEventListener("pageshow", resume);
       releaseCamera();
       streamRef.current = null;
+      engineRef.current?.adopt(null);
+    };
+  }, []);
+
+  useEffect(() => {
+    const finder = finderRef.current;
+    const engine = engineRef.current;
+    if (!finder || !engine) return;
+
+    let session: { distance: number; zoom: number; moved: boolean } | null = null;
+    const live = () => modeRef.current === "live" && !sealedRef.current;
+
+    const onStart = (event: TouchEvent) => {
+      if (!live() || event.touches.length !== 2) return;
+      const distance = pinchDistance(event.touches[0], event.touches[1]);
+      if (!(distance > 0)) return;
+      session = { distance, zoom: engine.zoom, moved: false };
+    };
+
+    const onMove = (event: TouchEvent) => {
+      if (event.touches.length < 2) return;
+      event.preventDefault();
+      if (!session || !live()) return;
+      const distance = pinchDistance(event.touches[0], event.touches[1]);
+      const before = engine.zoom;
+      engine.pinch(session.zoom, session.distance, distance);
+      if (engine.zoom !== before) session.moved = true;
+    };
+
+    const onEnd = (event: TouchEvent) => {
+      if (event.touches.length >= 2) return;
+      if (session?.moved) {
+        suppressClickRef.current = true;
+        window.setTimeout(() => {
+          suppressClickRef.current = false;
+        }, 500);
+      }
+      session = null;
+    };
+
+    const onWheel = (event: WheelEvent) => {
+      if (!event.ctrlKey || !live()) return;
+      event.preventDefault();
+      engine.wheel(event.deltaY);
+    };
+
+    const stopGesture = (event: Event) => {
+      event.preventDefault();
+    };
+
+    finder.addEventListener("touchstart", onStart, { passive: true });
+    finder.addEventListener("touchmove", onMove, { passive: false });
+    finder.addEventListener("touchend", onEnd);
+    finder.addEventListener("touchcancel", onEnd);
+    finder.addEventListener("wheel", onWheel, { passive: false });
+    finder.addEventListener("gesturestart", stopGesture, { passive: false });
+    finder.addEventListener("gesturechange", stopGesture, { passive: false });
+    return () => {
+      finder.removeEventListener("touchstart", onStart);
+      finder.removeEventListener("touchmove", onMove);
+      finder.removeEventListener("touchend", onEnd);
+      finder.removeEventListener("touchcancel", onEnd);
+      finder.removeEventListener("wheel", onWheel);
+      finder.removeEventListener("gesturestart", stopGesture);
+      finder.removeEventListener("gesturechange", stopGesture);
     };
   }, []);
 
@@ -225,12 +321,16 @@ export function Shoot({
         window.setTimeout(() => setBurst(false), 90);
       }
       const still = document.createElement("canvas");
-      still.width = video.videoWidth;
-      still.height = video.videoHeight;
+      const scale = engineRef.current?.preview() ?? 1;
+      const frame = captureFrame(video.videoWidth, video.videoHeight, scale);
+      still.width = Math.max(1, frame.width);
+      still.height = Math.max(1, frame.height);
       const ctx = still.getContext("2d");
       if (!ctx) return;
-      // CSS mirrors the front preview. drawImage ignores that, so the JPEG stays in true orientation.
-      ctx.drawImage(video, 0, 0);
+      // CSS mirrors the front preview. This crop is centered and unflipped, so the JPEG stays in true orientation.
+      // An optical zoom is already in the camera frame. A visual crop uses the same scale as the preview.
+      if (scale <= 1) ctx.drawImage(video, 0, 0);
+      else ctx.drawImage(video, frame.sx, frame.sy, frame.sw, frame.sh, 0, 0, still.width, still.height);
       if (front) setScreenFlash(false);
       conceal();
       await yieldFrame();
@@ -285,6 +385,8 @@ export function Shoot({
   }
 
   const eventClosed = armed != null && now >= armed.endsAt;
+  const preview = previewScale(optical, zoom);
+  const lensStyle = lensTransform(facing === "user", preview);
 
   async function send() {
     const blob = blobRef.current;
@@ -316,7 +418,17 @@ export function Shoot({
   return (
     <div className="shoot" data-screen="shoot">
       <div
+        ref={finderRef}
         className="viewfinder"
+        data-zoom={zoom}
+        data-zoom-mode={optical ? "optical" : "crop"}
+        data-preview-scale={preview}
+        onClickCapture={(event) => {
+          if (!suppressClickRef.current) return;
+          suppressClickRef.current = false;
+          event.preventDefault();
+          event.stopPropagation();
+        }}
         onDragOver={(event) => event.preventDefault()}
         onDrop={(event) => {
           event.preventDefault();
@@ -328,6 +440,7 @@ export function Shoot({
             ref={videoRef}
             className={["lens", facing === "user" ? "mirror" : "", sealed ? "concealed" : ""].filter(Boolean).join(" ")}
             data-facing={facing}
+            style={lensStyle ? { transform: lensStyle } : undefined}
             playsInline
             muted
             autoPlay
@@ -348,6 +461,7 @@ export function Shoot({
         <div className="grain" />
         {burst ? <div className="flash" /> : null}
         {screenFlash ? <div className="screen-flash" /> : null}
+        {mode === "live" && !sealed && !zoomIsRest(zoom) ? <div className="zoom-readout">{formatZoom(zoom)}</div> : null}
         <div className="vf-top">
           <div>
             <div className="brand">Re-Lapse ✨</div>
