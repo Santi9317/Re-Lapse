@@ -1,18 +1,19 @@
 import { createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { sql } from "@/lib/db";
 import { HttpError } from "@/server/http";
-import { MINT_LIMITS } from "@/server/mint";
-import { isUuid, readProof } from "@/server/validate";
+import { MINT_LIMITS, UNCLAIMED_MINT_KEEP } from "@/server/mint";
+import { isUuid, readCameraAuth } from "@/server/validate";
 
 /**
  * Each camera has its own photo, roll, event, profile, and invite window.
  * One camera cannot spend another's. A brand-new id is written to
  * camera_mints before any proof is returned. New ids are counted for the
- * browser booth that asked, and a higher ceiling covers every booth so
- * dropping the cookie cannot mint without a bound. Sending an id without
- * its proof does not reveal that proof and does not authorize the camera.
- * Asking again with the proof does not spend a new-id window. Address
- * headers are not read.
+ * browser booth that asked. Another booth does not close this one.
+ * Unclaimed ids past a keep count are dropped, so one visitor cannot spend
+ * a shared allowance and stop the others. The proof lives in the httpOnly
+ * cookie. Sending an id without that cookie does not reveal the proof and
+ * does not authorize the camera. Asking again with the cookie does not
+ * spend a new-id window. Address headers are not read.
  */
 const QUOTA = {
   photo: { windowMs: 10 * 60_000, limit: 12 },
@@ -104,6 +105,28 @@ export async function issueCamera(
     if (await cameraIsIssued(token, proof)) return { token, proof };
   }
   if (!isUuid(booth)) throw new HttpError(400, "The lab didn't answer.");
+  await sql(
+    `delete from camera_mints
+     where token in (
+       select m.token
+       from camera_mints m
+       where not exists (select 1 from join_requests j where j.camera_token = m.token)
+         and not exists (select 1 from cameras c where c.token = m.token)
+         and (
+           m.created_at <= now() - ($1::int * interval '1 millisecond')
+           or m.token in (
+             select m2.token
+             from camera_mints m2
+             where m2.created_at > now() - ($1::int * interval '1 millisecond')
+               and not exists (select 1 from join_requests j where j.camera_token = m2.token)
+               and not exists (select 1 from cameras c where c.token = m2.token)
+             order by m2.created_at desc
+             offset $2::int
+           )
+         )
+     )`,
+    [MINT_WINDOW_MS, UNCLAIMED_MINT_KEEP],
+  );
   const token = randomUUID();
   const minted = await sql<{ token: string }>(
     `insert into camera_mints (token, created_at, booth)
@@ -114,13 +137,8 @@ export async function issueCamera(
        where booth = $2::text
          and created_at > now() - ($3::int * interval '1 millisecond')
      ) < $4::int
-     and (
-       select count(*)::int
-       from camera_mints
-       where created_at > now() - ($3::int * interval '1 millisecond')
-     ) < $5::int
      returning token`,
-    [token, booth.toLowerCase(), MINT_WINDOW_MS, MINT_LIMITS.perBooth, MINT_LIMITS.global],
+    [token, booth.toLowerCase(), MINT_WINDOW_MS, MINT_LIMITS.perBooth],
   );
   const issued = minted[0]?.token;
   if (!issued) throw new HttpError(429, "New cameras need a minute. Try again shortly.");
@@ -139,32 +157,9 @@ export async function viewerFromCookie(token: string | null, proof: string | nul
   return id;
 }
 
-function readAuthCookie(request: Request): { token: string; proof: string } | null {
-  const header = request.headers.get("cookie") ?? "";
-  for (const part of header.split(";")) {
-    const trimmed = part.trim();
-    if (!trimmed.startsWith("relapse_auth=")) continue;
-    let value = "";
-    try {
-      value = decodeURIComponent(trimmed.slice("relapse_auth=".length));
-    } catch {
-      return null;
-    }
-    const dot = value.indexOf(".");
-    if (dot < 0) continue;
-    const token = value.slice(0, dot);
-    if (!isUuid(token)) continue;
-    return { token: token.toLowerCase(), proof: value.slice(dot + 1) };
-  }
-  return null;
-}
-
-/** The camera a request can prove, from its header or its httpOnly cookie. */
+/** The camera whose proof is sealed in the httpOnly cookie. */
 export async function provenCamera(request: Request): Promise<string | null> {
-  const header = request.headers.get("x-shooter-token");
-  const headerToken = header && isUuid(header) ? header.toLowerCase() : null;
-  if (headerToken && (await cameraHoldsProof(headerToken, readProof(request)))) return headerToken;
-  const cookie = readAuthCookie(request);
+  const cookie = readCameraAuth(request);
   if (!cookie || !(await cameraHoldsProof(cookie.token, cookie.proof))) return null;
   return cookie.token;
 }

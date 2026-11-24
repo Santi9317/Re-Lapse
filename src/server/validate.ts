@@ -1,5 +1,6 @@
 import { CAROUSEL_LIMIT, isEmoji } from "@/lib/profile";
 import type { ProfileWrite } from "@/lib/types";
+import { cameraAuthFromCookie } from "@/server/camera-auth";
 import { HttpError } from "@/server/http";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -97,12 +98,14 @@ export function cleanHours(value: unknown): number {
 }
 
 const INVITE_CODE = /^[A-HJ-NP-Z2-9]{6,12}$/;
-const PROOF = /^[0-9a-f]{64}$/i;
 
+export function readCameraAuth(request: Request): { token: string; proof: string } | null {
+  return cameraAuthFromCookie(request.headers.get("cookie"));
+}
+
+/** Proof sealed in the httpOnly cookie. Request headers are not accepted. */
 export function readProof(request: Request): string | null {
-  const value = request.headers.get("x-camera-proof");
-  if (!value || !PROOF.test(value)) return null;
-  return value.toLowerCase();
+  return readCameraAuth(request)?.proof ?? null;
 }
 
 export function cleanInviteCode(value: unknown): string {

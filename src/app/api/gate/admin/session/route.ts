@@ -1,6 +1,6 @@
 import { asRecord, json, readJson, toErrorResponse } from "@/server/http";
-import { noteGateGuess, recentGateGuesses } from "@/server/gate";
-import { GATE_GUESS_DELAY_MS, gateCookie, gateGuessBlocked, gateSecret, sameSecret } from "@/server/gate-key";
+import { recordGateGuess } from "@/server/gate";
+import { GATE_GUESS_DELAY_MS, gateCookie, gateSecret, sameSecret } from "@/server/gate-key";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,10 +23,9 @@ export async function POST(request: Request) {
       });
       return response;
     }
-    const recent = await recentGateGuesses();
-    await noteGateGuess();
+    const blocked = await recordGateGuess();
     await new Promise((resolve) => setTimeout(resolve, GATE_GUESS_DELAY_MS));
-    if (gateGuessBlocked(recent)) {
+    if (blocked) {
       return json({ error: "The gate needs a minute. Try again shortly." }, 429);
     }
     return json({ error: "That key doesn't open the gate." }, 401);
