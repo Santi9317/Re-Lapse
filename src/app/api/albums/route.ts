@@ -8,8 +8,8 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   try {
-    await requireMember(request);
-    return json({ albums: await listAlbums() });
+    const viewer = await requireMember(request);
+    return json({ albums: await listAlbums(viewer) });
   } catch (error) {
     return toErrorResponse(error);
   }

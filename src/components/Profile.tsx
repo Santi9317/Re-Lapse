@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
+import { Gallery, GalleryStrip } from "@/components/Gallery";
 import { Sleeve } from "@/components/Sleeve";
 import { fetchFeed, fetchOwnProfile, fetchPublicProfile, saveOwnProfile } from "@/lib/api";
 import {
@@ -27,7 +28,7 @@ import {
   withCameraPortrait,
   type Profile,
 } from "@/lib/profile";
-import type { FeedItem, SharedProfile } from "@/lib/types";
+import type { FeedItem, GalleryCard, SharedProfile } from "@/lib/types";
 
 type Mode = "page" | "edit" | "arrange";
 
@@ -52,6 +53,8 @@ export function Profile({ revision }: { revision: number }) {
   const [pool, setPool] = useState<"all" | "mine">("all");
   const [index, setIndex] = useState(0);
   const [openId, setOpenId] = useState<string | null>(null);
+  const [galleries, setGalleries] = useState<GalleryCard[]>([]);
+  const [openGallery, setOpenGallery] = useState<string | null>(null);
   const mounted = useRef(true);
   const write = useRef(0);
 
@@ -63,10 +66,12 @@ export function Profile({ revision }: { revision: number }) {
         const local = loadProfile();
         const remote = await fetchOwnProfile();
         if (stop) return;
+        setGalleries(remote?.galleries ?? []);
         let saved = remote ? withCameraPortrait(profileFromServer(remote), local) : emptyProfile();
         if (!remote && profileReady(local)) {
           const created = await saveOwnProfile(profilePatch(local, null));
           if (stop) return;
+          setGalleries(created.galleries ?? []);
           saved = withCameraPortrait(profileFromServer(created), local);
           saveProfile(saved);
         } else if (remote) {
@@ -174,8 +179,10 @@ export function Profile({ revision }: { revision: number }) {
   async function persist(next: Profile, replaceRemoved = false): Promise<Profile | null> {
     const ticket = write.current + 1;
     write.current = ticket;
-    const remote = profileFromServer(await saveOwnProfile(profilePatch(next, profile), { replaceRemoved }));
+    const remoteProfile = await saveOwnProfile(profilePatch(next, profile), { replaceRemoved });
     if (ticket !== write.current) return null;
+    setGalleries(remoteProfile.galleries ?? []);
+    const remote = profileFromServer(remoteProfile);
     const bytes = next.avatarDataUrl
       ? next.avatarDataUrl
       : next.avatarUrl?.endsWith("/avatar")
@@ -234,6 +241,21 @@ export function Profile({ revision }: { revision: number }) {
     updateCarousel(result.ids);
   }
 
+  if (openGallery) {
+    return (
+      <div className="profile-screen" data-screen="profile">
+        <Gallery
+          id={openGallery}
+          backLabel="Profile"
+          onBack={() => setOpenGallery(null)}
+          onChanged={() => {
+            void fetchOwnProfile().then((remote) => setGalleries(remote?.galleries ?? []));
+          }}
+        />
+      </div>
+    );
+  }
+
   if (!profile || !mode) {
     return (
       <div className="profile-screen" data-screen="profile">
@@ -265,6 +287,8 @@ export function Profile({ revision }: { revision: number }) {
             setMode("arrange");
           }}
           onOpen={setOpenId}
+          galleries={galleries}
+          onOpenGallery={setOpenGallery}
         />
       ) : null}
       {mode === "edit" ? (
@@ -320,6 +344,8 @@ function ProfilePage({
   onEdit,
   onArrange,
   onOpen,
+  galleries,
+  onOpenGallery,
 }: {
   profile: Profile;
   photos: FeedItem[];
@@ -329,6 +355,8 @@ function ProfilePage({
   onEdit: () => void;
   onArrange: () => void;
   onOpen: (id: string) => void;
+  galleries: GalleryCard[];
+  onOpenGallery: (id: string) => void;
 }) {
   return (
     <>
@@ -336,6 +364,7 @@ function ProfilePage({
       <button className="ghost profile-edit" type="button" onClick={onEdit}>
         Edit profile
       </button>
+      <GalleryStrip galleries={galleries} empty="Make one from Keepsakes, then it shows up here." onOpen={onOpenGallery} />
       <div className="strip-head">
         <h2 className="section">Carousel</h2>
         <p className="fine">
@@ -922,18 +951,24 @@ export function GuestProfile({
   load?: (id: string) => Promise<SharedProfile>;
 }) {
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [galleries, setGalleries] = useState<GalleryCard[]>([]);
   const [error, setError] = useState("");
   const [index, setIndex] = useState(0);
   const [openId, setOpenId] = useState<string | null>(null);
+  const [openGallery, setOpenGallery] = useState<string | null>(null);
 
   useEffect(() => {
     let stop = false;
     setProfile(null);
+    setGalleries([]);
+    setOpenGallery(null);
     setError("");
     setIndex(0);
     load(id)
       .then((row) => {
-        if (!stop) setProfile(profileFromServer(row));
+        if (stop) return;
+        setProfile(profileFromServer(row));
+        setGalleries(row.galleries ?? []);
       })
       .catch((err: unknown) => {
         if (!stop) setError(err instanceof Error ? err.message : "That profile is gone.");
@@ -954,6 +989,22 @@ export function GuestProfile({
 
   const openPhoto = openId ? { id: openId, caption: "" } : null;
 
+  if (profile && openGallery) {
+    return (
+      <Gallery
+        id={openGallery}
+        backLabel="Profile"
+        onBack={() => setOpenGallery(null)}
+        onChanged={() => {
+          void load(id).then((row) => {
+            setProfile(profileFromServer(row));
+            setGalleries(row.galleries ?? []);
+          });
+        }}
+      />
+    );
+  }
+
   return (
     <div className="scroll" data-screen="guest-profile">
       <button className="ghost back" type="button" onClick={onBack}>
@@ -963,6 +1014,7 @@ export function GuestProfile({
       {profile ? (
         <>
           <IdentityCard profile={profile} />
+          <GalleryStrip galleries={galleries} empty="They haven't made a gallery yet." onOpen={setOpenGallery} />
           <div className="strip-head">
             <h2 className="section">Carousel</h2>
             <p className="fine">

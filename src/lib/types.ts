@@ -31,6 +31,7 @@ export type SharedProfile = {
   avatarPhotoId: string | null;
   avatarUrl: string | null;
   carouselIds: string[];
+  galleries: GalleryCard[];
 };
 
 /** Fields present on a profile save. Omitted fields stay as they are. */
@@ -70,6 +71,21 @@ export type Album = {
   name: string;
   createdAt: number;
   frameCount: number;
+  coverPhotoId: string | null;
+  owner: boolean;
+};
+
+export type GalleryCard = {
+  id: string;
+  name: string;
+  frameCount: number;
+  coverPhotoId: string | null;
+};
+
+export type AlbumDetail = {
+  album: Album;
+  photos: FeedItem[];
+  library: FeedItem[];
 };
 
 export type EventStatus = "open" | "sealing" | "ready";
