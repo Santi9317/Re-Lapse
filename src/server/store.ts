@@ -1292,6 +1292,19 @@ async function publicPhotoIds(ids: string[]): Promise<string[]> {
   return ids.filter((id) => open.has(id));
 }
 
+/** Frames on the feed that this profile took. Other people's shots are left out. */
+async function ownPublicPhotoIds(ids: string[], owner: string): Promise<string[]> {
+  const open = await publicPhotoIds(ids);
+  if (open.length === 0) return [];
+  const marks = open.map((_, index) => `$${index + 2}`).join(", ");
+  const rows = await sql<{ id: string }>(
+    `select id from photos where shooter_token = $1 and id in (${marks})`,
+    [owner, ...open],
+  );
+  const shot = new Set(rows.map((row) => String(row.id)));
+  return open.filter((id) => shot.has(id));
+}
+
 function parseCarousel(value: unknown): string[] {
   if (typeof value !== "string" || value === "") return [];
   try {
@@ -1451,7 +1464,7 @@ export async function saveOwnProfile(
     avatarImage = null;
   }
   if (avatarImage) avatarPhotoId = null;
-  const carouselIds = await publicPhotoIds(input.carouselIds);
+  const carouselIds = await ownPublicPhotoIds(input.carouselIds, token);
   await sql(
     `insert into profiles (
        id, shooter_token, username, emoji_1, emoji_2, emoji_3, avatar_photo_id, avatar_image, carousel
