@@ -8,7 +8,7 @@ import {
   storeCameraProfile,
   withCameraPortrait,
 } from "@/lib/profile";
-import type { Album, AlbumDetail, EventDetail, EventRoll, FeedItem, FrameSticker, GalleryCard, LabItem, ProfileWrite, SharedProfile } from "@/lib/types";
+import type { Album, AlbumDetail, EventDetail, EventRoll, FeedItem, FrameSticker, GalleryCard, LabItem, ProfilePatch, SharedProfile } from "@/lib/types";
 
 const DEV_KEY = "relapse.devtimers";
 const TOKEN_KEY = "relapse.shooter";
@@ -198,7 +198,7 @@ export async function fetchOwnProfile(): Promise<SharedProfile | null> {
 }
 
 export async function saveOwnProfile(
-  profile: ProfileWrite,
+  profile: ProfilePatch,
   options?: { replaceRemoved?: boolean },
 ): Promise<SharedProfile> {
   const requestHeaders = await headers(true);

@@ -17,8 +17,8 @@ import {
   moveCarouselId,
   portraitFromFile,
   profileFromServer,
+  profilePatch,
   profileReady,
-  profileWrite,
   profilesEqual,
   saveProfile,
   storeDraft,
@@ -50,7 +50,6 @@ export function Profile({ revision }: { revision: number }) {
   const [reading, setReading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [moreFrames, setMoreFrames] = useState(false);
-  const [pool, setPool] = useState<"all" | "mine">("all");
   const [index, setIndex] = useState(0);
   const [openId, setOpenId] = useState<string | null>(null);
   const [galleries, setGalleries] = useState<GalleryCard[]>([]);
@@ -69,7 +68,7 @@ export function Profile({ revision }: { revision: number }) {
         setGalleries(remote?.galleries ?? []);
         let saved = remote ? withCameraPortrait(profileFromServer(remote), local) : emptyProfile();
         if (!remote && profileReady(local)) {
-          const created = await saveOwnProfile(profileWrite(local));
+          const created = await saveOwnProfile(profilePatch(local, null));
           if (stop) return;
           setGalleries(created.galleries ?? []);
           saved = withCameraPortrait(profileFromServer(created), local);
@@ -179,7 +178,7 @@ export function Profile({ revision }: { revision: number }) {
   async function persist(next: Profile, replaceRemoved = false): Promise<Profile | null> {
     const ticket = write.current + 1;
     write.current = ticket;
-    const remoteProfile = await saveOwnProfile(profileWrite(next), { replaceRemoved });
+    const remoteProfile = await saveOwnProfile(profilePatch(next, profile), { replaceRemoved });
     if (ticket !== write.current) return null;
     setGalleries(remoteProfile.galleries ?? []);
     const remote = profileFromServer(remoteProfile);
@@ -236,6 +235,8 @@ export function Profile({ revision }: { revision: number }) {
 
   function addOrRemove(id: string) {
     if (!profile) return;
+    const onStrip = profile.carouselIds.includes(id);
+    if (!onStrip && !photos.some((photo) => photo.id === id && photo.mine)) return;
     const result = toggleCarouselId(profile.carouselIds, id);
     if (result.full) return;
     updateCarousel(result.ids);
@@ -283,7 +284,6 @@ export function Profile({ revision }: { revision: number }) {
           onEdit={beginEdit}
           onArrange={() => {
             setFormError("");
-            setPool("all");
             setMode("arrange");
           }}
           onOpen={setOpenId}
@@ -318,9 +318,7 @@ export function Profile({ revision }: { revision: number }) {
         <StripArranger
           ids={profile.carouselIds}
           photos={photos}
-          pool={pool}
           feedError={feedError}
-          onPool={setPool}
           onToggle={addOrRemove}
           onMove={(from, to) => updateCarousel(moveCarouselId(profile.carouselIds, from, to))}
           onDone={() => {
@@ -364,7 +362,6 @@ function ProfilePage({
       <button className="ghost profile-edit" type="button" onClick={onEdit}>
         Edit profile
       </button>
-      <GalleryStrip galleries={galleries} empty="Make one from Keepsakes, then it shows up here." onOpen={onOpenGallery} />
       <div className="strip-head">
         <h2 className="section">Carousel</h2>
         <p className="fine">
@@ -383,6 +380,7 @@ function ProfilePage({
       <button className="primary profile-arrange" type="button" onClick={onArrange}>
         Arrange the strip
       </button>
+      <GalleryStrip galleries={galleries} empty="Make one from Keepsakes, then it shows up here." onOpen={onOpenGallery} />
     </>
   );
 }
@@ -771,24 +769,20 @@ function ProfileEditor({
 function StripArranger({
   ids,
   photos,
-  pool,
   feedError,
-  onPool,
   onToggle,
   onMove,
   onDone,
 }: {
   ids: string[];
   photos: FeedItem[];
-  pool: "all" | "mine";
   feedError: string;
-  onPool: (pool: "all" | "mine") => void;
   onToggle: (id: string) => void;
   onMove: (from: number, to: number) => void;
   onDone: () => void;
 }) {
   const [over, setOver] = useState<number | null>(null);
-  const poolPhotos = pool === "mine" ? photos.filter((photo) => photo.mine) : photos;
+  const ownPhotos = photos.filter((photo) => photo.mine);
   const chosen = new Set(ids);
 
   return (
@@ -861,30 +855,19 @@ function StripArranger({
         </ol>
       )}
       <h2 className="section">Add a frame</h2>
-      <div className="segmented" role="group" aria-label="Which frames to choose from">
-        <button type="button" aria-pressed={pool === "all"} onClick={() => onPool("all")}>
-          Everyone
-        </button>
-        <button type="button" aria-pressed={pool === "mine"} onClick={() => onPool("mine")}>
-          Yours
-        </button>
-      </div>
+      <p className="fine">Only frames you took.</p>
       {ids.length >= CAROUSEL_LIMIT ? (
         <p className="error">The strip holds {CAROUSEL_LIMIT} frames. Remove one first.</p>
       ) : null}
       {feedError ? <p className="error">{feedError}</p> : null}
-      {poolPhotos.length === 0 ? (
+      {ownPhotos.length === 0 ? (
         <div className="empty">
-          <h2>{pool === "mine" ? "No frames of yours." : "No frames to add."}</h2>
-          <p>
-            {pool === "mine"
-              ? "You haven't shared a frame yet."
-              : "Develop a frame and send it to the feed. Then it can go on your strip."}
-          </p>
+          <h2>No frames of yours.</h2>
+          <p>You haven't shared a frame yet.</p>
         </div>
       ) : (
         <div className="pick-grid">
-          {poolPhotos.map((photo) => {
+          {ownPhotos.map((photo) => {
             const selected = chosen.has(photo.id);
             const position = ids.indexOf(photo.id);
             const label = photo.caption.trim() || "Untitled frame";
@@ -1014,7 +997,6 @@ export function GuestProfile({
       {profile ? (
         <>
           <IdentityCard profile={profile} />
-          <GalleryStrip galleries={galleries} empty="They haven't made a gallery yet." onOpen={setOpenGallery} />
           <div className="strip-head">
             <h2 className="section">Carousel</h2>
             <p className="fine">
@@ -1029,6 +1011,7 @@ export function GuestProfile({
           ) : (
             <Carousel ids={profile.carouselIds} photos={[]} index={index} onIndex={setIndex} onOpen={setOpenId} />
           )}
+          <GalleryStrip galleries={galleries} empty="They haven't made a gallery yet." onOpen={setOpenGallery} />
         </>
       ) : null}
       {openPhoto ? <FrameDialog photo={openPhoto} onClose={() => setOpenId(null)} /> : null}
