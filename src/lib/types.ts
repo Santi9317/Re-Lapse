@@ -41,7 +41,7 @@ export type EventRoll = {
   endsAt: number;
   revealAt: number;
   status: EventStatus;
-  frameCount: number;
+  frameCount: number | null;
 };
 
 export type EventDetail = EventRoll & {

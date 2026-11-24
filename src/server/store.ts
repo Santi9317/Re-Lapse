@@ -3,13 +3,16 @@ import { devClockRequested, eventTimes, personalReadyAt } from "@/lib/clock";
 import { sql } from "@/lib/db";
 import type { Album, EventDetail, EventRoll, EventStatus, FeedItem, LabItem, LabState } from "@/lib/types";
 import { HttpError } from "@/server/http";
+import { assertCreateAllowed, noteCreate } from "@/server/quota";
 import { cleanJpeg } from "@/server/validate";
 
+// Storage ceilings, not permanent locks. Expired rows are removed, and a full
+// table drops the oldest row so a visitor cannot fill the lab forever.
 const PHOTO_CAP = 500;
 const ALBUM_CAP = 200;
 const EVENT_CAP = 200;
 
-const recentSends = new Map<string, number[]>();
+let lastReclaim = 0;
 
 function num(value: unknown): number {
   const n = typeof value === "number" ? value : Number(value);
@@ -26,15 +29,112 @@ function flag(value: unknown): boolean {
   return value === true || value === "t" || value === "true" || value === 1;
 }
 
-function rateLimit(token: string) {
-  const now = Date.now();
-  const recent = (recentSends.get(token) ?? []).filter((stamp) => now - stamp < 10 * 60_000);
-  if (recent.length >= 20) {
-    recentSends.set(token, recent);
-    throw new HttpError(429, "The lab needs a minute. Shoot again shortly.");
+async function runReclaim(): Promise<void> {
+  await sql(
+    `delete from photos
+     where event_id is null
+       and developed_at is null
+       and created_at < now() - interval '48 hours'`,
+  );
+  await sql(
+    `delete from photos
+     where event_id is null
+       and developed_at is not null
+       and developed_at < now() - interval '30 days'`,
+  );
+  await sql(
+    `delete from photos
+     where event_id in (select id from events where reveal_at < now() - interval '14 days')`,
+  );
+  await sql(`delete from events where reveal_at < now() - interval '14 days'`);
+  await sql(
+    `delete from albums a
+     where a.created_at < now() - interval '7 days'
+       and not exists (
+         select 1 from photos p
+         where p.album_id = a.id and p.event_id is null and p.developed_at is not null
+       )`,
+  );
+  await sql(`delete from create_log where created_at < now() - interval '2 hours'`);
+}
+
+async function reclaimNow(): Promise<void> {
+  lastReclaim = Date.now();
+  await runReclaim();
+}
+
+async function reclaimSoon(): Promise<void> {
+  if (Date.now() - lastReclaim < 60_000) return;
+  await reclaimNow();
+}
+
+async function countOf(table: "photos" | "albums" | "events"): Promise<number> {
+  const query =
+    table === "photos"
+      ? "select count(*)::int as n from photos"
+      : table === "albums"
+        ? "select count(*)::int as n from albums"
+        : "select count(*)::int as n from events";
+  const rows = await sql<{ n: number }>(query);
+  return num(rows[0]?.n);
+}
+
+async function dropOldestPhoto(): Promise<boolean> {
+  const released = await sql<{ id: string }>(
+    `delete from photos
+     where id = (
+       select p.id
+       from photos p
+       left join events e on e.id = p.event_id
+       where (p.event_id is null and p.developed_at is not null)
+          or (p.event_id is not null and e.reveal_at <= now())
+       order by coalesce(p.developed_at, e.reveal_at) asc, p.created_at asc
+       limit 1
+     )
+     returning id`,
+  );
+  if (released[0]) return true;
+  const oldest = await sql<{ id: string }>(
+    `delete from photos
+     where id = (select id from photos order by created_at asc limit 1)
+     returning id`,
+  );
+  return Boolean(oldest[0]);
+}
+
+async function makePhotoRoom(): Promise<void> {
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    if ((await countOf("photos")) < PHOTO_CAP) return;
+    if (!(await dropOldestPhoto())) return;
   }
-  recent.push(now);
-  recentSends.set(token, recent);
+}
+
+async function makeAlbumRoom(): Promise<void> {
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    if ((await countOf("albums")) < ALBUM_CAP) return;
+    const oldest = await sql<{ id: string }>(
+      `select id from albums order by created_at asc limit 1`,
+    );
+    const id = oldest[0]?.id;
+    if (!id) return;
+    await sql(`update photos set album_id = null where album_id = $1`, [id]);
+    await sql(`delete from albums where id = $1`, [id]);
+  }
+}
+
+async function makeEventRoom(): Promise<void> {
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    if ((await countOf("events")) < EVENT_CAP) return;
+    const oldest = await sql<{ id: string }>(
+      `select id from events
+       order by case when reveal_at <= now() then 0 else 1 end, created_at asc
+       limit 1`,
+    );
+    const id = oldest[0]?.id;
+    if (!id) return;
+    await sql(`delete from photos where event_id = $1`, [id]);
+    await sql(`delete from events where id = $1`, [id]);
+  }
 }
 
 function feedItem(row: Record<string, unknown>): FeedItem {
@@ -70,6 +170,7 @@ const feedSelect = `
 `;
 
 export async function listFeed(viewer: string): Promise<FeedItem[]> {
+  await reclaimSoon();
   const rows = await sql(
     `${feedSelect}
      where (p.event_id is null and p.developed_at is not null)
@@ -82,6 +183,7 @@ export async function listFeed(viewer: string): Promise<FeedItem[]> {
 }
 
 export async function listLab(token: string): Promise<LabItem[]> {
+  await reclaimSoon();
   const rows = await sql(
     `select
        p.id,
@@ -125,11 +227,10 @@ export async function createPhoto(input: {
   imageBase64: unknown;
   eventId: string | null;
   dev: boolean;
+  source: string | null;
 }): Promise<{ id: string; readyAt: number; createdAt: number; labState: LabState; eventId: string | null }> {
   const image = cleanJpeg(input.imageBase64);
-  rateLimit(input.token);
-  const counts = await sql<{ n: number }>("select count(*)::int as n from photos");
-  if (num(counts[0]?.n) >= PHOTO_CAP) throw new HttpError(429, "The lab is full.");
+  await assertCreateAllowed("photo", input.source);
 
   let readyAt = personalReadyAt(Date.now(), input.dev);
   let labState: LabState = "developing";
@@ -153,6 +254,10 @@ export async function createPhoto(input: {
     labState = "sealed";
   }
 
+  await reclaimNow();
+  await makePhotoRoom();
+  if ((await countOf("photos")) >= PHOTO_CAP) throw new HttpError(429, "The lab is full.");
+
   const id = randomUUID();
   const rows = await sql<{ created_ms: number; ready_ms: number }>(
     `insert into photos (id, shooter_token, caption, image_b64, ready_at, event_id)
@@ -164,6 +269,7 @@ export async function createPhoto(input: {
   );
   const row = rows[0];
   if (!row) throw new HttpError(500, "The lab hit a snag.");
+  await noteCreate("photo", input.source);
   return {
     id,
     readyAt: num(row.ready_ms),
@@ -244,6 +350,7 @@ export async function readImage(
 }
 
 export async function listAlbums(): Promise<Album[]> {
+  await reclaimSoon();
   const rows = await sql(
     `select
        a.id,
@@ -265,15 +372,18 @@ export async function listAlbums(): Promise<Album[]> {
   }));
 }
 
-export async function createAlbum(name: string): Promise<Album> {
-  const counts = await sql<{ n: number }>("select count(*)::int as n from albums");
-  if (num(counts[0]?.n) >= ALBUM_CAP) throw new HttpError(429, "There are enough rolls already.");
+export async function createAlbum(name: string, source: string | null): Promise<Album> {
+  await assertCreateAllowed("album", source);
+  await reclaimNow();
+  await makeAlbumRoom();
+  if ((await countOf("albums")) >= ALBUM_CAP) throw new HttpError(429, "There are enough rolls already.");
   const id = randomUUID();
   const rows = await sql<{ created_ms: number }>(
     `insert into albums (id, name) values ($1, $2)
      returning (extract(epoch from created_at) * 1000) as created_ms`,
     [id, name],
   );
+  await noteCreate("album", source);
   return { id, name, createdAt: num(rows[0]?.created_ms), frameCount: 0 };
 }
 
@@ -313,6 +423,7 @@ export async function getAlbum(id: string, viewer: string): Promise<{ album: Alb
 
 function eventFrom(row: Record<string, unknown>): EventRoll {
   const status = String(row.status);
+  const revealed = status === "ready";
   return {
     id: String(row.id),
     name: String(row.name),
@@ -321,7 +432,7 @@ function eventFrom(row: Record<string, unknown>): EventRoll {
     endsAt: num(row.ends_ms),
     revealAt: num(row.reveal_ms),
     status: (status === "open" || status === "sealing" || status === "ready" ? status : "ready") as EventStatus,
-    frameCount: num(row.frame_count),
+    frameCount: revealed ? num(row.frame_count) : null,
   };
 }
 
@@ -338,18 +449,25 @@ const eventSelect = `
       when now() < e.reveal_at then 'sealing'
       else 'ready'
     end as status,
-    (select count(*)::int from photos p where p.event_id = e.id) as frame_count
+    case
+      when now() >= e.reveal_at
+        then (select count(*)::int from photos p where p.event_id = e.id)
+      else null
+    end as frame_count
   from events e
 `;
 
 export async function listEvents(): Promise<EventRoll[]> {
+  await reclaimSoon();
   const rows = await sql(`${eventSelect} order by e.created_at desc limit 100`);
   return rows.map(eventFrom);
 }
 
-export async function createEvent(name: string, hours: number, dev: boolean): Promise<EventRoll> {
-  const counts = await sql<{ n: number }>("select count(*)::int as n from events");
-  if (num(counts[0]?.n) >= EVENT_CAP) throw new HttpError(429, "There are enough events already.");
+export async function createEvent(name: string, hours: number, dev: boolean, source: string | null): Promise<EventRoll> {
+  await assertCreateAllowed("event", source);
+  await reclaimNow();
+  await makeEventRoom();
+  if ((await countOf("events")) >= EVENT_CAP) throw new HttpError(429, "There are enough events already.");
   const id = randomUUID();
   const times = eventTimes(Date.now(), hours, dev);
   const rows = await sql(
@@ -359,6 +477,7 @@ export async function createEvent(name: string, hours: number, dev: boolean): Pr
     [id, name, hours, times.endsAt.toISOString(), times.revealAt.toISOString()],
   );
   if (!rows[0]) throw new HttpError(500, "The lab hit a snag.");
+  await noteCreate("event", source);
   const created = await sql(`${eventSelect} where e.id = $1`, [id]);
   const row = created[0];
   if (!row) throw new HttpError(500, "The lab hit a snag.");
@@ -366,6 +485,7 @@ export async function createEvent(name: string, hours: number, dev: boolean): Pr
 }
 
 export async function getEvent(id: string, viewer: string): Promise<EventDetail | null> {
+  await reclaimSoon();
   const rows = await sql(`${eventSelect} where e.id = $1`, [id]);
   const row = rows[0];
   if (!row) return null;
