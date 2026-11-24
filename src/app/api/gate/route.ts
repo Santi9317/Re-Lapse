@@ -1,4 +1,4 @@
-import { asRecord, json, readBooth, readJson, sealBooth, sealCamera, toErrorResponse } from "@/server/http";
+import { asRecord, HttpError, json, readBooth, readJson, sealBooth, sealCamera, toErrorResponse } from "@/server/http";
 import { askToJoin, readMembership } from "@/server/gate";
 import { cameraProof, provenCamera } from "@/server/quota";
 import { cleanName } from "@/server/validate";
@@ -40,8 +40,9 @@ export async function POST(request: Request) {
       membership.token,
       membership.proof,
     );
-    return sealBooth(response, request, booth);
+    return sealBooth(response, request, membership.booth || booth);
   } catch (error) {
-    return sealBooth(toErrorResponse(error), request, booth);
+    const carried = error instanceof HttpError && error.booth ? error.booth : booth;
+    return sealBooth(toErrorResponse(error), request, carried);
   }
 }

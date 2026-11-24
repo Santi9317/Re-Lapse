@@ -109,6 +109,9 @@ export async function issueCamera(
     if (await cameraIsIssued(token, proof)) return { token, proof };
   }
   if (!isUuid(booth)) throw new HttpError(400, "The lab didn't answer.");
+  const boothId = booth.toLowerCase();
+  const issuedBooth = await sql<{ id: string }>(`select id from issued_booths where id = $1`, [boothId]);
+  if (!issuedBooth[0]) throw new HttpError(400, "The lab didn't answer.");
   await sql(
     `delete from camera_mints
      where token in (
@@ -146,8 +149,9 @@ export async function issueCamera(
        where booth = $2::text
          and created_at > now() - ($3::int * interval '1 millisecond')
      ) < $4::int
+       and exists (select 1 from issued_booths where id = $2::text)
      returning token`,
-    [token, booth.toLowerCase(), MINT_WINDOW_MS, MINT_LIMITS.perBooth],
+    [token, boothId, MINT_WINDOW_MS, MINT_LIMITS.perBooth],
   );
   const issued = minted[0]?.token;
   if (!issued) throw new HttpError(429, "This phone needs a minute. Try again shortly.");

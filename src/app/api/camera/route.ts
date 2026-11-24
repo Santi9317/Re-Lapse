@@ -1,3 +1,4 @@
+import { adoptBooth } from "@/server/booth";
 import { json, readBooth, sealBooth, sealCamera, toErrorResponse } from "@/server/http";
 import { cameraRenewal } from "@/server/camera-renew";
 import { cameraProof, issueCamera, provenCamera } from "@/server/quota";
@@ -7,7 +8,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
-  const booth = readBooth(request);
+  let booth = readBooth(request);
   try {
     const header = request.headers.get("x-shooter-token");
     const headerToken = Boolean(header && isUuid(header));
@@ -20,6 +21,7 @@ export async function POST(request: Request) {
     if (choice === "hold") {
       return sealBooth(json({ error: "This phone still has its camera." }, 401), request, booth);
     }
+    booth = await adoptBooth(booth);
     const issued = await issueCamera(null, null, booth);
     const response = sealCamera(json({ token: issued.token }), request, issued.token, issued.proof);
     return sealBooth(response, request, booth);

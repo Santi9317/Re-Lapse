@@ -1,3 +1,4 @@
+import { adoptBooth } from "@/server/booth";
 import { asRecord, json, readBooth, readJson, readRescue, sealBooth, sealCamera, sealRescue, toErrorResponse } from "@/server/http";
 import { ensureRestoredApproval } from "@/server/gate";
 import { GATE_GUESS_DELAY_MS } from "@/server/gate-key";
@@ -47,13 +48,14 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const booth = readBooth(request);
+  let booth = readBooth(request);
   try {
     const body = asRecord(await readJson(request));
     const pin = normalizePin(body.pin);
     const name = rescueName(body.name);
     if (!name) return sealBooth(json({ error: "Enter the profile name." }, 400), request, booth);
     if (!pin) return sealBooth(json({ error: "Enter the 6-digit PIN." }, 400), request, booth);
+    booth = await adoptBooth(booth);
     const result = await requestRecovery(booth, pin, name);
     if (!result.ok) {
       await delay(GATE_GUESS_DELAY_MS);

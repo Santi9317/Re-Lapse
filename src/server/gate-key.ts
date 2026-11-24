@@ -20,10 +20,20 @@ export function gateGuessBlocked(recentFailures: number): boolean {
   return Number.isFinite(recentFailures) && recentFailures >= GATE_GUESS_LIMIT;
 }
 
-/** A guess is checked only while the whole gate is still under its shared limit. */
+/** Whether this browser may record another miss. A matching key does not ask. */
 export function guessMayCompare(failures: number): boolean {
   if (!Number.isFinite(failures) || failures < 0) return false;
   return failures < GATE_GUESS_LIMIT;
+}
+
+/**
+ * A matching key opens the gate even when this browser has used its misses.
+ * Another browser's misses are not this count, so they cannot hold the key shut.
+ */
+export function gateGuessDecision(matches: boolean, failures: number): "ok" | "wrong" | "blocked" {
+  if (matches) return "ok";
+  if (!guessMayCompare(failures)) return "blocked";
+  return "wrong";
 }
 
 export function sameSecret(given: string, expected: string): boolean {

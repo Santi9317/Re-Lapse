@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { takeGateGuess } from "@/server/gate";
 import { GATE_GUESS_DELAY_MS, gateCookie, gateSecret } from "@/server/gate-key";
@@ -22,10 +21,11 @@ function tryClient(request: Request): string {
     }
     if (isUuid(value)) return value.toLowerCase();
   }
-  return randomUUID();
+  return "";
 }
 
 function sealTry(response: NextResponse, request: Request, clientId: string) {
+  if (!isUuid(clientId)) return response;
   const secure = new URL(request.url).protocol === "https:";
   response.cookies.set("relapse_try", clientId, {
     httpOnly: true,
@@ -45,7 +45,7 @@ export async function POST(request: Request) {
     const body = asRecord(await readJson(request));
     const given = typeof body.token === "string" ? body.token.trim() : "";
     const outcome = await takeGateGuess(clientId, given, secret);
-    if (outcome === "ok") {
+    if (outcome.result === "ok") {
       const response = json({ ok: true });
       const secure = new URL(request.url).protocol === "https:";
       response.cookies.set("relapse_gate", gateCookie(secret), {
@@ -55,13 +55,13 @@ export async function POST(request: Request) {
         path: "/",
         maxAge: 60 * 60 * 12,
       });
-      return sealTry(response, request, clientId);
+      return sealTry(response, request, outcome.clientId);
     }
     await new Promise((resolve) => setTimeout(resolve, GATE_GUESS_DELAY_MS));
-    if (outcome === "blocked") {
-      return sealTry(json({ error: "The gate needs a minute. Try again shortly." }, 429), request, clientId);
+    if (outcome.result === "blocked") {
+      return sealTry(json({ error: "The gate needs a minute. Try again shortly." }, 429), request, outcome.clientId);
     }
-    return sealTry(json({ error: "That key doesn't open the gate." }, 401), request, clientId);
+    return sealTry(json({ error: "That key doesn't open the gate." }, 401), request, outcome.clientId);
   } catch (error) {
     return sealTry(toErrorResponse(error), request, clientId);
   }

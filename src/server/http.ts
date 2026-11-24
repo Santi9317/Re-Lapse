@@ -1,12 +1,13 @@
-import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 
 export class HttpError extends Error {
   status: number;
+  booth?: string;
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, booth?: string) {
     super(message);
     this.status = status;
+    this.booth = booth;
   }
 }
 
@@ -34,11 +35,15 @@ function cookieValue(request: Request, name: string): string {
   return "";
 }
 
-/** The browser booth for a new camera id. Address headers are not consulted. */
+/**
+ * The booth cookie this browser already has. A missing cookie is not a new
+ * phone: inventing an id here would give every request its own allowance.
+ * Address headers are not consulted.
+ */
 export function readBooth(request: Request): string {
   const value = cookieValue(request, "relapse_booth");
   if (BOOTH_UUID.test(value)) return value.toLowerCase();
-  return randomUUID();
+  return "";
 }
 
 export function sealCamera(response: NextResponse, request: Request, token: string, proof: string) {
@@ -54,6 +59,7 @@ export function sealCamera(response: NextResponse, request: Request, token: stri
 }
 
 export function sealBooth(response: NextResponse, request: Request, booth: string) {
+  if (!BOOTH_UUID.test(booth)) return response;
   const secure = new URL(request.url).protocol === "https:";
   response.cookies.set("relapse_booth", booth, {
     httpOnly: true,

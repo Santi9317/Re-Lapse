@@ -20,3 +20,14 @@ export function joinRoom(pending: number, recent: number): boolean {
   if (pending < 0 || recent < 0) return false;
   return pending < JOIN_LIMITS.pendingMax && recent < JOIN_LIMITS.newPerWindow;
 }
+
+/** Shared line first, then this phone. A known camera uses the same answer. */
+export function joinAllowed(
+  pending: number,
+  recent: number,
+  ownRecent: number,
+): "ok" | "shared" | "phone" {
+  if (!joinRoom(pending, recent)) return "shared";
+  if (!phoneMayJoin(ownRecent)) return "phone";
+  return "ok";
+}

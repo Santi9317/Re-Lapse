@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { sql, withTransaction, type Sql } from "@/lib/db";
 import { HttpError } from "@/server/http";
-import { gateCookie, gateSecret, guessMayCompare, sameSecret } from "@/server/gate-key";
-import { JOIN_LIMITS, joinRoom, phoneMayJoin } from "@/server/join-line";
+import { adoptBooth } from "@/server/booth";
+import { gateCookie, gateGuessDecision, gateSecret, sameSecret } from "@/server/gate-key";
+import { JOIN_LIMITS, joinAllowed } from "@/server/join-line";
 import { decideRecoveryRequest } from "@/server/profile-pin";
 import { cameraProof, provenCamera } from "@/server/quota";
 import { isUuid } from "@/server/validate";
@@ -14,6 +15,7 @@ export type Membership = {
   proof: string;
   status: GateDecision;
   name: string;
+  booth: string;
 };
 
 type MembershipRow = {
@@ -61,9 +63,35 @@ function countOf(value: unknown): number {
   return typeof value === "number" ? value : Number(value ?? 0);
 }
 
+function keptBooth(booth: string): string {
+  return isUuid(booth) ? booth.toLowerCase() : "";
+}
+
 async function lockJoinLine(q: Sql): Promise<void> {
   await q(`insert into join_queue_lock (id) values (1) on conflict (id) do nothing`);
   await q(`select id from join_queue_lock where id = 1 for update`);
+}
+
+/** Shared line and this phone. A camera that already has a cookie uses this too. */
+async function assertJoinRoom(q: Sql, boothId: string): Promise<void> {
+  const issued = await q<{ id: string }>(`select id from issued_booths where id = $1`, [boothId]);
+  if (!issued[0]) throw new HttpError(400, "The lab didn't answer.", boothId);
+  const shared = await q<{ pending: number; recent: number }>(
+    `select
+       (select count(*)::int from join_requests where status = 'pending') as pending,
+       (select count(*)::int from join_requests where created_at > now() - ($1::int * interval '1 millisecond')) as recent`,
+    [JOIN_LIMITS.windowMs],
+  );
+  const counts = await q<{ recent: number }>(
+    `select count(*)::int as recent
+     from join_requests
+     where booth = $1
+       and created_at > now() - ($2::int * interval '1 millisecond')`,
+    [boothId, JOIN_LIMITS.windowMs],
+  );
+  const room = joinAllowed(countOf(shared[0]?.pending), countOf(shared[0]?.recent), countOf(counts[0]?.recent));
+  if (room === "shared") throw new HttpError(429, "The line is full. Try again shortly.", boothId);
+  if (room === "phone") throw new HttpError(429, "This phone needs a minute. Try again shortly.", boothId);
 }
 
 export async function askToJoin(request: Request, name: string, booth: string): Promise<Membership> {
@@ -71,21 +99,35 @@ export async function askToJoin(request: Request, name: string, booth: string): 
   if (known) {
     const existing = await findByToken(known);
     if (existing) {
-      return { token: known, proof: await cameraProof(known), status: existing.status, name: existing.name };
+      return {
+        token: known,
+        proof: await cameraProof(known),
+        status: existing.status,
+        name: existing.name,
+        booth: keptBooth(booth),
+      };
     }
-    await sql(
-      `insert into join_requests (id, camera_token, display_name, status, booth)
-       values ($1, $2, $3, 'pending', $4)
-       on conflict (camera_token) do nothing`,
-      [randomUUID(), known, name, isUuid(booth) ? booth.toLowerCase() : null],
-    );
+    const boothId = await adoptBooth(booth);
+    await withTransaction(async (q) => {
+      await lockJoinLine(q);
+      const again = await q<{ camera_token: string }>(
+        `select camera_token from join_requests where camera_token = $1`,
+        [known],
+      );
+      if (again[0]) return;
+      await assertJoinRoom(q, boothId);
+      await q(
+        `insert into join_requests (id, camera_token, display_name, status, booth)
+         values ($1, $2, $3, 'pending', $4)`,
+        [randomUUID(), known, name, boothId],
+      );
+    });
     const row = await findByToken(known);
-    if (!row) throw new HttpError(500, "The lab hit a snag.");
-    return { token: known, proof: await cameraProof(known), status: row.status, name: row.name };
+    if (!row) throw new HttpError(500, "The lab hit a snag.", boothId);
+    return { token: known, proof: await cameraProof(known), status: row.status, name: row.name, booth: boothId };
   }
 
-  if (!isUuid(booth)) throw new HttpError(400, "The lab didn't answer.");
-  const boothId = booth.toLowerCase();
+  const boothId = await adoptBooth(booth);
   const reserved = await withTransaction(async (q) => {
     await lockJoinLine(q);
     const pending = await q<{ camera_token: string }>(
@@ -98,21 +140,7 @@ export async function askToJoin(request: Request, name: string, booth: string): 
     );
     const waiting = pending[0]?.camera_token ? String(pending[0].camera_token) : "";
     if (isUuid(waiting)) return waiting;
-    const shared = await q<{ pending: number; recent: number }>(
-      `select
-         (select count(*)::int from join_requests where status = 'pending') as pending,
-         (select count(*)::int from join_requests where created_at > now() - ($1::int * interval '1 millisecond')) as recent`,
-      [JOIN_LIMITS.windowMs],
-    );
-    if (!joinRoom(countOf(shared[0]?.pending), countOf(shared[0]?.recent))) return "shared";
-    const counts = await q<{ recent: number }>(
-      `select count(*)::int as recent
-       from join_requests
-       where booth = $1
-         and created_at > now() - ($2::int * interval '1 millisecond')`,
-      [boothId, JOIN_LIMITS.windowMs],
-    );
-    if (!phoneMayJoin(countOf(counts[0]?.recent))) return "phone";
+    await assertJoinRoom(q, boothId);
     const token = randomUUID();
     await q(
       `insert into cameras (token, created_at) values ($1, now()) on conflict (token) do nothing`,
@@ -125,13 +153,11 @@ export async function askToJoin(request: Request, name: string, booth: string): 
     );
     return token;
   });
-  if (reserved === "shared") throw new HttpError(429, "The line is full. Try again shortly.");
-  if (!isUuid(reserved)) throw new HttpError(429, "This phone needs a minute. Try again shortly.");
   const token = reserved;
   const proof = await cameraProof(token);
   const row = await findByToken(token);
-  if (!row) throw new HttpError(500, "The lab hit a snag.");
-  return { token, proof, status: row.status, name: row.name };
+  if (!row) throw new HttpError(500, "The lab hit a snag.", boothId);
+  return { token, proof, status: row.status, name: row.name, booth: boothId };
 }
 
 /**
@@ -243,39 +269,68 @@ function guessFlag(value: unknown): boolean {
 
 export type GateGuessResult = "ok" | "wrong" | "blocked";
 
+export type GateAttempt = {
+  result: GateGuessResult;
+  clientId: string;
+};
+
+const ANONYMOUS_GATE = "anonymous";
+
 /**
- * Wrong gate keys share one budget. A missing cookie does not open another.
- * The check and the count share one lock, so parallel guesses cannot all
- * read the old total. A full window is refused before the key is compared.
- * The key itself is not written.
+ * A matching key is decided before any miss is counted, so another browser
+ * cannot hold the gate shut. Wrong keys use the row we already issued for
+ * this browser. A cookie we have not issued shares one anonymous count, so
+ * inventing an id does not start over. The key itself is not written.
  */
-export async function takeGateGuess(_clientId: string, given: string, secret: string): Promise<GateGuessResult> {
+export async function takeGateGuess(clientId: string, given: string, secret: string): Promise<GateAttempt> {
+  const presented = isUuid(clientId) ? clientId.toLowerCase() : "";
+  const matches = given.length > 0 && sameSecret(given, secret);
+  if (matches) {
+    const seal = presented || randomUUID();
+    try {
+      await sql(
+        `insert into gate_client (id, window_start, n) values ($1, now(), 0) on conflict (id) do nothing`,
+        [seal],
+      );
+    } catch (error) {
+      console.error("relapse", error instanceof Error ? error.message.slice(0, 120) : "gate client");
+    }
+    return { result: "ok", clientId: seal };
+  }
+
   return withTransaction(async (q) => {
-    await q(
-      `insert into gate_guess_slot (id, window_start, n) values (1, now(), 0) on conflict (id) do nothing`,
-    );
+    let id = ANONYMOUS_GATE;
+    if (presented) {
+      const found = await q<{ id: string }>(`select id from gate_client where id = $1 for update`, [presented]);
+      if (found[0]) id = presented;
+    }
+    if (id === ANONYMOUS_GATE) {
+      await q(
+        `insert into gate_client (id, window_start, n) values ($1, now(), 0) on conflict (id) do nothing`,
+        [ANONYMOUS_GATE],
+      );
+      await q(`select id from gate_client where id = $1 for update`, [ANONYMOUS_GATE]);
+    }
     const slot = await q<{ n: number; fresh: boolean | string | number }>(
       `select n,
-              window_start <= now() - ($1::int * interval '1 millisecond') as fresh
-       from gate_guess_slot
-       where id = 1
-       for update`,
-      [GUESS_WINDOW_MS],
+              window_start <= now() - ($2::int * interval '1 millisecond') as fresh
+       from gate_client
+       where id = $1`,
+      [id, GUESS_WINDOW_MS],
     );
     const fresh = guessFlag(slot[0]?.fresh);
     const recent = fresh ? 0 : countOf(slot[0]?.n);
-    if (!guessMayCompare(recent)) return "blocked";
-    const matches = given.length > 0 && sameSecret(given, secret);
-    if (!matches) {
+    const decision = gateGuessDecision(false, recent);
+    if (decision === "wrong") {
       await q(
-        `update gate_guess_slot
-         set n = $1,
-             window_start = case when $2::boolean then now() else window_start end
-         where id = 1`,
-        [fresh ? 1 : recent + 1, fresh],
+        `update gate_client
+         set n = $2,
+             window_start = case when $3::boolean then now() else window_start end
+         where id = $1`,
+        [id, fresh ? 1 : recent + 1, fresh],
       );
     }
-    return matches ? "ok" : "wrong";
+    return { result: decision, clientId: id === ANONYMOUS_GATE ? "" : id };
   });
 }
 
