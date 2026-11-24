@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { createAlbum, createEvent, fetchAlbum, fetchAlbums, fetchEvent, fetchEvents } from "@/lib/api";
+import { useEffect, useRef, useState } from "react";
+import { createAlbum, createEvent, deletePhoto, fetchAlbum, fetchAlbums, fetchEvent, fetchEvents } from "@/lib/api";
 import { clockLabel, frames, longRemain } from "@/lib/format";
 import type { Album, EventDetail, EventRoll, EventStatus, FeedItem } from "@/lib/types";
 import { Lightbox, PrintView } from "@/components/Print";
@@ -37,6 +37,7 @@ export function Rolls({
   const [eventDetail, setEventDetail] = useState<EventDetail | null>(null);
   const [open, setOpen] = useState<FeedItem | null>(null);
   const [tick, setTick] = useState(0);
+  const removed = useRef(new Set<string>());
 
   useEffect(() => {
     const id = window.setInterval(() => setNow(Date.now()), 1000);
@@ -68,7 +69,14 @@ export function Rolls({
   useEffect(() => {
     if (!watchedEvent) return;
     const id = window.setInterval(() => {
-      void fetchEvent(watchedEvent).then(setEventDetail).catch(() => undefined);
+      void fetchEvent(watchedEvent)
+        .then((detail) => {
+          setEventDetail({
+            ...detail,
+            photos: detail.photos.filter((photo) => !removed.current.has(photo.id)),
+          });
+        })
+        .catch(() => undefined);
     }, 3000);
     return () => window.clearInterval(id);
   }, [watchedEvent]);
@@ -101,6 +109,48 @@ export function Rolls({
       setError(err instanceof Error ? err.message : "Could not open that event.");
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function onDelete(id: string) {
+    const albumSnap = albumDetail;
+    const eventSnap = eventDetail;
+    const opened = open;
+    removed.current.add(id);
+    setAlbumDetail((current) =>
+      current
+        ? {
+            album: {
+              ...current.album,
+              frameCount: Math.max(0, current.album.frameCount - (current.photos.some((photo) => photo.id === id) ? 1 : 0)),
+            },
+            photos: current.photos.filter((photo) => photo.id !== id),
+          }
+        : current,
+    );
+    setEventDetail((current) =>
+      current
+        ? {
+            ...current,
+            frameCount:
+              current.frameCount == null
+                ? null
+                : Math.max(0, current.frameCount - (current.photos.some((photo) => photo.id === id) ? 1 : 0)),
+            photos: current.photos.filter((photo) => photo.id !== id),
+          }
+        : current,
+    );
+    if (open?.id === id) setOpen(null);
+    try {
+      await deletePhoto(id);
+      setTick((value) => value + 1);
+    } catch (err) {
+      removed.current.delete(id);
+      setAlbumDetail(albumSnap);
+      setEventDetail(eventSnap);
+      setOpen(opened);
+      setError(err instanceof Error ? err.message : "That frame stayed put.");
+      throw err;
     }
   }
 
@@ -140,11 +190,11 @@ export function Rolls({
         ) : (
           <div className="grid">
             {albumDetail.photos.map((photo) => (
-              <PrintView key={photo.id} item={photo} onOpen={setOpen} compact />
+              <PrintView key={photo.id} item={photo} onOpen={setOpen} onDelete={onDelete} compact />
             ))}
           </div>
         )}
-        {open ? <Lightbox item={open} onClose={() => setOpen(null)} /> : null}
+        {open ? <Lightbox item={open} onClose={() => setOpen(null)} onDelete={onDelete} /> : null}
       </div>
     );
   }
@@ -193,13 +243,13 @@ export function Rolls({
             <p className="section">In the order they were shot</p>
             <div className="thread">
               {eventDetail.photos.map((photo) => (
-                <PrintView key={photo.id} item={photo} onOpen={setOpen} />
+                <PrintView key={photo.id} item={photo} onOpen={setOpen} onDelete={onDelete} />
               ))}
             </div>
           </>
         ) : null}
         {error ? <p className="error">{error}</p> : null}
-        {open ? <Lightbox item={open} onClose={() => setOpen(null)} /> : null}
+        {open ? <Lightbox item={open} onClose={() => setOpen(null)} onDelete={onDelete} /> : null}
       </div>
     );
   }

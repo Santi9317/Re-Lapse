@@ -1,18 +1,28 @@
 import { randomUUID } from "node:crypto";
-import { devClockRequested, eventTimes, personalReadyAt } from "@/lib/clock";
+import { devClockRequested, eventTimes, FEED_DAYS, personalReadyAt } from "@/lib/clock";
 import { sql } from "@/lib/db";
 import type { Album, EventDetail, EventRoll, EventStatus, FeedItem, LabItem, LabState } from "@/lib/types";
 import { HttpError } from "@/server/http";
 import { assertCreateAllowed, noteCreate } from "@/server/quota";
 import { cleanJpeg } from "@/server/validate";
 
-// Storage ceilings, not permanent locks. Expired rows are removed, and a full
-// table drops the oldest row so a visitor cannot fill the lab forever.
+// Storage ceilings, not permanent locks. A shared frame stays on the feed for
+// a week and is then deleted. Expired rows are removed, and a full table drops
+// the oldest row so a visitor cannot fill the lab forever.
 const PHOTO_CAP = 500;
 const ALBUM_CAP = 200;
 const EVENT_CAP = 200;
 
 let lastReclaim = 0;
+
+// FEED_DAYS is a fixed integer. A shared frame stays this long, then the row
+// (and the picture stored on it) is removed.
+const feedLifetime = `(${FEED_DAYS} * interval '1 day')`;
+const livePersonal = `p.event_id is null and p.published_at is not null and p.published_at >= now() - ${feedLifetime}`;
+const liveOnFeed = `(
+  (${livePersonal})
+  or (p.event_id is not null and e.reveal_at <= now() and e.reveal_at >= now() - ${feedLifetime})
+)`;
 
 function num(value: unknown): number {
   const n = typeof value === "number" ? value : Number(value);
@@ -39,14 +49,21 @@ async function runReclaim(): Promise<void> {
   await sql(
     `delete from photos
      where event_id is null
+       and published_at is not null
+       and published_at < now() - ${feedLifetime}`,
+  );
+  await sql(
+    `delete from photos
+     where event_id is null
        and developed_at is not null
+       and published_at is null
        and developed_at < now() - interval '30 days'`,
   );
   await sql(
     `delete from photos
-     where event_id in (select id from events where reveal_at < now() - interval '14 days')`,
+     where event_id in (select id from events where reveal_at < now() - ${feedLifetime})`,
   );
-  await sql(`delete from events where reveal_at < now() - interval '14 days'`);
+  await sql(`delete from events where reveal_at < now() - ${feedLifetime}`);
   await sql(
     `delete from albums a
      where a.created_at < now() - interval '7 days'
@@ -173,8 +190,7 @@ export async function listFeed(viewer: string): Promise<FeedItem[]> {
   await reclaimSoon();
   const rows = await sql(
     `${feedSelect}
-     where (p.event_id is null and p.published_at is not null)
-        or (p.event_id is not null and e.reveal_at <= now())
+     where ${liveOnFeed}
      order by coalesce(p.published_at, e.reveal_at) desc, p.created_at desc
      limit 80`,
     [viewer],
@@ -315,6 +331,21 @@ export async function publishPhoto(id: string, token: string): Promise<{ publish
   return { publishedAt: num(row.published_ms) };
 }
 
+export async function deletePhoto(id: string, token: string): Promise<void> {
+  const rows = await sql<{ shooter_token: string }>(
+    `select shooter_token from photos where id = $1`,
+    [id],
+  );
+  const row = rows[0];
+  if (!row) throw new HttpError(404, "That frame is already gone.");
+  if (row.shooter_token !== token) throw new HttpError(403, "Only the person who shot it can delete it.");
+  const removed = await sql<{ id: string }>(
+    `delete from photos where id = $1 and shooter_token = $2 returning id`,
+    [id, token],
+  );
+  if (!removed[0]) throw new HttpError(404, "That frame is already gone.");
+}
+
 export async function filePhoto(id: string, token: string, albumId: string | null): Promise<void> {
   const rows = await sql<{ id: string }>(
     `update photos
@@ -334,6 +365,7 @@ export async function readImage(
   id: string,
   viewer: string | null,
 ): Promise<{ bytes: Buffer; visibility: "public" | "private" } | null> {
+  await reclaimSoon();
   const rows = await sql<{
     image_b64: string;
     shooter_token: string;
@@ -341,6 +373,7 @@ export async function readImage(
     published_at: string | null;
     event_id: string | null;
     revealed: boolean;
+    on_feed: boolean;
   }>(
     `select
        p.image_b64,
@@ -348,7 +381,8 @@ export async function readImage(
        p.developed_at,
        p.published_at,
        p.event_id,
-       coalesce(e.reveal_at <= now(), false) as revealed
+       coalesce(e.reveal_at <= now(), false) as revealed,
+       ${liveOnFeed} as on_feed
      from photos p
      left join events e on e.id = p.event_id
      where p.id = $1`,
@@ -358,10 +392,11 @@ export async function readImage(
   if (!row) return null;
   const eventPhoto = row.event_id != null;
   if (eventPhoto) {
-    if (!flag(row.revealed)) return null;
+    if (!flag(row.revealed) || !flag(row.on_feed)) return null;
     return { bytes: Buffer.from(row.image_b64, "base64"), visibility: "public" };
   }
   if (row.published_at != null) {
+    if (!flag(row.on_feed)) return null;
     return { bytes: Buffer.from(row.image_b64, "base64"), visibility: "public" };
   }
   if (row.developed_at != null && viewer && viewer === row.shooter_token) {
@@ -379,7 +414,7 @@ export async function listAlbums(): Promise<Album[]> {
        (extract(epoch from a.created_at) * 1000) as created_ms,
        (
          select count(*)::int from photos p
-         where p.album_id = a.id and p.event_id is null and p.published_at is not null
+         where p.album_id = a.id and ${livePersonal}
        ) as frame_count
      from albums a
      order by a.created_at desc
@@ -416,7 +451,7 @@ export async function getAlbum(id: string, viewer: string): Promise<{ album: Alb
        (extract(epoch from a.created_at) * 1000) as created_ms,
        (
          select count(*)::int from photos p
-         where p.album_id = a.id and p.event_id is null and p.published_at is not null
+         where p.album_id = a.id and ${livePersonal}
        ) as frame_count
      from albums a
      where a.id = $1`,
@@ -426,7 +461,7 @@ export async function getAlbum(id: string, viewer: string): Promise<{ album: Alb
   if (!album) return null;
   const photos = await sql(
     `${feedSelect}
-     where p.album_id = $2 and p.event_id is null and p.published_at is not null
+     where p.album_id = $2 and ${livePersonal}
      order by p.published_at desc, p.created_at desc
      limit 80`,
     [viewer, id],
@@ -480,7 +515,9 @@ const eventSelect = `
 
 export async function listEvents(): Promise<EventRoll[]> {
   await reclaimSoon();
-  const rows = await sql(`${eventSelect} order by e.created_at desc limit 100`);
+  const rows = await sql(
+    `${eventSelect} where e.reveal_at >= now() - ${feedLifetime} order by e.created_at desc limit 100`,
+  );
   return rows.map(eventFrom);
 }
 
@@ -507,14 +544,17 @@ export async function createEvent(name: string, hours: number, dev: boolean, sou
 
 export async function getEvent(id: string, viewer: string): Promise<EventDetail | null> {
   await reclaimSoon();
-  const rows = await sql(`${eventSelect} where e.id = $1`, [id]);
+  const rows = await sql(
+    `${eventSelect} where e.id = $1 and e.reveal_at >= now() - ${feedLifetime}`,
+    [id],
+  );
   const row = rows[0];
   if (!row) return null;
   const event = eventFrom(row);
   if (event.status !== "ready") return { ...event, photos: [] };
   const photos = await sql(
     `${feedSelect}
-     where p.event_id = $2
+     where p.event_id = $2 and ${liveOnFeed}
      order by p.created_at asc
      limit 80`,
     [viewer, id],

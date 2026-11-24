@@ -26,6 +26,10 @@ export function personalReadyAt(nowMs: number, dev: boolean, random = Math.rando
   return new Date(nowMs + personalWaitMs(dev, random));
 }
 
+/** How long a shared frame stays on the feed before the file is deleted. */
+export const FEED_DAYS = 7;
+export const FEED_TTL_MS = FEED_DAYS * 24 * 60 * 60 * 1000;
+
 export function eventTimes(
   nowMs: number,
   hours: number,

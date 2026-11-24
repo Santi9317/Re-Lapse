@@ -1,10 +1,113 @@
 "use client";
 
-import { ago } from "@/lib/format";
+import { useEffect, useRef, useState } from "react";
+import { ago, leavesIn } from "@/lib/format";
+import {
+  ensurePhotoFile,
+  fileFromImage,
+  iosPhotosTarget,
+  readyPhotoFile,
+  shareOrSave,
+  warmPhoto,
+} from "@/lib/save";
 import type { Album, FeedItem } from "@/lib/types";
 
 function place(item: FeedItem): string {
   return item.eventName || item.albumName || "";
+}
+
+function FrameActions({
+  item,
+  getImage,
+  onDelete,
+}: {
+  item: FeedItem;
+  getImage: () => HTMLImageElement | null;
+  onDelete?: (id: string) => Promise<void> | void;
+}) {
+  const [confirming, setConfirming] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [note, setNote] = useState("");
+
+  useEffect(() => {
+    warmPhoto(item.id);
+  }, [item.id]);
+
+  function download() {
+    setNote("");
+    const file = readyPhotoFile(item.id) ?? fileFromImage(getImage());
+    if (file) {
+      const result = shareOrSave(file);
+      if (result === "saved" && iosPhotosTarget()) {
+        setNote("Saved as a file. On iPhone, choose Save Image to put it in Photos.");
+      }
+      return;
+    }
+    setSaving(true);
+    void ensurePhotoFile(item.id)
+      .then((next) => {
+        const result = shareOrSave(next);
+        if (result === "saved" && iosPhotosTarget()) {
+          setNote("Saved as a file. On iPhone, choose Save Image to put it in Photos.");
+        }
+      })
+      .catch(() => setNote("That frame didn't download."))
+      .finally(() => setSaving(false));
+  }
+
+  async function confirmDelete() {
+    if (!onDelete) return;
+    setSaving(true);
+    setNote("");
+    try {
+      await onDelete(item.id);
+    } catch (err) {
+      setNote(err instanceof Error ? err.message : "That frame stayed put.");
+      setConfirming(false);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="print-actions">
+      {confirming ? (
+        <>
+          <p className="meta">Gone for good.</p>
+          <button type="button" data-confirm-delete={item.id} disabled={saving} onClick={() => void confirmDelete()}>
+            {saving ? "Deleting…" : "Delete"}
+          </button>
+          <button type="button" disabled={saving} onClick={() => setConfirming(false)}>
+            Keep
+          </button>
+        </>
+      ) : (
+        <>
+          <button
+            type="button"
+            data-download={item.id}
+            aria-label={iosPhotosTarget() ? "Download this photo to Photos" : "Download this photo"}
+            disabled={saving}
+            onPointerDown={() => warmPhoto(item.id)}
+            onClick={download}
+          >
+            {saving ? "Saving…" : "Download"}
+          </button>
+          {item.mine && onDelete ? (
+            <button
+              type="button"
+              data-delete={item.id}
+              aria-label="Delete this frame"
+              onClick={() => setConfirming(true)}
+            >
+              Delete
+            </button>
+          ) : null}
+        </>
+      )}
+      {note ? <p className="meta action-note">{note}</p> : null}
+    </div>
+  );
 }
 
 export function PrintView({
@@ -12,21 +115,42 @@ export function PrintView({
   albums,
   onFile,
   onOpen,
+  onDelete,
   compact = false,
 }: {
   item: FeedItem;
   albums?: Album[];
   onFile?: (id: string, albumId: string | null) => void;
   onOpen?: (item: FeedItem) => void;
+  onDelete?: (id: string) => Promise<void> | void;
   compact?: boolean;
 }) {
+  const imageRef = useRef<HTMLImageElement>(null);
+  const rootRef = useRef<HTMLElement>(null);
   const where = place(item);
-  const meta = where ? `${where} · ${ago(item.createdAt)}` : ago(item.createdAt);
+  const meta = [where, ago(item.createdAt), leavesIn(item.sortAt)].filter(Boolean).join(" · ");
   const image = (
-    <img src={`/api/photos/${item.id}/image`} alt={item.caption || "Developed frame"} />
+    <img ref={imageRef} src={`/api/photos/${item.id}/image`} alt={item.caption || "Developed frame"} />
   );
+
+  useEffect(() => {
+    const node = rootRef.current;
+    if (!node || typeof IntersectionObserver === "undefined") {
+      warmPhoto(item.id);
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) warmPhoto(item.id);
+      },
+      { rootMargin: "240px" },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [item.id]);
+
   return (
-    <figure className="print" data-feed-photo={item.id}>
+    <figure className="print" data-feed-photo={item.id} ref={rootRef}>
       {onOpen ? (
         <button className="frame" type="button" onClick={() => onOpen(item)} aria-label="Open frame">
           {image}
@@ -37,6 +161,7 @@ export function PrintView({
       {!compact && item.caption ? <figcaption className="caption">{item.caption}</figcaption> : null}
       <p className="meta">{meta}</p>
       {!compact ? <p className="stock-line">RELAPSE 400</p> : null}
+      <FrameActions item={item} getImage={() => imageRef.current} onDelete={onDelete} />
       {onFile && item.mine && !item.eventId ? (
         <div className="file-row">
           {albums && albums.length > 0 ? (
@@ -62,14 +187,25 @@ export function PrintView({
   );
 }
 
-export function Lightbox({ item, onClose }: { item: FeedItem; onClose: () => void }) {
+export function Lightbox({
+  item,
+  onClose,
+  onDelete,
+}: {
+  item: FeedItem;
+  onClose: () => void;
+  onDelete?: (id: string) => Promise<void> | void;
+}) {
+  const imageRef = useRef<HTMLImageElement>(null);
   const where = place(item);
+  const meta = [where, ago(item.createdAt), leavesIn(item.sortAt)].filter(Boolean).join(" · ");
   return (
     <div className="lightbox" role="dialog" aria-modal="true" aria-label={item.caption || "Frame"} onClick={onClose}>
       <figure className="print" onClick={(event) => event.stopPropagation()}>
-        <img src={`/api/photos/${item.id}/image`} alt={item.caption || "Developed frame"} />
+        <img ref={imageRef} src={`/api/photos/${item.id}/image`} alt={item.caption || "Developed frame"} />
         {item.caption ? <figcaption className="caption">{item.caption}</figcaption> : null}
-        <p className="meta">{where ? `${where} · ${ago(item.createdAt)}` : ago(item.createdAt)}</p>
+        <p className="meta">{meta}</p>
+        <FrameActions item={item} getImage={() => imageRef.current} onDelete={onDelete} />
       </figure>
       <button className="ghost" type="button" onClick={onClose}>
         Close

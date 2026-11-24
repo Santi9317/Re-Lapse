@@ -13,7 +13,7 @@ type InstallPrompt = Event & { prompt: () => Promise<void> };
 
 const lede: Record<Exclude<Tab, "shoot">, string> = {
   lab: "Hidden until you develop them. Only the frames you send reach the feed.",
-  feed: "Everyone with this link. Newest shared frames first.",
+  feed: "Everyone with this link. A frame stays up for a week, then it's deleted.",
   rolls: "Little rolls, and events that come back from the lab.",
 };
 
@@ -107,6 +107,7 @@ export function App() {
                 setLabRevision((value) => value + 1);
                 setTab("feed");
               }}
+              onDeleted={() => setLabCount((count) => Math.max(0, count - 1))}
             />
           ) : null}
           {tab === "feed" ? <Feed revision={feedRevision} /> : null}
