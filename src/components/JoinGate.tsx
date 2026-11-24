@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { fetchGate, requestToJoin } from "@/lib/api";
+import { fetchGate, requestToJoin, restoreWithPin } from "@/lib/api";
 
 type Phase = "checking" | "ask" | "pending" | "declined";
 
@@ -13,6 +13,9 @@ export function JoinGate({ onOpen }: { onOpen: () => void }) {
   const [kept, setKept] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [pin, setPin] = useState("");
+  const [pinError, setPinError] = useState("");
+  const [pinBusy, setPinBusy] = useState(false);
 
   useEffect(() => {
     let stop = false;
@@ -73,6 +76,30 @@ export function JoinGate({ onOpen }: { onOpen: () => void }) {
     }
   }
 
+  async function submitPin(event: React.FormEvent) {
+    event.preventDefault();
+    if (pin.length !== 6) {
+      setPinError("Enter the 6-digit PIN.");
+      return;
+    }
+    setPinBusy(true);
+    setPinError("");
+    try {
+      const gate = await restoreWithPin(pin);
+      setPin("");
+      setKept(gate.name);
+      if (gate.status === "accepted") {
+        openRef.current();
+        return;
+      }
+      setPhase(gate.status);
+    } catch (err: unknown) {
+      setPinError(err instanceof Error ? err.message : "That PIN doesn't match a profile.");
+    } finally {
+      setPinBusy(false);
+    }
+  }
+
   return (
     <div className="desk">
       <div className="phone">
@@ -127,6 +154,39 @@ export function JoinGate({ onOpen }: { onOpen: () => void }) {
                 <h2>Not this time</h2>
                 <p>{kept ? `${kept} stays outside.` : "This camera stays outside."} A refresh keeps it that way.</p>
               </div>
+            ) : null}
+            {phase !== "checking" ? (
+              <form className="stack pin-form" data-pin-entry="gate" onSubmit={(event) => void submitPin(event)}>
+                <p className="gate-or">Already have a profile</p>
+                <label className="section" htmlFor="gate-pin">
+                  6-digit PIN
+                </label>
+                <p className="fine" id="gate-pin-help">
+                  The PIN from when the profile was made. It brings that profile back onto this phone.
+                </p>
+                <input
+                  id="gate-pin"
+                  className="field pin-field"
+                  name="pin"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  maxLength={6}
+                  aria-describedby="gate-pin-help"
+                  value={pin}
+                  onChange={(event) => setPin(event.target.value.replace(/\D/g, "").slice(0, 6))}
+                  placeholder="000000"
+                />
+                {pinError ? (
+                  <p className="error" role="alert">
+                    {pinError}
+                  </p>
+                ) : null}
+                <button className="primary" type="submit" disabled={pinBusy || pin.length !== 6}>
+                  {pinBusy ? "Checking…" : "Bring my profile back"}
+                </button>
+              </form>
             ) : null}
           </div>
         </div>

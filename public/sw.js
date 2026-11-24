@@ -11,12 +11,9 @@ self.addEventListener("message", (event) => {
 });
 
 self.addEventListener("activate", (event) => {
-  event.waitUntil(
-    caches
-      .keys()
-      .then((keys) => Promise.all(keys.filter((key) => key !== CACHE).map((key) => caches.delete(key))))
-      .then(() => self.clients.claim()),
-  );
+  // Do not delete caches on this swap. On an iOS Home Screen app that delete
+  // drops the phone's profile and camera along with the old shell.
+  event.waitUntil(self.clients.claim());
 });
 
 self.addEventListener("fetch", (event) => {
@@ -25,6 +22,12 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
   if (url.pathname.startsWith("/api/")) return;
+  // A navigation has to reach the server so the phone cookie is refreshed.
+  // Caching that response can swallow the Set-Cookie on the update reload.
+  if (request.mode === "navigate") {
+    event.respondWith(fetch(request).catch(() => caches.match(request).then((hit) => hit || caches.match("/"))));
+    return;
+  }
   const local = url.hostname === "localhost" || url.hostname === "127.0.0.1";
   if (local) {
     event.respondWith(fetch(request));

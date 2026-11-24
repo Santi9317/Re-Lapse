@@ -23,8 +23,9 @@ export async function GET(request: Request) {
 export async function PUT(request: Request) {
   try {
     const body = asRecord(await readJson(request, PHOTO_BODY_BYTES));
-    const profile = await saveOwnProfile(await shooter(request), cleanProfileWrite(body), readProof(request));
-    return json(profile);
+    const saved = await saveOwnProfile(await shooter(request), cleanProfileWrite(body), readProof(request));
+    if (saved.pin) return json({ ...saved.profile, pin: saved.pin });
+    return json(saved.profile);
   } catch (error) {
     return toErrorResponse(error);
   }

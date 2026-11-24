@@ -1,4 +1,5 @@
 const CAMERA_KEY = "relapse.camera";
+const LENS_COOKIE = "relapse_lens";
 
 export type Facing = "environment" | "user";
 
@@ -87,20 +88,76 @@ export function writeCameraRecord(storage: Pick<Storage, "setItem"> | null, reco
   }
 }
 
+export function lensCookieValue(record: StoredCamera): string {
+  const body: Record<string, string | boolean | null> = {
+    origin: record.origin,
+    granted: record.granted,
+  };
+  if (record.devices.environment) body.environment = record.devices.environment;
+  if (record.devices.user) body.user = record.devices.user;
+  return JSON.stringify(body);
+}
+
+export function recordFromLensCookie(value: string | null): StoredCamera {
+  if (!value) return EMPTY_RECORD;
+  try {
+    return parseStoredCamera(decodeURIComponent(value));
+  } catch {
+    return parseStoredCamera(value);
+  }
+}
+
+function mirrorLens(record: StoredCamera) {
+  try {
+    if (typeof document === "undefined") return;
+    const secure = typeof location !== "undefined" && location.protocol === "https:" ? "; Secure" : "";
+    document.cookie = `${LENS_COOKIE}=${encodeURIComponent(lensCookieValue(record))}; Path=/; Max-Age=31536000; SameSite=Lax${secure}`;
+  } catch {
+    /* private mode */
+  }
+}
+
+function readLens(): StoredCamera {
+  try {
+    if (typeof document === "undefined") return EMPTY_RECORD;
+    for (const part of document.cookie.split(";")) {
+      const trimmed = part.trim();
+      if (!trimmed.startsWith(`${LENS_COOKIE}=`)) continue;
+      return recordFromLensCookie(trimmed.slice(LENS_COOKIE.length + 1));
+    }
+  } catch {
+    /* cookies can be blocked */
+  }
+  return EMPTY_RECORD;
+}
+
+export function loadCameraRecord(): StoredCamera {
+  const local = readCameraRecord(browserStorage());
+  if (local.origin || local.granted || local.devices.environment || local.devices.user) return local;
+  const cookie = readLens();
+  if (!(cookie.origin || cookie.granted || cookie.devices.environment || cookie.devices.user)) return EMPTY_RECORD;
+  writeCameraRecord(browserStorage(), cookie);
+  return cookie;
+}
+
+function commitCamera(record: StoredCamera) {
+  writeCameraRecord(browserStorage(), record);
+  mirrorLens(record);
+}
+
 export function savedDeviceId(stored: StoredCamera, facing: Facing, origin: string): string | null {
   if (stored.origin && origin && stored.origin !== origin) return null;
   return stored.devices[facing] ?? null;
 }
 
 export function savedCameraId(facing: Facing): string | null {
-  return savedDeviceId(readCameraRecord(browserStorage()), facing, readOrigin());
+  return savedDeviceId(loadCameraRecord(), facing, readOrigin());
 }
 
 function rememberGrant(facing: Facing, deviceId: string | undefined) {
-  const storage = browserStorage();
-  const previous = readCameraRecord(storage);
+  const previous = loadCameraRecord();
   const id = deviceId && deviceId.length > 0 ? deviceId : previous.devices[facing];
-  writeCameraRecord(storage, {
+  commitCamera({
     origin: readOrigin() || previous.origin,
     granted: true,
     devices: id ? { ...previous.devices, [facing]: id } : previous.devices,
@@ -108,10 +165,9 @@ function rememberGrant(facing: Facing, deviceId: string | undefined) {
 }
 
 function forgetGrant() {
-  const storage = browserStorage();
-  const current = readCameraRecord(storage);
+  const current = loadCameraRecord();
   if (!current.granted) return;
-  writeCameraRecord(storage, { ...current, granted: false });
+  commitCamera({ ...current, granted: false });
 }
 
 /**

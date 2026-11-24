@@ -1,3 +1,5 @@
+import { snapshotPhone } from "@/lib/identity";
+import { loadProfile, profileFromServer, profileReady, saveProfile, storeCameraProfile, withCameraPortrait } from "@/lib/profile";
 import type { Album, EventDetail, EventRoll, FeedItem, FrameSticker, LabItem, ProfileWrite, SharedProfile } from "@/lib/types";
 
 const DEV_KEY = "relapse.devtimers";
@@ -41,6 +43,7 @@ function rememberCamera(token: string) {
   localStorage.setItem(TOKEN_KEY, token);
   dropLegacyProof();
   clearReadableCameraCookie();
+  void snapshotPhone();
 }
 
 function dropLegacyProof() {
@@ -62,6 +65,7 @@ export async function fetchGate(): Promise<{ status: GateStatus; name: string } 
   const response = await fetch("/api/gate", {
     headers,
     cache: "no-store",
+    credentials: "same-origin",
   });
   if (response.status === 404) return null;
   const data = (await response.json().catch(() => null)) as { status?: string; name?: string; error?: string } | null;
@@ -130,9 +134,11 @@ async function requestCamera(): Promise<string> {
   const response = await fetch("/api/camera", {
     method: "POST",
     cache: "no-store",
+    credentials: "same-origin",
     headers: Object.keys(headers).length > 0 ? headers : undefined,
   });
   const data = (await response.json().catch(() => null)) as { token?: string; error?: string } | null;
+  if (response.status === 401 && existing) return existing;
   if (!response.ok || !data?.token || !UUID.test(data.token)) {
     throw new Error(data?.error || "The lab didn't answer.");
   }
@@ -168,11 +174,69 @@ export async function fetchOwnProfile(): Promise<SharedProfile | null> {
 }
 
 export async function saveOwnProfile(profile: ProfileWrite): Promise<SharedProfile> {
-  return request("/api/profile", {
+  const response = await fetch("/api/profile", {
     method: "PUT",
     headers: await headers(true),
     body: JSON.stringify(profile),
+    cache: "no-store",
   });
+  const data = (await response.json().catch(() => null)) as (SharedProfile & { pin?: unknown; error?: string }) | null;
+  if (!response.ok || !data) throw new Error(data?.error || "The lab didn't answer.");
+  const pin = typeof data.pin === "string" ? data.pin : "";
+  if (/^\d{6}$/.test(pin) && typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("relapse-pin", { detail: pin }));
+  }
+  return {
+    id: data.id,
+    username: data.username,
+    emojis: data.emojis,
+    avatarPhotoId: data.avatarPhotoId,
+    avatarUrl: data.avatarUrl,
+    carouselIds: data.carouselIds,
+  };
+}
+
+export async function adoptSavedProfile(): Promise<void> {
+  const remote = await fetchOwnProfile();
+  if (!remote) return;
+  const saved = withCameraPortrait(profileFromServer(remote), loadProfile());
+  if (!profileReady(saved)) return;
+  storeCameraProfile(saved);
+}
+
+export async function restoreWithPin(pin: string): Promise<{ status: GateStatus; name: string }> {
+  const response = await fetch("/api/gate/pin", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    cache: "no-store",
+    credentials: "same-origin",
+    body: JSON.stringify({ pin }),
+  });
+  const data = (await response.json().catch(() => null)) as {
+    token?: string;
+    status?: string;
+    name?: string;
+    profile?: SharedProfile;
+    error?: string;
+  } | null;
+  if (
+    !response.ok ||
+    !data?.token ||
+    !UUID.test(data.token) ||
+    (data.status !== "pending" && data.status !== "accepted" && data.status !== "declined")
+  ) {
+    throw new Error(data?.error || "That PIN doesn't match a profile.");
+  }
+  rememberCamera(data.token);
+  if (data.profile) {
+    try {
+      const saved = profileFromServer(data.profile);
+      if (profileReady(saved)) saveProfile(saved);
+    } catch {
+      /* the server still has the profile */
+    }
+  }
+  return { status: data.status, name: typeof data.name === "string" ? data.name : "" };
 }
 
 export async function fetchPublicProfile(id: string): Promise<SharedProfile> {

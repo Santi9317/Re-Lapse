@@ -16,6 +16,7 @@ import {
   updateDecision,
   writeStorage,
 } from "@/lib/shell";
+import { snapshotPhone } from "@/lib/identity";
 
 type InstallPrompt = Event & { prompt: () => Promise<void> };
 type StandaloneNavigator = Navigator & { standalone?: boolean };
@@ -66,7 +67,7 @@ export function ShellPrompts() {
       if (readStorage(sessionStorage, UPDATE_ACCEPT_KEY) !== "1") return;
       if (readStorage(sessionStorage, UPDATE_RELOAD_KEY) === "1") return;
       writeStorage(sessionStorage, UPDATE_RELOAD_KEY, "1");
-      window.location.reload();
+      void snapshotPhone().finally(() => window.location.reload());
     };
 
     function offer(reg: ServiceWorkerRegistration) {
@@ -130,7 +131,7 @@ export function ShellPrompts() {
     if (!waiting) return;
     writeStorage(sessionStorage, UPDATE_ACCEPT_KEY, "1");
     setDeveloping(true);
-    waiting.postMessage({ type: "SKIP_WAITING" });
+    void snapshotPhone().finally(() => waiting.postMessage({ type: "SKIP_WAITING" }));
   }
 
   function acceptHome() {
