@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { headers } from "next/headers";
 import "@fontsource/audiowide/latin-400.css";
 import "@fontsource/chakra-petch/latin-400.css";
 import "@fontsource/chakra-petch/latin-500.css";
@@ -31,7 +32,8 @@ export const viewport: Viewport = {
   viewportFit: "cover",
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  await headers();
   return (
     <html lang="en">
       <body>{children}</body>

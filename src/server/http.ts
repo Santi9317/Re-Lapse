@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 
 export class HttpError extends Error {
@@ -16,9 +17,45 @@ export function json(data: unknown, status = 200) {
   });
 }
 
+const BOOTH_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function cookieValue(request: Request, name: string): string {
+  const header = request.headers.get("cookie") ?? "";
+  const prefix = `${name}=`;
+  for (const part of header.split(";")) {
+    const trimmed = part.trim();
+    if (!trimmed.startsWith(prefix)) continue;
+    try {
+      return decodeURIComponent(trimmed.slice(prefix.length));
+    } catch {
+      return "";
+    }
+  }
+  return "";
+}
+
+/** The browser booth for a new camera id. Address headers are not consulted. */
+export function readBooth(request: Request): string {
+  const value = cookieValue(request, "relapse_booth");
+  if (BOOTH_UUID.test(value)) return value.toLowerCase();
+  return randomUUID();
+}
+
 export function sealCamera(response: NextResponse, request: Request, token: string, proof: string) {
   const secure = new URL(request.url).protocol === "https:";
   response.cookies.set("relapse_auth", `${token}.${proof}`, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure,
+    path: "/",
+    maxAge: 31_536_000,
+  });
+  return response;
+}
+
+export function sealBooth(response: NextResponse, request: Request, booth: string) {
+  const secure = new URL(request.url).protocol === "https:";
+  response.cookies.set("relapse_booth", booth, {
     httpOnly: true,
     sameSite: "lax",
     secure,

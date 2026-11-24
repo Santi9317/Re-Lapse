@@ -1,22 +1,23 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 
 /**
- * Local portal key used only when RELAPSE_ADMIN_TOKEN is unset and this
- * process has no DATABASE_URL. The hosted app always has a database, so the
- * fallback stays off there. The value is documented in the README and is
- * never written to the log.
+ * The gate opens only with RELAPSE_ADMIN_TOKEN from the environment.
+ * There is no built-in key. A missing token leaves the portal shut.
  */
-export const LOCAL_GATE_KEY = "relapse-local-gate";
+export const GATE_GUESS_LIMIT = 8;
+export const GATE_GUESS_DELAY_MS = 400;
 
-export function resolveGateSecret(token: string | undefined, databaseUrl: string | undefined): string | null {
+export function resolveGateSecret(token: string | undefined): string | null {
   const configured = token?.trim() ?? "";
-  if (configured.length > 0) return configured;
-  if ((databaseUrl?.trim() ?? "") === "") return LOCAL_GATE_KEY;
-  return null;
+  return configured.length > 0 ? configured : null;
 }
 
 export function gateSecret(): string | null {
-  return resolveGateSecret(process.env.RELAPSE_ADMIN_TOKEN, process.env.DATABASE_URL);
+  return resolveGateSecret(process.env.RELAPSE_ADMIN_TOKEN);
+}
+
+export function gateGuessBlocked(recentFailures: number): boolean {
+  return Number.isFinite(recentFailures) && recentFailures >= GATE_GUESS_LIMIT;
 }
 
 export function sameSecret(given: string, expected: string): boolean {

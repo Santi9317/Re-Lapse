@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { sql } from "@/lib/db";
 import { HttpError } from "@/server/http";
-import { gateCookie, gateSecret, sameSecret } from "@/server/gate-key";
+import { gateCookie, gateGuessBlocked, gateSecret, sameSecret } from "@/server/gate-key";
 import { cameraProof, issueCamera, provenCamera } from "@/server/quota";
 
 export type GateDecision = "pending" | "accepted" | "declined";
@@ -54,7 +54,7 @@ export async function readMembership(request: Request): Promise<{ status: GateDe
   return findByToken(token);
 }
 
-export async function askToJoin(request: Request, name: string): Promise<Membership> {
+export async function askToJoin(request: Request, name: string, booth: string): Promise<Membership> {
   const known = await provenCamera(request);
   let token: string;
   let proof: string;
@@ -62,7 +62,7 @@ export async function askToJoin(request: Request, name: string): Promise<Members
     token = known;
     proof = await cameraProof(known);
   } else {
-    const issued = await issueCamera(null, null);
+    const issued = await issueCamera(null, null, booth);
     token = issued.token;
     proof = issued.proof;
   }
@@ -150,6 +150,26 @@ export async function decideRequest(id: string, status: "accepted" | "declined")
   const row = current[0];
   if (!row || row.status !== status) throw new HttpError(404, "That request is already settled.");
   if (status === "accepted") await keepCamera(String(row.camera_token));
+}
+
+const GUESS_WINDOW_MS = 15 * 60_000;
+
+export async function recentGateGuesses(): Promise<number> {
+  const rows = await sql<{ n: number }>(
+    `select count(*)::int as n
+     from gate_guess
+     where created_at > now() - ($1::int * interval '1 millisecond')`,
+    [GUESS_WINDOW_MS],
+  );
+  const n = rows[0]?.n;
+  return typeof n === "number" ? n : Number(n ?? 0);
+}
+
+/** Records a wrong key. The key itself is not written. */
+export async function noteGateGuess(): Promise<void> {
+  const recent = await recentGateGuesses();
+  if (gateGuessBlocked(recent)) return;
+  await sql(`insert into gate_guess (id, created_at) values ($1, now())`, [randomUUID()]);
 }
 
 export function assertGate(request: Request): void {

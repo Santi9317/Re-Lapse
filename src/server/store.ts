@@ -106,6 +106,17 @@ async function runReclaim(): Promise<void> {
   await sql(`delete from create_log where created_at < now() - interval '2 hours'`);
   await sql(`delete from camera_mints where created_at < now() - interval '30 days'`);
   await sql(
+    `delete from join_requests
+     where status = 'pending'
+       and created_at < now() - interval '48 hours'`,
+  );
+  await sql(
+    `delete from join_requests
+     where status = 'declined'
+       and coalesce(decided_at, created_at) < now() - interval '7 days'`,
+  );
+  await sql(`delete from gate_guess where created_at < now() - interval '2 hours'`);
+  await sql(
     `delete from cameras c
      where c.created_at < now() - interval '6 hours'
        and not exists (select 1 from photos p where p.shooter_token = c.token)
