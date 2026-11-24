@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 import { sql, withTransaction, type Sql } from "@/lib/db";
 import { HttpError } from "@/server/http";
 import { gateCookie, gateSecret, guessMayCompare, sameSecret } from "@/server/gate-key";
-import { JOIN_LIMITS, joinRoom } from "@/server/join-line";
+import { JOIN_LIMITS, phoneMayJoin } from "@/server/join-line";
+import { decideRecoveryRequest } from "@/server/profile-pin";
 import { cameraProof, provenCamera } from "@/server/quota";
 import { isUuid } from "@/server/validate";
 
@@ -72,56 +73,53 @@ export async function askToJoin(request: Request, name: string, booth: string): 
     if (existing) {
       return { token: known, proof: await cameraProof(known), status: existing.status, name: existing.name };
     }
-    const reserved = await withTransaction(async (q) => {
-      await lockJoinLine(q);
-      const counts = await q<{ pending: number; recent: number }>(
-        `select
-           (select count(*)::int from join_requests where status = 'pending') as pending,
-           (select count(*)::int from join_requests where created_at > now() - ($1::int * interval '1 millisecond')) as recent`,
-        [JOIN_LIMITS.windowMs],
-      );
-      const pending = countOf(counts[0]?.pending);
-      const recent = countOf(counts[0]?.recent);
-      if (!joinRoom(pending, recent)) return false;
-      const inserted = await q<{ camera_token: string }>(
-        `insert into join_requests (id, camera_token, display_name, status)
-         values ($1, $2, $3, 'pending')
-         on conflict (camera_token) do nothing
-         returning camera_token`,
-        [randomUUID(), known, name],
-      );
-      return Boolean(inserted[0]);
-    });
-    if (!reserved) throw new HttpError(429, "The line is full. Try again shortly.");
+    await sql(
+      `insert into join_requests (id, camera_token, display_name, status, booth)
+       values ($1, $2, $3, 'pending', $4)
+       on conflict (camera_token) do nothing`,
+      [randomUUID(), known, name, isUuid(booth) ? booth.toLowerCase() : null],
+    );
     const row = await findByToken(known);
     if (!row) throw new HttpError(500, "The lab hit a snag.");
     return { token: known, proof: await cameraProof(known), status: row.status, name: row.name };
   }
 
   if (!isUuid(booth)) throw new HttpError(400, "The lab didn't answer.");
-  const token = randomUUID();
+  const boothId = booth.toLowerCase();
   const reserved = await withTransaction(async (q) => {
     await lockJoinLine(q);
-    const counts = await q<{ pending: number; recent: number }>(
-      `select
-         (select count(*)::int from join_requests where status = 'pending') as pending,
-         (select count(*)::int from join_requests where created_at > now() - ($1::int * interval '1 millisecond')) as recent`,
-      [JOIN_LIMITS.windowMs],
+    const pending = await q<{ camera_token: string }>(
+      `select camera_token
+       from join_requests
+       where booth = $1 and status = 'pending'
+       order by created_at desc
+       limit 1`,
+      [boothId],
     );
-    const pending = countOf(counts[0]?.pending);
-    const recent = countOf(counts[0]?.recent);
-    if (!joinRoom(pending, recent)) return false;
+    const waiting = pending[0]?.camera_token ? String(pending[0].camera_token) : "";
+    if (isUuid(waiting)) return waiting;
+    const counts = await q<{ recent: number }>(
+      `select count(*)::int as recent
+       from join_requests
+       where booth = $1
+         and created_at > now() - ($2::int * interval '1 millisecond')`,
+      [boothId, JOIN_LIMITS.windowMs],
+    );
+    if (!phoneMayJoin(countOf(counts[0]?.recent))) return "";
+    const token = randomUUID();
     await q(
       `insert into cameras (token, created_at) values ($1, now()) on conflict (token) do nothing`,
       [token],
     );
     await q(
-      `insert into join_requests (id, camera_token, display_name, status) values ($1, $2, $3, 'pending')`,
-      [randomUUID(), token, name],
+      `insert into join_requests (id, camera_token, display_name, status, booth)
+       values ($1, $2, $3, 'pending', $4)`,
+      [randomUUID(), token, name, boothId],
     );
-    return true;
+    return token;
   });
-  if (!reserved) throw new HttpError(429, "The line is full. Try again shortly.");
+  if (!isUuid(reserved)) throw new HttpError(429, "This phone needs a minute. Try again shortly.");
+  const token = reserved;
   const proof = await cameraProof(token);
   const row = await findByToken(token);
   if (!row) throw new HttpError(500, "The lab hit a snag.");
@@ -129,7 +127,7 @@ export async function askToJoin(request: Request, name: string, booth: string): 
 }
 
 /**
- * A PIN brings back the camera that already has this profile.
+ * A PIN on the phone that set it brings back the camera that already has this profile.
  * An accepted camera stays accepted. A declined one stays declined.
  * A missing row is the approval that was already given when the profile was saved.
  */
@@ -185,7 +183,7 @@ export async function listPending(): Promise<PendingRequest[]> {
      where status = 'pending'
      order by created_at asc
      limit $1`,
-    [JOIN_LIMITS.pendingMax],
+    [JOIN_LIMITS.listLimit],
   );
   return rows.map((row) => ({
     id: String(row.id),
@@ -220,8 +218,13 @@ export async function decideRequest(id: string, status: "accepted" | "declined")
     [id],
   );
   const row = current[0];
-  if (!row || row.status !== status) throw new HttpError(404, "That request is already settled.");
-  if (status === "accepted") await keepCamera(String(row.camera_token));
+  if (row) {
+    if (row.status !== status) throw new HttpError(404, "That request is already settled.");
+    if (status === "accepted") await keepCamera(String(row.camera_token));
+    return;
+  }
+  if (await decideRecoveryRequest(id, status)) return;
+  throw new HttpError(404, "That request is already settled.");
 }
 
 const GUESS_WINDOW_MS = 15 * 60_000;
@@ -233,10 +236,10 @@ function guessFlag(value: unknown): boolean {
 export type GateGuessResult = "ok" | "wrong" | "blocked";
 
 /**
- * Checks a gate key only when this browser still has room. The check and the
+ * Checks a gate key only when this phone still has room. The check and the
  * count share one lock, so parallel guesses cannot all read the old total.
- * A browser that is already full is refused before the key is compared.
- * The key itself is not written.
+ * A phone that is already full is refused before the key is compared.
+ * Another phone's failures do not close this one. The key itself is not written.
  */
 export async function takeGateGuess(clientId: string, given: string, secret: string): Promise<GateGuessResult> {
   if (!isUuid(clientId)) return "blocked";
@@ -257,18 +260,7 @@ export async function takeGateGuess(clientId: string, given: string, secret: str
     const row = existing[0];
     const isNewClient = !row;
     const failures = !row || guessFlag(row.fresh) ? 0 : countOf(row.n);
-    let otherClients = 0;
-    if (isNewClient) {
-      const active = await q<{ n: number }>(
-        `select count(*)::int as n
-         from gate_client
-         where n > 0
-           and window_start > now() - ($1::int * interval '1 millisecond')`,
-        [GUESS_WINDOW_MS],
-      );
-      otherClients = countOf(active[0]?.n);
-    }
-    if (!guessMayCompare(failures, otherClients, isNewClient)) return "blocked";
+    if (!guessMayCompare(failures)) return "blocked";
     const matches = given.length > 0 && sameSecret(given, secret);
     if (isNewClient) {
       await q(

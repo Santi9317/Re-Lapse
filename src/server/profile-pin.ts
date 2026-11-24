@@ -1,9 +1,12 @@
-import { sql, withTransaction } from "@/lib/db";
+import { randomUUID, timingSafeEqual } from "node:crypto";
+import { sql, withTransaction, type Sql } from "@/lib/db";
 import { pinRestoreOpen } from "@/server/pin";
 import { hashProfilePin } from "@/server/quota";
 import { isUuid } from "@/server/validate";
 
 const WINDOW_MS = 15 * 60_000;
+const RESCUE_WINDOW_MS = 10 * 60_000;
+const RESCUE_PER_PHONE = 4;
 
 function countOf(value: unknown): number {
   return typeof value === "number" ? value : Number(value ?? 0);
@@ -13,58 +16,38 @@ function guessFlag(value: unknown): boolean {
   return value === true || value === "t" || value === "true" || value === 1;
 }
 
-export type PinRestore = { ok: true; token: string } | { ok: false; reason: "wrong" | "blocked" };
-
-/**
- * A correct PIN returns the camera that already owns that profile.
- * Wrong checks share one gate-wide budget, so a new browser cannot keep guessing.
- * Once that budget is full, the PIN is not looked up.
- */
-export async function takePinRestore(pin: string): Promise<PinRestore> {
-  const hash = await hashProfilePin(pin);
-  return withTransaction(async (q) => {
-    await q(
-      `insert into pin_guess_slot (id, window_start, n) values (1, now(), 0) on conflict (id) do nothing`,
-    );
-    const slot = await q<{ n: number; fresh: boolean | string | number }>(
-      `select n,
-              window_start <= now() - ($1::int * interval '1 millisecond') as fresh
-       from pin_guess_slot
-       where id = 1
-       for update`,
-      [WINDOW_MS],
-    );
-    const fresh = guessFlag(slot[0]?.fresh);
-    const recent = fresh ? 0 : countOf(slot[0]?.n);
-    if (!pinRestoreOpen(recent)) return { ok: false, reason: "blocked" };
-    const found = await q<{ shooter_token: string }>(
-      `select token as shooter_token from cameras where pin_hash = $1`,
-      [hash],
-    );
-    const token = found[0]?.shooter_token ? String(found[0].shooter_token) : "";
-    const matches = isUuid(token);
-    if (!matches) {
-      await q(
-        `update pin_guess_slot
-         set n = $1,
-             window_start = case when $2::boolean then now() else window_start end
-         where id = 1`,
-        [fresh ? 1 : recent + 1, fresh],
-      );
-      return { ok: false, reason: "wrong" };
-    }
-    return { ok: true, token };
-  });
+function hashMatches(stored: string, given: string): boolean {
+  if (!/^[0-9a-f]{64}$/i.test(stored) || !/^[0-9a-f]{64}$/i.test(given)) return false;
+  return timingSafeEqual(Buffer.from(stored, "hex"), Buffer.from(given, "hex"));
 }
 
-const CHOICE_LIMIT = 8;
+type Budget = { recent: number; fresh: boolean };
 
-function isPinCollision(error: unknown): boolean {
-  if (!error || typeof error !== "object") return false;
-  const row = error as { code?: unknown; constraint?: unknown; message?: unknown };
-  if (row.code !== "23505") return false;
-  const text = `${row.constraint ?? ""} ${row.message ?? ""}`;
-  return text.includes("pin_hash");
+async function lockBudget(q: Sql, id: string): Promise<Budget> {
+  await q(
+    `insert into pin_client (id, window_start, n) values ($1, now(), 0) on conflict (id) do nothing`,
+    [id],
+  );
+  const slot = await q<{ n: number; fresh: boolean | string | number }>(
+    `select n,
+            window_start <= now() - ($2::int * interval '1 millisecond') as fresh
+     from pin_client
+     where id = $1
+     for update`,
+    [id, WINDOW_MS],
+  );
+  const fresh = guessFlag(slot[0]?.fresh);
+  return { recent: fresh ? 0 : countOf(slot[0]?.n), fresh };
+}
+
+async function markMiss(q: Sql, id: string, budget: Budget): Promise<void> {
+  await q(
+    `update pin_client
+     set n = $2,
+         window_start = case when $3::boolean then now() else window_start end
+     where id = $1`,
+    [id, budget.fresh ? 1 : budget.recent + 1, budget.fresh],
+  );
 }
 
 /** Whether this camera has chosen a PIN. The digits are not stored. */
@@ -74,61 +57,136 @@ export async function recoveryPinSet(token: string): Promise<boolean> {
   return /^[0-9a-f]{64}$/i.test(hash);
 }
 
-export type PinSave = "saved" | "taken" | "blocked";
+/**
+ * Stores this camera's hash only. Another camera is not read, so the same
+ * digits can belong to a different name and the choice does not say so.
+ */
+export async function saveRecoveryPin(token: string, pin: string): Promise<boolean> {
+  if (!isUuid(token)) return false;
+  const hash = await hashProfilePin(pin);
+  await sql(
+    `insert into cameras (token, created_at, pin_hash)
+     values ($1, now(), $2)
+     on conflict (token) do update set pin_hash = excluded.pin_hash`,
+    [token, hash],
+  );
+  await sql(`update profiles set pin_hash = $2 where shooter_token = $1`, [token, hash]);
+  return true;
+}
+
+export type RescueAsk =
+  | { ok: true; id: string; name: string; status: "pending" }
+  | { ok: false; reason: "wrong" | "blocked" };
 
 /**
- * Stores only the hash the gate compares. The digits are not written.
- * A PIN already held by another camera is refused. The old PIN stops matching.
+ * A matching name and PIN open a request for Santiago. They do not open the camera.
+ * A miss is counted on this phone only. Zero matches and several matches look the same.
  */
-export async function saveRecoveryPin(token: string, pin: string): Promise<PinSave> {
-  if (!isUuid(token)) return "blocked";
+export async function requestRecovery(booth: string, pin: string, name: string): Promise<RescueAsk> {
+  if (!isUuid(booth)) return { ok: false, reason: "blocked" };
+  const phone = booth.toLowerCase();
+  const wanted = name.trim().toLowerCase();
   const hash = await hashProfilePin(pin);
-  try {
-    return await withTransaction(async (q) => {
-      await q(
-        `insert into pin_choice (id, window_start, n) values ($1, now(), 0) on conflict (id) do nothing`,
-        [token],
-      );
-      const budget = await q<{ n: number; fresh: boolean | string | number }>(
-        `select n,
-                window_start <= now() - ($2::int * interval '1 millisecond') as fresh
-         from pin_choice
-         where id = $1
-         for update`,
-        [token, WINDOW_MS],
-      );
-      const row = budget[0];
-      const fresh = guessFlag(row?.fresh);
-      const failures = !row || fresh ? 0 : countOf(row.n);
-      if (failures >= CHOICE_LIMIT) return "blocked";
-      const cameras = await q<{ token: string }>(
-        `select token from cameras where pin_hash = $1 and token <> $2`,
-        [hash, token],
-      );
-      const profiles = await q<{ shooter_token: string }>(
-        `select shooter_token from profiles where pin_hash = $1 and shooter_token <> $2`,
-        [hash, token],
-      );
-      if (cameras[0] || profiles[0]) {
-        if (fresh) {
-          await q(`update pin_choice set n = $2, window_start = now() where id = $1`, [token, failures + 1]);
-        } else {
-          await q(`update pin_choice set n = $2 where id = $1`, [token, failures + 1]);
-        }
-        return "taken";
-      }
-      await q(
-        `insert into cameras (token, created_at, pin_hash)
-         values ($1, now(), $2)
-         on conflict (token) do update set pin_hash = excluded.pin_hash`,
-        [token, hash],
-      );
-      await q(`update profiles set pin_hash = $2 where shooter_token = $1`, [token, hash]);
-      await q(`update pin_choice set n = 0, window_start = now() where id = $1`, [token]);
-      return "saved";
-    });
-  } catch (error) {
-    if (isPinCollision(error)) return "taken";
-    throw error;
+  return withTransaction(async (q) => {
+    const waiting = await q<{ id: string; username: string }>(
+      `select r.id, p.username
+       from recovery_requests r
+       join profiles p on p.shooter_token = r.camera_token
+       where r.booth = $1 and r.status = 'pending'
+       order by r.created_at desc
+       limit 1`,
+      [phone],
+    );
+    if (waiting[0]?.id) {
+      return { ok: true, id: String(waiting[0].id), name: String(waiting[0].username), status: "pending" };
+    }
+    const budget = await lockBudget(q, phone);
+    if (!pinRestoreOpen(budget.recent)) return { ok: false, reason: "blocked" };
+    const recent = await q<{ n: number }>(
+      `select count(*)::int as n
+       from recovery_requests
+       where booth = $1
+         and created_at > now() - ($2::int * interval '1 millisecond')`,
+      [phone, RESCUE_WINDOW_MS],
+    );
+    if (countOf(recent[0]?.n) >= RESCUE_PER_PHONE) return { ok: false, reason: "blocked" };
+    const found = await q<{ token: string; username: string; pin_hash: string | null }>(
+      `select c.token, p.username, c.pin_hash
+       from cameras c
+       join profiles p on p.shooter_token = c.token
+       where c.pin_hash = $1 and lower(p.username) = $2`,
+      [hash, wanted],
+    );
+    const row = found.length === 1 ? found[0] : undefined;
+    const token = row?.token && isUuid(String(row.token)) ? String(row.token).toLowerCase() : "";
+    const matches = token.length > 0 && hashMatches(String(row?.pin_hash ?? ""), hash);
+    if (!matches || !row) {
+      await markMiss(q, phone, budget);
+      return { ok: false, reason: "wrong" };
+    }
+    const id = randomUUID();
+    await q(
+      `insert into recovery_requests (id, camera_token, booth, status) values ($1, $2, $3, 'pending')`,
+      [id, token, phone],
+    );
+    return { ok: true, id, name: String(row.username), status: "pending" };
+  });
+}
+
+export type RescueClaim =
+  | { status: "pending" | "declined"; name: string }
+  | { status: "accepted"; name: string; token: string };
+
+/** The phone that asked can read the decision. Another phone cannot. */
+export async function claimRecovery(booth: string, requestId: string): Promise<RescueClaim | null> {
+  if (!isUuid(booth) || !isUuid(requestId)) return null;
+  const rows = await sql<{ status: string; token: string; username: string; booth: string }>(
+    `select r.status, r.camera_token as token, r.booth, p.username
+     from recovery_requests r
+     join profiles p on p.shooter_token = r.camera_token
+     where r.id = $1`,
+    [requestId],
+  );
+  const row = rows[0];
+  if (!row || String(row.booth) !== booth.toLowerCase()) return null;
+  const name = String(row.username);
+  if (row.status === "accepted") {
+    const token = String(row.token);
+    if (!isUuid(token)) return null;
+    return { status: "accepted", name, token: token.toLowerCase() };
   }
+  if (row.status === "pending" || row.status === "declined") return { status: row.status, name };
+  return null;
+}
+
+export type RescueRequest = { id: string; name: string; createdAt: number };
+
+export async function listRecoveryRequests(): Promise<RescueRequest[]> {
+  const rows = await sql<{ id: string; username: string; created_ms: number | string }>(
+    `select r.id, p.username, (extract(epoch from r.created_at) * 1000) as created_ms
+     from recovery_requests r
+     join profiles p on p.shooter_token = r.camera_token
+     where r.status = 'pending'
+     order by r.created_at asc
+     limit 80`,
+  );
+  return rows.map((row) => ({
+    id: String(row.id),
+    name: String(row.username),
+    createdAt: Math.round(Number(row.created_ms)),
+  }));
+}
+
+/** True when this rescue was pending and is now decided, or was already that decision. */
+export async function decideRecoveryRequest(id: string, status: "accepted" | "declined"): Promise<boolean> {
+  const updated = await sql<{ id: string }>(
+    `update recovery_requests
+     set status = $2, decided_at = now()
+     where id = $1 and status = 'pending'
+     returning id`,
+    [id, status],
+  );
+  if (updated[0]) return true;
+  const current = await sql<{ status: string }>(`select status from recovery_requests where id = $1`, [id]);
+  return current[0]?.status === status;
 }
