@@ -34,10 +34,14 @@ export function devFlagStored(): boolean {
   }
 }
 
+function clearReadableCameraCookie() {
+  document.cookie = "relapse.shooter=; Path=/; Max-Age=0; SameSite=Lax";
+}
+
 function rememberCamera(token: string, proof: string) {
   localStorage.setItem(TOKEN_KEY, token);
   localStorage.setItem(PROOF_KEY, proof);
-  document.cookie = `relapse.shooter=${token}; Path=/; Max-Age=31536000; SameSite=Lax`;
+  clearReadableCameraCookie();
 }
 
 function cameraProof(): string {
@@ -53,10 +57,7 @@ function cameraProof(): string {
 export function shooterToken(): string {
   try {
     const existing = localStorage.getItem(TOKEN_KEY);
-    if (existing && UUID.test(existing)) {
-      document.cookie = `relapse.shooter=${existing}; Path=/; Max-Age=31536000; SameSite=Lax`;
-      return existing;
-    }
+    if (existing && UUID.test(existing)) return existing;
   } catch {
     /* storage can be blocked */
   }
@@ -76,6 +77,7 @@ export function ensureCamera(): Promise<string> {
 }
 
 async function requestCamera(): Promise<string> {
+  clearReadableCameraCookie();
   const existing = shooterToken();
   const proof = cameraProof();
   const headers: Record<string, string> = {};
