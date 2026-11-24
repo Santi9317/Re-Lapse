@@ -56,7 +56,7 @@ export function Sleeve() {
   if (!panel) {
     return (
       <button ref={markRef} className="sleeve-mark" type="button" data-profile-menu aria-label="Profile menu" onClick={() => setPanel("menu")}>
-        ···
+        Menu
       </button>
     );
   }
