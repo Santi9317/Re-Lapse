@@ -1,5 +1,6 @@
 import { asRecord, json, readJson, toErrorResponse } from "@/server/http";
-import { gateCookie, gateSecret, sameSecret } from "@/server/gate-key";
+import { noteGateGuess, recentGateGuesses } from "@/server/gate";
+import { GATE_GUESS_DELAY_MS, gateCookie, gateGuessBlocked, gateSecret, sameSecret } from "@/server/gate-key";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,19 +11,25 @@ export async function POST(request: Request) {
     if (!secret) return json({ error: "The gate isn't set up on this server." }, 503);
     const body = asRecord(await readJson(request));
     const given = typeof body.token === "string" ? body.token.trim() : "";
-    if (!given || !sameSecret(given, secret)) {
-      return json({ error: "That key doesn't open the gate." }, 401);
+    if (given && sameSecret(given, secret)) {
+      const response = json({ ok: true });
+      const secure = new URL(request.url).protocol === "https:";
+      response.cookies.set("relapse_gate", gateCookie(secret), {
+        httpOnly: true,
+        sameSite: "lax",
+        secure,
+        path: "/",
+        maxAge: 60 * 60 * 12,
+      });
+      return response;
     }
-    const response = json({ ok: true });
-    const secure = new URL(request.url).protocol === "https:";
-    response.cookies.set("relapse_gate", gateCookie(secret), {
-      httpOnly: true,
-      sameSite: "lax",
-      secure,
-      path: "/",
-      maxAge: 60 * 60 * 12,
-    });
-    return response;
+    const recent = await recentGateGuesses();
+    await noteGateGuess();
+    await new Promise((resolve) => setTimeout(resolve, GATE_GUESS_DELAY_MS));
+    if (gateGuessBlocked(recent)) {
+      return json({ error: "The gate needs a minute. Try again shortly." }, 429);
+    }
+    return json({ error: "That key doesn't open the gate." }, 401);
   } catch (error) {
     return toErrorResponse(error);
   }

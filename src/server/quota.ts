@@ -1,15 +1,18 @@
 import { createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { sql } from "@/lib/db";
 import { HttpError } from "@/server/http";
+import { MINT_LIMITS } from "@/server/mint";
 import { isUuid, readProof } from "@/server/validate";
 
 /**
  * Each camera has its own photo, roll, event, profile, and invite window.
  * One camera cannot spend another's. A brand-new id is written to
- * camera_mints before any proof is returned, and only a few new ids are
- * written per window. Sending an id without its proof does not reveal that
- * proof and does not authorize the camera. Asking again with the proof does
- * not spend the new-id window. Address headers are not read.
+ * camera_mints before any proof is returned. New ids are counted for the
+ * browser booth that asked, and a higher ceiling covers every booth so
+ * dropping the cookie cannot mint without a bound. Sending an id without
+ * its proof does not reveal that proof and does not authorize the camera.
+ * Asking again with the proof does not spend a new-id window. Address
+ * headers are not read.
  */
 const QUOTA = {
   photo: { windowMs: 10 * 60_000, limit: 12 },
@@ -19,7 +22,7 @@ const QUOTA = {
   join: { windowMs: 60 * 60_000, limit: 8 },
 } as const;
 
-const MINT = { windowMs: 10 * 60_000, limit: 6 };
+const MINT_WINDOW_MS = 10 * 60_000;
 
 export type CreateKind = Exclude<keyof typeof QUOTA, "join">;
 
@@ -94,22 +97,30 @@ async function cameraIsIssued(token: string, proof: string | null): Promise<bool
 export async function issueCamera(
   presented: string | null,
   proof: string | null,
+  booth: string,
 ): Promise<{ token: string; proof: string }> {
   if (presented && isUuid(presented) && proof) {
     const token = presented.toLowerCase();
     if (await cameraIsIssued(token, proof)) return { token, proof };
   }
+  if (!isUuid(booth)) throw new HttpError(400, "The lab didn't answer.");
   const token = randomUUID();
   const minted = await sql<{ token: string }>(
-    `insert into camera_mints (token, created_at)
-     select $1::text, now()
+    `insert into camera_mints (token, created_at, booth)
+     select $1::text, now(), $2::text
      where (
        select count(*)::int
        from camera_mints
-       where created_at > now() - ($2::int * interval '1 millisecond')
-     ) < $3::int
+       where booth = $2::text
+         and created_at > now() - ($3::int * interval '1 millisecond')
+     ) < $4::int
+     and (
+       select count(*)::int
+       from camera_mints
+       where created_at > now() - ($3::int * interval '1 millisecond')
+     ) < $5::int
      returning token`,
-    [token, MINT.windowMs, MINT.limit],
+    [token, booth.toLowerCase(), MINT_WINDOW_MS, MINT_LIMITS.perBooth, MINT_LIMITS.global],
   );
   const issued = minted[0]?.token;
   if (!issued) throw new HttpError(429, "New cameras need a minute. Try again shortly.");
@@ -161,15 +172,11 @@ export async function provenCamera(request: Request): Promise<string | null> {
 const ANON = "00000000-0000-4000-8000-000000000000";
 
 export async function optionalActor(request: Request): Promise<string> {
-  const header = request.headers.get("x-shooter-token");
-  const token = header && isUuid(header) ? header.toLowerCase() : null;
-  return (await viewerFromCookie(token, readProof(request))) ?? ANON;
+  return (await provenCamera(request)) ?? ANON;
 }
 
 export async function requireActor(request: Request): Promise<string> {
-  const header = request.headers.get("x-shooter-token");
-  const token = header && isUuid(header) ? header.toLowerCase() : null;
-  const actor = await viewerFromCookie(token, readProof(request));
+  const actor = await provenCamera(request);
   if (!actor) throw new HttpError(403, "This camera hasn't been issued.");
   return actor;
 }
