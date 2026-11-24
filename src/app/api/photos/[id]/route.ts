@@ -1,4 +1,5 @@
 import { json, toErrorResponse } from "@/server/http";
+import { requireActor } from "@/server/quota";
 import { deletePhoto } from "@/server/store";
 import { requireUuid } from "@/server/validate";
 
@@ -11,7 +12,7 @@ export async function DELETE(request: Request, ctx: Ctx) {
   try {
     const { id } = await ctx.params;
     const photoId = requireUuid(id, "That frame is gone.");
-    const token = requireUuid(request.headers.get("x-shooter-token"), "This camera doesn't have an id yet.");
+    const token = await requireActor(request);
     await deletePhoto(photoId, token);
     return json({ ok: true });
   } catch (error) {

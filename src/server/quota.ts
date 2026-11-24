@@ -1,15 +1,15 @@
 import { createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { sql } from "@/lib/db";
 import { HttpError } from "@/server/http";
-import { isUuid } from "@/server/validate";
+import { isUuid, readProof } from "@/server/validate";
 
 /**
  * Each camera has its own photo, roll, event, profile, and invite window.
- * One camera cannot spend another's. A brand-new id is the only shared
- * ceiling, and only so a script cannot open unlimited windows. Asking again
- * for an id this server already issued does not spend that ceiling and does
- * not write a row. A camera row is written only when that camera stores
- * something. Address headers are not read.
+ * One camera cannot spend another's. A brand-new id is written to
+ * camera_mints before any proof is returned, and only a few new ids are
+ * written per window. Sending an id without its proof does not reveal that
+ * proof and does not authorize the camera. Asking again with the proof does
+ * not spend the new-id window. Address headers are not read.
  */
 const QUOTA = {
   photo: { windowMs: 10 * 60_000, limit: 12 },
@@ -19,7 +19,7 @@ const QUOTA = {
   join: { windowMs: 60 * 60_000, limit: 8 },
 } as const;
 
-const MINT = { windowMs: 60_000, limit: 20 };
+const MINT = { windowMs: 10 * 60_000, limit: 6 };
 
 export type CreateKind = Exclude<keyof typeof QUOTA, "join">;
 
@@ -80,36 +80,63 @@ async function cameraExists(token: string): Promise<boolean> {
   return Boolean(rows[0]);
 }
 
+async function mintRecorded(token: string): Promise<boolean> {
+  const rows = await sql<{ token: string }>(`select token from camera_mints where token = $1`, [token]);
+  return Boolean(rows[0]);
+}
+
 async function cameraIsIssued(token: string, proof: string | null): Promise<boolean> {
-  if (await cameraExists(token)) return true;
-  return proofMatches(token, proof);
+  if (!(await proofMatches(token, proof))) return false;
+  if (await mintRecorded(token)) return true;
+  return cameraExists(token);
 }
 
 export async function issueCamera(
   presented: string | null,
   proof: string | null,
 ): Promise<{ token: string; proof: string }> {
-  if (presented && isUuid(presented)) {
+  if (presented && isUuid(presented) && proof) {
     const token = presented.toLowerCase();
-    if (await cameraIsIssued(token, proof)) {
-      return { token, proof: await cameraProof(token) };
-    }
+    if (await cameraIsIssued(token, proof)) return { token, proof };
   }
   const token = randomUUID();
-  const minted = await sql<{ id: string }>(
-    `insert into create_log (id, kind, camera_key)
-     select $1, 'camera', $2
+  const minted = await sql<{ token: string }>(
+    `insert into camera_mints (token, created_at)
+     select $1::text, now()
      where (
        select count(*)::int
-       from create_log
-       where kind = 'camera'
-         and created_at > now() - ($3::int * interval '1 millisecond')
-     ) < $4::int
-     returning id`,
-    [randomUUID(), token, MINT.windowMs, MINT.limit],
+       from camera_mints
+       where created_at > now() - ($2::int * interval '1 millisecond')
+     ) < $3::int
+     returning token`,
+    [token, MINT.windowMs, MINT.limit],
   );
-  if (!minted[0]) throw new HttpError(429, "New cameras need a minute. Try again shortly.");
-  return { token, proof: await cameraProof(token) };
+  const issued = minted[0]?.token;
+  if (!issued) throw new HttpError(429, "New cameras need a minute. Try again shortly.");
+  return { token: String(issued), proof: await cameraProof(String(issued)) };
+}
+
+export async function viewerFromCookie(token: string | null, proof: string | null): Promise<string | null> {
+  if (!token || !isUuid(token)) return null;
+  const id = token.toLowerCase();
+  if (!(await cameraIsIssued(id, proof))) return null;
+  return id;
+}
+
+const ANON = "00000000-0000-4000-8000-000000000000";
+
+export async function optionalActor(request: Request): Promise<string> {
+  const header = request.headers.get("x-shooter-token");
+  const token = header && isUuid(header) ? header.toLowerCase() : null;
+  return (await viewerFromCookie(token, readProof(request))) ?? ANON;
+}
+
+export async function requireActor(request: Request): Promise<string> {
+  const header = request.headers.get("x-shooter-token");
+  const token = header && isUuid(header) ? header.toLowerCase() : null;
+  const actor = await viewerFromCookie(token, readProof(request));
+  if (!actor) throw new HttpError(403, "This camera hasn't been issued.");
+  return actor;
 }
 
 export async function assertCreateAllowed(

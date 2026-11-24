@@ -1,4 +1,5 @@
 import { asRecord, json, readJson, toErrorResponse } from "@/server/http";
+import { requireActor } from "@/server/quota";
 import { inviteToEvent } from "@/server/store";
 import { cleanInviteName, requireUuid } from "@/server/validate";
 
@@ -11,7 +12,7 @@ export async function POST(request: Request, ctx: Ctx) {
   try {
     const { id } = await ctx.params;
     const body = asRecord(await readJson(request));
-    const token = requireUuid(request.headers.get("x-shooter-token"), "This camera doesn't have an id yet.");
+    const token = await requireActor(request);
     const event = await inviteToEvent(requireUuid(id, "That event is gone."), token, cleanInviteName(body.username));
     return json(event);
   } catch (error) {

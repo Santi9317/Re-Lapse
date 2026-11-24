@@ -10,7 +10,16 @@ export async function POST(request: Request) {
     const header = request.headers.get("x-shooter-token");
     const presented = header && isUuid(header) ? header : null;
     const issued = await issueCamera(presented, readProof(request));
-    return json(issued);
+    const response = json(issued);
+    const secure = new URL(request.url).protocol === "https:";
+    response.cookies.set("relapse_auth", `${issued.token}.${issued.proof}`, {
+      httpOnly: true,
+      sameSite: "lax",
+      secure,
+      path: "/",
+      maxAge: 31_536_000,
+    });
+    return response;
   } catch (error) {
     return toErrorResponse(error);
   }
