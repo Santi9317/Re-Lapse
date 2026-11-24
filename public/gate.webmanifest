@@ -1,0 +1,26 @@
+{
+  "name": "Gate",
+  "short_name": "Gate",
+  "description": "The Re-Lapse gate.",
+  "id": "/gate",
+  "start_url": "/gate",
+  "scope": "/gate",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#000000",
+  "theme_color": "#07060f",
+  "icons": [
+    {
+      "src": "/icons/gate-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/gate-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

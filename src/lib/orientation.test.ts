@@ -11,12 +11,14 @@ import {
 } from "./orientation.ts";
 
 test("the manifest keeps the installed shortcut in portrait", () => {
-  const manifest = JSON.parse(readFileSync(new URL("../../public/manifest.webmanifest", import.meta.url), "utf8")) as {
-    orientation?: string;
-    display?: string;
-  };
-  assert.equal(manifest.orientation, PORTRAIT_LOCK);
-  assert.equal(manifest.display, "standalone");
+  for (const file of ["../../public/manifest.webmanifest", "../../public/gate.webmanifest"]) {
+    const manifest = JSON.parse(readFileSync(new URL(file, import.meta.url), "utf8")) as {
+      orientation?: string;
+      display?: string;
+    };
+    assert.equal(manifest.orientation, PORTRAIT_LOCK);
+    assert.equal(manifest.display, "standalone");
+  }
 });
 
 test("the stylesheet turns the document and leaves the lens alone", () => {
