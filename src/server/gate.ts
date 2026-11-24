@@ -336,14 +336,18 @@ export async function takeGateGuess(clientId: string, given: string, secret: str
   });
 }
 
+/** The gate cookie is present. Image tags cannot send the gate header, so a profile page uses this. */
+export function gateSession(request: Request): boolean {
+  const secret = gateSecret();
+  if (!secret) return false;
+  const cookie = readCookie(request, "relapse_gate");
+  return Boolean(cookie) && sameSecret(cookie, gateCookie(secret));
+}
+
 export function assertGate(request: Request): void {
   const secret = gateSecret();
   if (!secret) throw new HttpError(503, "The gate isn't set up on this server.");
-  if (request.headers.get("x-relapse-gate") !== "1") {
-    throw new HttpError(401, "That key doesn't open the gate.");
-  }
-  const cookie = readCookie(request, "relapse_gate");
-  if (!cookie || !sameSecret(cookie, gateCookie(secret))) {
+  if (request.headers.get("x-relapse-gate") !== "1" || !gateSession(request)) {
     throw new HttpError(401, "That key doesn't open the gate.");
   }
 }

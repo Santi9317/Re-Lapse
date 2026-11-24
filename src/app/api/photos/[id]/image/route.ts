@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { toErrorResponse } from "@/server/http";
-import { acceptedViewer } from "@/server/gate";
+import { acceptedViewer, gateSession } from "@/server/gate";
 import { readImage } from "@/server/store";
 import { isUuid } from "@/server/validate";
 
@@ -14,7 +14,7 @@ export async function GET(request: Request, ctx: Ctx) {
     const { id } = await ctx.params;
     if (!isUuid(id)) return new NextResponse(null, { status: 404 });
     const viewer = await acceptedViewer(request);
-    if (!viewer) return new NextResponse(null, { status: 404 });
+    if (!viewer && !gateSession(request)) return new NextResponse(null, { status: 404 });
     const image = await readImage(id.toLowerCase(), viewer);
     if (!image) return new NextResponse(null, { status: 404 });
     return new NextResponse(new Uint8Array(image.bytes), {
