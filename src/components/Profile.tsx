@@ -27,7 +27,7 @@ import {
   withCameraPortrait,
   type Profile,
 } from "@/lib/profile";
-import type { FeedItem } from "@/lib/types";
+import type { FeedItem, SharedProfile } from "@/lib/types";
 
 type Mode = "page" | "edit" | "arrange";
 
@@ -912,7 +912,15 @@ function FrameDialog({
   );
 }
 
-export function GuestProfile({ id, onBack }: { id: string; onBack: () => void }) {
+export function GuestProfile({
+  id,
+  onBack,
+  load = fetchPublicProfile,
+}: {
+  id: string;
+  onBack: () => void;
+  load?: (id: string) => Promise<SharedProfile>;
+}) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [error, setError] = useState("");
   const [index, setIndex] = useState(0);
@@ -923,7 +931,7 @@ export function GuestProfile({ id, onBack }: { id: string; onBack: () => void })
     setProfile(null);
     setError("");
     setIndex(0);
-    fetchPublicProfile(id)
+    load(id)
       .then((row) => {
         if (!stop) setProfile(profileFromServer(row));
       })
@@ -933,7 +941,7 @@ export function GuestProfile({ id, onBack }: { id: string; onBack: () => void })
     return () => {
       stop = true;
     };
-  }, [id]);
+  }, [id, load]);
 
   useEffect(() => {
     if (!openId) return;

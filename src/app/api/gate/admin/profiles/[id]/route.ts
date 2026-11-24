@@ -1,12 +1,25 @@
 import { HttpError, json, toErrorResponse } from "@/server/http";
 import { assertGate } from "@/server/gate";
-import { removeProfile } from "@/server/store";
-import { requireUuid } from "@/server/validate";
+import { readPublicProfile, removeProfile } from "@/server/store";
+import { isUuid, requireUuid } from "@/server/validate";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 type Ctx = { params: Promise<{ id: string }> };
+
+export async function GET(request: Request, ctx: Ctx) {
+  try {
+    assertGate(request);
+    const { id } = await ctx.params;
+    if (!isUuid(id)) throw new HttpError(404, "That profile is gone.");
+    const profile = await readPublicProfile(id.toLowerCase());
+    if (!profile) throw new HttpError(404, "That profile is gone.");
+    return json(profile);
+  } catch (error) {
+    return toErrorResponse(error);
+  }
+}
 
 export async function DELETE(request: Request, ctx: Ctx) {
   try {

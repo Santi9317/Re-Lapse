@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { GuestProfile } from "@/components/Profile";
+import type { SharedProfile } from "@/lib/types";
 
 type Pending = { id: string; name: string; createdAt: number };
 type ActiveProfile = {
@@ -48,6 +50,7 @@ export function GatePortal() {
   const [recoveries, setRecoveries] = useState<Pending[]>([]);
   const [profiles, setProfiles] = useState<ActiveProfile[]>([]);
   const [confirmId, setConfirmId] = useState("");
+  const [openProfileId, setOpenProfileId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [acting, setActing] = useState("");
@@ -74,6 +77,7 @@ export function GatePortal() {
       setRecoveries([]);
       setProfiles([]);
       setConfirmId("");
+      setOpenProfileId(null);
       return;
     }
     if (!response.ok || !data?.requests || !Array.isArray(data.profiles)) {
@@ -87,6 +91,7 @@ export function GatePortal() {
     setRecoveries(data.recoveries ?? []);
     setProfiles(nextProfiles);
     setConfirmId((current) => (current && nextProfiles.some((item) => item.id === current) ? current : ""));
+    setOpenProfileId((current) => (current && nextProfiles.some((item) => item.id === current) ? current : null));
   }, []);
 
   useEffect(() => {
@@ -172,6 +177,7 @@ export function GatePortal() {
           setPhase("locked");
           setProfiles([]);
           setConfirmId("");
+          setOpenProfileId(null);
         }
         setError(data?.error || "The lab didn't answer.");
         if (response.status === 404) await load();
@@ -186,17 +192,35 @@ export function GatePortal() {
     }
   }
 
+  const loadGateProfile = useCallback(async (id: string): Promise<SharedProfile> => {
+    const response = await fetch(`/api/gate/admin/profiles/${id}`, {
+      headers: { "x-relapse-gate": "1" },
+      cache: "no-store",
+    });
+    const data = (await response.json().catch(() => null)) as (SharedProfile & { error?: string }) | null;
+    if (response.status === 401) {
+      setPhase("locked");
+      setOpenProfileId(null);
+    }
+    if (!response.ok || !data?.username) throw new Error(data?.error || "That profile is gone.");
+    return data;
+  }, []);
+
   return (
     <div className="desk">
       <div className="phone">
         <header className="top">
           <h1 className="word">Gate</h1>
           <p className="lede">
-            Cameras waiting to come in, and profiles asking to come back. Accept lets a new camera shoot. Approve puts
-            that profile on the phone that asked. Every profile already in the app is listed below. Delete takes it out.
+            {openProfileId
+              ? "Their profile, from the gate."
+              : "Cameras waiting to come in, and profiles asking to come back. Accept lets a new camera shoot. Approve puts that profile on the phone that asked. Every profile already in the app is listed below. Tap a name to open it. Delete takes it out."}
           </p>
         </header>
         <div className="stage">
+          {phase === "open" && openProfileId ? (
+            <GuestProfile id={openProfileId} onBack={() => setOpenProfileId(null)} load={loadGateProfile} />
+          ) : (
           <div className="scroll">
             {phase === "checking" ? <p className="fine">Checking the gate.</p> : null}
             {phase === "down" ? (
@@ -310,10 +334,18 @@ export function GatePortal() {
                     <ul className="gate-list" data-gate-list="profiles">
                       {profiles.map((item) => (
                         <li key={item.id} className="event" data-profile-id={item.id}>
-                          <p className="kicker">In the app</p>
-                          <h3 data-profile-name={item.username}>{item.username}</h3>
-                          <p className="gate-marks">{item.emojis.filter((emoji) => emoji.length > 0).join(" ")}</p>
-                          <time dateTime={new Date(item.updatedAt).toISOString()}>{when(item.updatedAt)}</time>
+                          <button
+                            className="gate-profile"
+                            type="button"
+                            data-open-profile={item.id}
+                            aria-label={`Open ${item.username}'s profile`}
+                            onClick={() => setOpenProfileId(item.id)}
+                          >
+                            <p className="kicker">In the app</p>
+                            <h3 data-profile-name={item.username}>{item.username}</h3>
+                            <p className="gate-marks">{item.emojis.filter((emoji) => emoji.length > 0).join(" ")}</p>
+                            <time dateTime={new Date(item.updatedAt).toISOString()}>{when(item.updatedAt)}</time>
+                          </button>
                           <div className="gate-actions">
                             {confirmId === item.id ? (
                               <>
@@ -356,6 +388,7 @@ export function GatePortal() {
               </>
             ) : null}
           </div>
+          )}
         </div>
       </div>
     </div>

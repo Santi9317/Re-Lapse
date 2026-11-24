@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import test from "node:test";
-import { DELETE as deleteProfileRoute } from "@/app/api/gate/admin/profiles/[id]/route";
+import { DELETE as deleteProfileRoute, GET as readGateProfile } from "@/app/api/gate/admin/profiles/[id]/route";
 import { GET as listGate } from "@/app/api/gate/admin/requests/route";
 import { GET as readProfileRoute, PUT as saveProfileRoute } from "@/app/api/profile/route";
+import { GET as readFrame } from "@/app/api/photos/[id]/image/route";
 import { sql } from "@/lib/db";
 import { gateCookie } from "@/server/gate-key";
 import { listRecoveryRequests } from "@/server/profile-pin";
@@ -41,6 +42,7 @@ test("the gate lists every active profile, and delete removes that profile from 
   const beaId = randomUUID();
   const adaPhoto = randomUUID();
   const beaPhoto = randomUUID();
+  const privatePhoto = randomUUID();
   const adaRescue = randomUUID();
   const beaRescue = randomUUID();
   const booth = randomUUID();
@@ -62,8 +64,9 @@ test("the gate lists every active profile, and delete removes that profile from 
   await sql(
     `insert into photos (id, shooter_token, caption, image_b64, created_at, ready_at, developed_at, published_at)
      values ($1, $2, 'Ada frame', $3, now(), now(), now(), now()),
-            ($4, $5, 'Bea frame', $3, now(), now(), now(), now())`,
-    [adaPhoto, ada, image, beaPhoto, bea],
+            ($4, $5, 'Bea frame', $3, now(), now(), now(), now()),
+            ($6, $5, 'Still in the lab', $3, now(), now(), now(), null)`,
+    [adaPhoto, ada, image, beaPhoto, bea, privatePhoto],
   );
   await sql(
     `insert into stickers (photo_id, shooter_token, emoji) values ($1, $2, '📷')`,
@@ -103,6 +106,30 @@ test("the gate lists every active profile, and delete removes that profile from 
   const shutBody = JSON.stringify(await shut.json());
   assert.equal(shutBody.includes("Ada"), false);
 
+  const page = await readGateProfile(gateRequest(`/api/gate/admin/profiles/${adaId}`), {
+    params: Promise.resolve({ id: adaId }),
+  });
+  assert.equal(page.status, 200);
+  const adaPage = (await page.json()) as { id: string; username: string; emojis: string[] };
+  assert.equal(adaPage.id, adaId);
+  assert.equal(adaPage.username, "Ada");
+  assert.deepEqual(adaPage.emojis, ["📷", "✨", "🌈"]);
+  const pageShut = await readGateProfile(new Request(`http://127.0.0.1/api/gate/admin/profiles/${adaId}`), {
+    params: Promise.resolve({ id: adaId }),
+  });
+  assert.equal(pageShut.status, 401);
+
+  const frameHeaders = { cookie: `relapse_gate=${gateCookie(SECRET)}` };
+  const publicFrame = await readFrame(new Request(`http://127.0.0.1/api/photos/${adaPhoto}/image`, { headers: frameHeaders }), {
+    params: Promise.resolve({ id: adaPhoto }),
+  });
+  assert.equal(publicFrame.status, 200);
+  assert.equal(publicFrame.headers.get("content-type"), "image/jpeg");
+  const labFrame = await readFrame(new Request(`http://127.0.0.1/api/photos/${privatePhoto}/image`, { headers: frameHeaders }), {
+    params: Promise.resolve({ id: privatePhoto }),
+  });
+  assert.equal(labFrame.status, 404);
+
   const before = await listFeed(bea);
   const beaFrame = before.find((item) => item.id === beaPhoto);
   const adaFrame = before.find((item) => item.id === adaPhoto);
@@ -128,6 +155,10 @@ test("the gate lists every active profile, and delete removes that profile from 
   );
   assert.equal(await readPublicProfile(adaId), null);
   assert.equal((await readPublicProfile(beaId))?.username, "Bea");
+  const gonePage = await readGateProfile(gateRequest(`/api/gate/admin/profiles/${adaId}`), {
+    params: Promise.resolve({ id: adaId }),
+  });
+  assert.equal(gonePage.status, 404);
 
   const photos = await sql<{ id: string }>(`select id from photos where id = $1`, [adaPhoto]);
   assert.equal(photos[0]?.id, adaPhoto);
