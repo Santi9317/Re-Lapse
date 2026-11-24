@@ -8,10 +8,9 @@ import { isUuid, readCameraAuth } from "@/server/validate";
  * Each camera has its own photo, roll, event, profile, and invite window.
  * One camera cannot spend another's. A brand-new id is written to
  * camera_mints before any proof is returned. New ids are counted for the
- * browser booth that asked. Another booth does not close this one.
- * Unclaimed ids past a keep count are dropped, so one visitor cannot spend
- * a shared allowance and stop the others. The proof lives in the httpOnly
- * cookie. Sending an id without that cookie does not reveal the proof and
+ * browser booth that asked. Dropping that cookie still cannot pass the
+ * shared ceiling. Unclaimed ids past a keep count are dropped. The proof lives
+ * in the httpOnly cookie. Sending an id without that cookie does not reveal the proof and
  * does not authorize the camera. Asking again with the cookie does not
  * spend a new-id window. Address headers are not read.
  */
@@ -127,18 +126,28 @@ export async function issueCamera(
      )`,
     [MINT_WINDOW_MS, UNCLAIMED_MINT_KEEP],
   );
+  await sql(`insert into join_queue_lock (id) values (1) on conflict (id) do nothing`);
   const token = randomUUID();
   const minted = await sql<{ token: string }>(
-    `insert into camera_mints (token, created_at, booth)
+    `with locked as (
+       select id from join_queue_lock where id = 1 for update
+     )
+     insert into camera_mints (token, created_at, booth)
      select $1::text, now(), $2::text
+     from locked
      where (
        select count(*)::int
        from camera_mints
        where booth = $2::text
          and created_at > now() - ($3::int * interval '1 millisecond')
      ) < $4::int
+     and (
+       select count(*)::int
+       from camera_mints
+       where created_at > now() - ($3::int * interval '1 millisecond')
+     ) < $5::int
      returning token`,
-    [token, booth.toLowerCase(), MINT_WINDOW_MS, MINT_LIMITS.perBooth],
+    [token, booth.toLowerCase(), MINT_WINDOW_MS, MINT_LIMITS.perBooth, MINT_LIMITS.global],
   );
   const issued = minted[0]?.token;
   if (!issued) throw new HttpError(429, "New cameras need a minute. Try again shortly.");
