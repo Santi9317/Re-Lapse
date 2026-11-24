@@ -2,6 +2,7 @@ export const HOME_CHOICE_KEY = "relapse.safariHome";
 export const LEGACY_HIDE_INSTALL_KEY = "relapse.hideInstall";
 export const UPDATE_ACCEPT_KEY = "relapse.updateAccepted";
 export const UPDATE_RELOAD_KEY = "relapse.updateDidReload";
+export const NOTES_SEEN_KEY = "relapse.notesSeen";
 
 const NOT_SAFARI =
   /Chrome|Chromium|CriOS|FxiOS|EdgiOS|Edg\/|EdgA|OPR|OPiOS|SamsungBrowser|Android|DuckDuckGo|FBAN|FBAV|Instagram|GSA\//i;
@@ -34,8 +35,16 @@ export function shouldAskForHome(input: {
 
 export type UpdateDecision = "show" | "finish" | "idle";
 
-export function updateDecision(input: { hasController: boolean; hasWaiting: boolean; accepted: boolean }): UpdateDecision {
-  if (!input.hasController || !input.hasWaiting) return "idle";
+export function updateDecision(input: {
+  hasController: boolean;
+  hasActive: boolean;
+  hasWaiting: boolean;
+  accepted: boolean;
+}): UpdateDecision {
+  // A homescreen launch can already have an active worker and a waiting one
+  // before this page is claimed. The first install has neither, so it stays quiet.
+  const running = input.hasController || input.hasActive;
+  if (!running || !input.hasWaiting) return "idle";
   return input.accepted ? "finish" : "show";
 }
 

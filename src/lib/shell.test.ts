@@ -48,10 +48,16 @@ test("iOS steps are for iPhone, iPad, and iPadOS desktop UA", () => {
 });
 
 test("an accepted update finishes quietly instead of showing again", () => {
-  assert.equal(updateDecision({ hasController: false, hasWaiting: true, accepted: false }), "idle");
-  assert.equal(updateDecision({ hasController: true, hasWaiting: true, accepted: false }), "show");
-  assert.equal(updateDecision({ hasController: true, hasWaiting: true, accepted: true }), "finish");
-  assert.equal(updateDecision({ hasController: true, hasWaiting: false, accepted: true }), "idle");
+  assert.equal(updateDecision({ hasController: false, hasActive: false, hasWaiting: true, accepted: false }), "idle");
+  assert.equal(updateDecision({ hasController: true, hasActive: true, hasWaiting: true, accepted: false }), "show");
+  assert.equal(updateDecision({ hasController: true, hasActive: true, hasWaiting: true, accepted: true }), "finish");
+  assert.equal(updateDecision({ hasController: true, hasActive: true, hasWaiting: false, accepted: true }), "idle");
   assert.equal(shouldClearUpdateAcceptance({ hasWaiting: false, hasInstalling: false }), true);
   assert.equal(shouldClearUpdateAcceptance({ hasWaiting: true, hasInstalling: false }), false);
+});
+
+test("a homescreen open can show the update before the page is claimed", () => {
+  assert.equal(updateDecision({ hasController: false, hasActive: true, hasWaiting: true, accepted: false }), "show");
+  assert.equal(updateDecision({ hasController: false, hasActive: true, hasWaiting: true, accepted: true }), "finish");
+  assert.equal(updateDecision({ hasController: false, hasActive: true, hasWaiting: false, accepted: false }), "idle");
 });
