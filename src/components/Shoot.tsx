@@ -36,12 +36,11 @@ export function Shoot({
   const streamRef = useRef<MediaStream | null>(null);
   const bitmapRef = useRef<ImageBitmap | null>(null);
   const blobRef = useRef<Blob | null>(null);
-  const urlRef = useRef<string | null>(null);
   const cameraInput = useRef<HTMLInputElement>(null);
   const rollInput = useRef<HTMLInputElement>(null);
   const [facing, setFacing] = useState<"environment" | "user">("environment");
   const [mode, setMode] = useState<"opening" | "live" | "fallback">("opening");
-  const [reviewUrl, setReviewUrl] = useState<string | null>(null);
+  const [held, setHeld] = useState(false);
   const [stamp, setStamp] = useState(true);
   const [caption, setCaption] = useState("");
   const [busy, setBusy] = useState(false);
@@ -98,11 +97,10 @@ export function Shoot({
     if (!video || !stream) return;
     video.srcObject = stream;
     void video.play().catch(() => undefined);
-  }, [mode, reviewUrl]);
+  }, [mode, held]);
 
   useEffect(() => {
     return () => {
-      if (urlRef.current) URL.revokeObjectURL(urlRef.current);
       bitmapRef.current?.close();
     };
   }, []);
@@ -117,14 +115,10 @@ export function Shoot({
     setRendering(true);
     setError("");
     try {
-      const blob = await renderDisposable(bitmap, { dateStamp });
-      const url = URL.createObjectURL(blob);
-      if (urlRef.current) URL.revokeObjectURL(urlRef.current);
-      urlRef.current = url;
-      blobRef.current = blob;
-      setReviewUrl(url);
+      blobRef.current = await renderDisposable(bitmap, { dateStamp });
+      setHeld(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "The frame didn't develop.");
+      setError(err instanceof Error ? err.message : "The frame didn't take.");
     } finally {
       setRendering(false);
     }
@@ -137,7 +131,7 @@ export function Shoot({
   }
 
   async function snap() {
-    if (reviewUrl || rendering) return;
+    if (held || rendering) return;
     if (mode !== "live" || !videoRef.current || videoRef.current.videoWidth === 0) {
       cameraInput.current?.click();
       return;
@@ -184,9 +178,7 @@ export function Shoot({
     bitmapRef.current?.close();
     bitmapRef.current = null;
     blobRef.current = null;
-    if (urlRef.current) URL.revokeObjectURL(urlRef.current);
-    urlRef.current = null;
-    setReviewUrl(null);
+    setHeld(false);
     setCaption("");
     setError("");
   }
@@ -310,15 +302,17 @@ export function Shoot({
           event.target.value = "";
         }}
       />
-      {reviewUrl ? (
-        <div className="review" data-review="filtered">
-          <img src={reviewUrl} alt="Filtered frame" />
+      {held ? (
+        <div className="review" data-review="sealed">
+          <div className="sealed-frame" aria-hidden="true">
+            <span>Exposed</span>
+          </div>
           <p className="hint">
             {armed && !eventClosed
-              ? `Sealed until 24 hours after ${armed.name} closes. Nobody sees it before then.`
+              ? `Sealed with ${armed.name}. It stays hidden until a day after the event closes.`
               : devTimers
-                ? "Short lab clock is on for this local test."
-                : "Only you can see it until you develop it. The wait is anywhere from 5 to 30 minutes."}
+                ? "Hidden until you develop it. A short lab clock is on for this local test."
+                : "Hidden until you develop it. The wait is 5 to 30 minutes, then you choose whether it goes on the feed."}
           </p>
           <label className="check">
             <input type="checkbox" checked={stamp} disabled={busy || rendering} onChange={() => void toggleStamp()} />
@@ -349,7 +343,7 @@ export function Shoot({
           </div>
         </div>
       ) : null}
-      {error && !reviewUrl ? <p className="error" style={{ position: "absolute", left: 16, right: 16, bottom: 8 }}>{error}</p> : null}
+      {error && !held ? <p className="error" style={{ position: "absolute", left: 16, right: 16, bottom: 8 }}>{error}</p> : null}
     </div>
   );
 }

@@ -229,7 +229,7 @@ export function Rolls({
       {albums.length === 0 ? (
         <div className="empty">
           <h2>No rolls yet.</h2>
-          <p>Name one, develop a frame, then file it from the feed.</p>
+          <p>Name one, send a frame to the feed, then file it.</p>
         </div>
       ) : (
         albums.map((album) => (

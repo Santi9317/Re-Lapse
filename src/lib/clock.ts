@@ -1,6 +1,6 @@
 /**
  * Product waits:
- * - personal frames: uniform 5 to 30 minutes, then the shooter taps Develop
+ * - personal frames: uniform 5 to 30 minutes, then the shooter develops to see the frame and chooses whether to share it
  * - events: open for the chosen 8–24 hours, then hidden for 24 hours
  *
  * RELAPSE_DEV_CLOCK is a local-only switch for proving that state machine.

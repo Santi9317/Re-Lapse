@@ -12,8 +12,8 @@ type Tab = "shoot" | "lab" | "feed" | "rolls";
 type InstallPrompt = Event & { prompt: () => Promise<void> };
 
 const lede: Record<Exclude<Tab, "shoot">, string> = {
-  lab: "Your frames, off the shared thread until you develop them.",
-  feed: "Everyone with this link. Newest developed frames first.",
+  lab: "Hidden until you develop them. Only the frames you send reach the feed.",
+  feed: "Everyone with this link. Newest shared frames first.",
   rolls: "Little rolls, and events that come back from the lab.",
 };
 
@@ -102,7 +102,7 @@ export function App() {
           {tab === "lab" ? (
             <Lab
               revision={labRevision}
-              onDeveloped={() => {
+              onPublished={() => {
                 setFeedRevision((value) => value + 1);
                 setLabRevision((value) => value + 1);
                 setTab("feed");
