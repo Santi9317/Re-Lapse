@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { developPhoto, fetchLab, fetchPrivateImage, publishPhoto } from "@/lib/api";
+import { developPhoto, deletePhoto, fetchLab, fetchPrivateImage, publishPhoto } from "@/lib/api";
 import { countdown, longRemain } from "@/lib/format";
 import { lapseQuip } from "@/lib/quips";
+import { ensurePhotoFile, iosPhotosTarget, readyPhotoFile, rememberPhotoBlob, shareOrSave } from "@/lib/save";
 import type { LabItem, LabState } from "@/lib/types";
 
 function cardState(item: LabItem, now: number): LabState {
@@ -12,11 +13,21 @@ function cardState(item: LabItem, now: number): LabState {
   return "developing";
 }
 
-export function Lab({ revision, onPublished }: { revision: number; onPublished: () => void }) {
+export function Lab({
+  revision,
+  onPublished,
+  onDeleted,
+}: {
+  revision: number;
+  onPublished: () => void;
+  onDeleted?: () => void;
+}) {
   const [items, setItems] = useState<LabItem[]>([]);
   const [now, setNow] = useState(() => Date.now());
   const [error, setError] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [confirmId, setConfirmId] = useState<string | null>(null);
   const developedIds = useRef(new Set<string>());
 
   useEffect(() => {
@@ -73,6 +84,37 @@ export function Lab({ revision, onPublished }: { revision: number; onPublished: 
       onPublished();
     } catch (err) {
       setError(err instanceof Error ? err.message : "That frame isn't ready to share.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  function saveFrame(id: string) {
+    setError("");
+    const file = readyPhotoFile(id);
+    if (file) {
+      shareOrSave(file);
+      return;
+    }
+    setSavingId(id);
+    void ensurePhotoFile(id)
+      .then((next) => shareOrSave(next))
+      .catch(() => setError("That frame didn't download."))
+      .finally(() => setSavingId(null));
+  }
+
+  async function remove(id: string) {
+    const previous = items;
+    setBusy(id);
+    setError("");
+    setItems((current) => current.filter((item) => item.id !== id));
+    setConfirmId(null);
+    try {
+      await deletePhoto(id);
+      onDeleted?.();
+    } catch (err) {
+      setItems(previous);
+      setError(err instanceof Error ? err.message : "That frame stayed put.");
     } finally {
       setBusy(null);
     }
@@ -147,6 +189,39 @@ export function Lab({ revision, onPublished }: { revision: number; onPublished: 
                     <p>{lapseQuip(item.id)}</p>
                   </>
                 )}
+                <div className="lab-actions">
+                  {state === "developed" ? (
+                    <button
+                      type="button"
+                      data-download={item.id}
+                      aria-label={iosPhotosTarget() ? "Download this photo to Photos" : "Download this photo"}
+                      disabled={savingId === item.id}
+                      onClick={() => saveFrame(item.id)}
+                    >
+                      {savingId === item.id ? "Saving…" : "Download"}
+                    </button>
+                  ) : null}
+                  {confirmId === item.id ? (
+                    <>
+                      <button type="button" disabled={busy === item.id} onClick={() => setConfirmId(null)}>
+                        Keep
+                      </button>
+                      <button
+                        type="button"
+                        data-confirm-delete={item.id}
+                        disabled={busy === item.id}
+                        onClick={() => void remove(item.id)}
+                      >
+                        {busy === item.id ? "Deleting…" : "Delete"}
+                      </button>
+                    </>
+                  ) : (
+                    <button type="button" data-delete={item.id} aria-label="Delete this frame" onClick={() => setConfirmId(item.id)}>
+                      Delete
+                    </button>
+                  )}
+                </div>
+                {confirmId === item.id ? <p>Gone for good.</p> : null}
               </div>
             </article>
           );
@@ -165,6 +240,7 @@ function PrivateFrame({ id, alt }: { id: string; alt: string }) {
     fetchPrivateImage(id)
       .then((blob) => {
         if (cancelled) return;
+        rememberPhotoBlob(id, blob);
         objectUrl = URL.createObjectURL(blob);
         setSrc(objectUrl);
       })
