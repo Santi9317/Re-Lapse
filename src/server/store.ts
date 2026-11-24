@@ -1299,6 +1299,19 @@ async function publicPhotoIds(ids: string[]): Promise<string[]> {
   return ids.filter((id) => open.has(id));
 }
 
+/** Frames on the feed that this profile took. Other people's shots are left out. */
+async function ownPublicPhotoIds(ids: string[], owner: string): Promise<string[]> {
+  const open = await publicPhotoIds(ids);
+  if (open.length === 0) return [];
+  const marks = open.map((_, index) => `$${index + 2}`).join(", ");
+  const rows = await sql<{ id: string }>(
+    `select id from photos where shooter_token = $1 and id in (${marks})`,
+    [owner, ...open],
+  );
+  const shot = new Set(rows.map((row) => String(row.id)));
+  return open.filter((id) => shot.has(id));
+}
+
 function parseCarousel(value: unknown): string[] {
   if (typeof value !== "string" || value === "") return [];
   try {
@@ -1430,27 +1443,6 @@ async function fitNewProfile(token: string): Promise<void> {
   }
 }
 
-/** Public frames, plus this camera's own developed frames, in the order given. */
-async function keepablePhotoIds(ids: string[], owner: string): Promise<string[]> {
-  if (ids.length === 0) return [];
-  const open = new Set(await publicPhotoIds(ids));
-  const rest = ids.filter((id) => !open.has(id));
-  const own = new Set<string>();
-  if (rest.length > 0) {
-    const marks = rest.map((_, index) => `$${index + 2}`).join(", ");
-    const rows = await sql<{ id: string }>(
-      `select id from photos
-       where shooter_token = $1
-         and event_id is null
-         and developed_at is not null
-         and id in (${marks})`,
-      [owner, ...rest],
-    );
-    for (const row of rows) own.add(String(row.id));
-  }
-  return ids.filter((id) => open.has(id) || own.has(id));
-}
-
 /** Shots this camera already kept, newest first, for the profile strip. */
 async function ownKeptPhotoIds(token: string): Promise<string[]> {
   const rows = await sql<{ id: string }>(
@@ -1490,7 +1482,9 @@ export async function saveOwnProfile(
   const removed = await profileWasRemoved(token);
   if (removed && !replaceRemoved) throw new HttpError(409, "That profile is gone.");
   const existing = await profileRow("shooter_token", token);
-  const portrait = await portraitColumns(input);
+  // keepUpload means the stored portrait stays. A null portrait in the same
+  // body is how an older full write says "I am not replacing the picture."
+  const portrait = input.keepUpload ? undefined : await portraitColumns(input);
   const writing =
     input.username !== undefined ||
     input.emojis !== undefined ||
@@ -1519,7 +1513,7 @@ export async function saveOwnProfile(
     const carouselIds = await ownKeptPhotoIds(token);
     const seen = new Set(carouselIds);
     if (input.carouselIds && input.carouselIds.length > 0) {
-      for (const id of await keepablePhotoIds(input.carouselIds, token)) {
+      for (const id of await ownPublicPhotoIds(input.carouselIds, token)) {
         if (carouselIds.length >= CAROUSEL_LIMIT) break;
         if (seen.has(id)) continue;
         seen.add(id);
@@ -1572,7 +1566,9 @@ export async function saveOwnProfile(
       add("avatar_image", portrait.image);
     }
     if (input.carouselIds) {
-      add("carousel", JSON.stringify(await keepablePhotoIds(input.carouselIds, token)));
+      // The arranged strip wins: this camera's published frames, in that order.
+      // Shots that are not on the feed stay in the lab; they are not deleted.
+      add("carousel", JSON.stringify(await ownPublicPhotoIds(input.carouselIds, token)));
     }
     if (sets.length > 0) {
       sets.push("updated_at = now()");
