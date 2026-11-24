@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { blobToBase64, sendPhoto } from "@/lib/api";
 import { renderDisposable } from "@/lib/filter";
+import { lapseQuip } from "@/lib/quips";
 import type { EventRoll } from "@/lib/types";
 
 function clickSound() {
@@ -40,7 +41,7 @@ export function Shoot({
   const rollInput = useRef<HTMLInputElement>(null);
   const [facing, setFacing] = useState<"environment" | "user">("environment");
   const [mode, setMode] = useState<"opening" | "live" | "fallback">("opening");
-  const [held, setHeld] = useState(false);
+  const [sealed, setSealed] = useState(false);
   const [stamp, setStamp] = useState(true);
   const [caption, setCaption] = useState("");
   const [busy, setBusy] = useState(false);
@@ -94,10 +95,11 @@ export function Shoot({
   useEffect(() => {
     const video = videoRef.current;
     const stream = streamRef.current;
-    if (!video || !stream) return;
+    if (!video || !stream || sealed) return;
+    video.style.visibility = "";
     video.srcObject = stream;
     void video.play().catch(() => undefined);
-  }, [mode, held]);
+  }, [mode, sealed]);
 
   useEffect(() => {
     return () => {
@@ -111,13 +113,35 @@ export function Shoot({
     return () => window.clearInterval(id);
   }, [armed]);
 
+  function conceal() {
+    setSealed(true);
+    const video = videoRef.current;
+    if (!video) return;
+    video.pause();
+    video.style.visibility = "hidden";
+  }
+
+  function revealLens() {
+    setSealed(false);
+    const video = videoRef.current;
+    if (!video) return;
+    video.style.visibility = "";
+    void video.play().catch(() => undefined);
+  }
+
+  function yieldFrame(): Promise<void> {
+    return new Promise((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+    });
+  }
+
   async function paint(bitmap: ImageBitmap, dateStamp: boolean) {
     setRendering(true);
     setError("");
     try {
       blobRef.current = await renderDisposable(bitmap, { dateStamp });
-      setHeld(true);
     } catch (err) {
+      if (!blobRef.current) revealLens();
       setError(err instanceof Error ? err.message : "The frame didn't take.");
     } finally {
       setRendering(false);
@@ -131,7 +155,7 @@ export function Shoot({
   }
 
   async function snap() {
-    if (held || rendering) return;
+    if (sealed || rendering) return;
     if (mode !== "live" || !videoRef.current || videoRef.current.videoWidth === 0) {
       cameraInput.current?.click();
       return;
@@ -147,15 +171,20 @@ export function Shoot({
     const ctx = still.getContext("2d");
     if (!ctx) return;
     ctx.drawImage(video, 0, 0);
+    conceal();
+    await yieldFrame();
     await takeBitmap(await createImageBitmap(still));
   }
 
   async function takeFile(file: File | undefined) {
-    if (!file) return;
+    if (!file || sealed || rendering) return;
     setError("");
+    conceal();
+    await yieldFrame();
     try {
       await takeBitmap(await createImageBitmap(file));
     } catch {
+      revealLens();
       setError("That frame didn't open. Try a JPEG or PNG.");
     }
   }
@@ -178,7 +207,7 @@ export function Shoot({
     bitmapRef.current?.close();
     bitmapRef.current = null;
     blobRef.current = null;
-    setHeld(false);
+    revealLens();
     setCaption("");
     setError("");
   }
@@ -229,10 +258,10 @@ export function Shoot({
         }}
       >
         {mode === "live" ? (
-          <video ref={videoRef} className="lens" playsInline muted autoPlay />
+          <video ref={videoRef} className={sealed ? "lens concealed" : "lens"} playsInline muted autoPlay />
         ) : (
           <div className="empty-lens">
-            <h2>{mode === "opening" ? "Opening the lens…" : "The lens is covered"}</h2>
+            <h2>{mode === "opening" ? "Opening the lens… 📸" : "Lens cap on 😎"}</h2>
             <p>
               {mode === "opening"
                 ? "Asking the camera."
@@ -247,8 +276,8 @@ export function Shoot({
         {flash ? <div className="flash" /> : null}
         <div className="vf-top">
           <div>
-            <div className="brand">Relapse</div>
-            <div className="stock">DISPOSABLE</div>
+            <div className="brand">Re-Lapse ✨</div>
+            <div className="stock">DISPOSABLE 💿</div>
           </div>
           <div className="counter">400 · {String(frames).padStart(2, "0")}</div>
         </div>
@@ -302,17 +331,17 @@ export function Shoot({
           event.target.value = "";
         }}
       />
-      {held ? (
+      {sealed ? (
         <div className="review" data-review="sealed">
           <div className="sealed-frame" aria-hidden="true">
-            <span>Exposed</span>
+            <span>Exposed 📸</span>
           </div>
           <p className="hint">
             {armed && !eventClosed
-              ? `Sealed with ${armed.name}. It stays hidden until a day after the event closes.`
+              ? `Sealed with ${armed.name}. The whole roll lapses back a day after close. 🔒`
               : devTimers
-                ? "Hidden until you develop it. A short lab clock is on for this local test."
-                : "Hidden until you develop it. The wait is 5 to 30 minutes, then you choose whether it goes on the feed."}
+                ? `Short lab clock is on. ${lapseQuip(String(frames))}`
+                : `${lapseQuip(String(frames))} Give it 5 to 30 minutes, then develop.`}
           </p>
           <label className="check">
             <input type="checkbox" checked={stamp} disabled={busy || rendering} onChange={() => void toggleStamp()} />
@@ -335,7 +364,7 @@ export function Shoot({
           {error ? <p className="error">{error}</p> : null}
           <div className="stack">
             <button className="primary" type="button" data-send disabled={busy || rendering} onClick={() => void send()}>
-              {busy ? "Sending…" : armed && !eventClosed ? "Send with the roll" : "Send to the lab"}
+              {busy ? "Sending…" : armed && !eventClosed ? "Send with the roll 🎞️" : "Send to the lab 🧪"}
             </button>
             <button className="ghost" type="button" onClick={retake} disabled={busy}>
               Retake
@@ -343,7 +372,7 @@ export function Shoot({
           </div>
         </div>
       ) : null}
-      {error && !held ? <p className="error" style={{ position: "absolute", left: 16, right: 16, bottom: 8 }}>{error}</p> : null}
+      {error && !sealed ? <p className="error" style={{ position: "absolute", left: 16, right: 16, bottom: 8 }}>{error}</p> : null}
     </div>
   );
 }

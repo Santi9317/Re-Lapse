@@ -1,22 +1,21 @@
 import type { Metadata, Viewport } from "next";
-import "@fontsource/anton/latin-400.css";
-import "@fontsource/ibm-plex-mono/latin-400.css";
-import "@fontsource/ibm-plex-mono/latin-500.css";
+import "@fontsource/audiowide/latin-400.css";
+import "@fontsource/chakra-petch/latin-400.css";
+import "@fontsource/chakra-petch/latin-500.css";
+import "@fontsource/chakra-petch/latin-600.css";
 import "@fontsource/ibm-plex-mono/latin-600.css";
-import "@fontsource/literata/latin-500.css";
-import "@fontsource/literata/latin-700.css";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Relapse",
+  title: "Re-Lapse",
   description: "A shared disposable camera. Shoot, wait, develop.",
-  applicationName: "Relapse",
+  applicationName: "Re-Lapse",
   manifest: "/manifest.webmanifest",
   referrer: "same-origin",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "Relapse",
+    title: "Re-Lapse",
   },
   formatDetection: { telephone: false },
   icons: {
@@ -26,7 +25,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#100c09",
+  themeColor: "#07060f",
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",

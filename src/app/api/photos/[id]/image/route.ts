@@ -23,7 +23,8 @@ export async function GET(request: Request, ctx: Ctx) {
     return new NextResponse(new Uint8Array(image.bytes), {
       headers: {
         "content-type": "image/jpeg",
-        "cache-control": image.visibility === "public" ? "public, max-age=86400" : "private, no-store",
+        "cache-control": image.visibility === "public" ? "private, max-age=300" : "private, no-store",
+        "content-disposition": 'inline; filename="Re-Lapse.jpg"',
         "x-content-type-options": "nosniff",
       },
     });

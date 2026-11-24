@@ -1,14 +1,14 @@
 {
-  "name": "Relapse",
-  "short_name": "Relapse",
+  "name": "Re-Lapse",
+  "short_name": "Re-Lapse",
   "description": "A shared disposable camera. Shoot, wait, develop.",
   "id": "/",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#100c09",
-  "theme_color": "#100c09",
+  "background_color": "#07060f",
+  "theme_color": "#07060f",
   "icons": [
     {
       "src": "/icons/icon-192.png",
@@ -20,13 +20,7 @@
       "src": "/icons/icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "/icons/icon-maskable-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "maskable"
+      "purpose": "any maskable"
     }
   ]
 }

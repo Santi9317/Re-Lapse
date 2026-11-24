@@ -13,9 +13,9 @@ type Tab = "shoot" | "lab" | "feed" | "rolls" | "you";
 type InstallPrompt = Event & { prompt: () => Promise<void> };
 
 const lede: Record<Exclude<Tab, "shoot">, string> = {
-  lab: "Hidden until you develop them. Only the frames you send reach the feed.",
-  feed: "Everyone with this link. Newest shared frames first.",
-  rolls: "Little rolls, and events that come back from the lab.",
+  lab: "Let them lapse. Develop when the clock hits zero. 🧪",
+  feed: "Everyone with this link. A frame stays up for a week, then it lapses. ✨",
+  rolls: "Little rolls, and events that come back from their lapse. 🎞️",
   you: "Set your name, photo, and three emojis. They show on the frames you share.",
 };
 
@@ -90,7 +90,7 @@ export function App() {
       <div className="phone">
         {tab !== "shoot" ? (
           <header className="top">
-            <h1 className="word">Relapse</h1>
+            <h1 className="word">Re-Lapse ✨</h1>
             <p className="lede">{guestId ? "Their profile, from a frame they shared." : lede[tab]}</p>
           </header>
         ) : null}
@@ -115,6 +115,7 @@ export function App() {
                 setLabRevision((value) => value + 1);
                 chooseTab("feed");
               }}
+              onDeleted={() => setLabCount((count) => Math.max(0, count - 1))}
             />
           ) : null}
           {guestId ? (
@@ -143,7 +144,7 @@ export function App() {
                 ? "Keep the camera on your home screen."
                 : ios
                   ? "Share, then Add to Home Screen."
-                  : "Add Relapse to your home screen."}
+                  : <>Add <span className="namemark">Re-Lapse</span> to your home screen.</>}
             </span>
             {install ? (
               <button
@@ -165,14 +166,15 @@ export function App() {
         <nav className="nav">
           {(
             [
-              ["shoot", "Shoot"],
-              ["lab", "Lab"],
-              ["feed", "Feed"],
-              ["rolls", "Rolls"],
-              ["you", "You"],
+              ["shoot", "Shoot", "📸"],
+              ["lab", "Lab", "🧪"],
+              ["feed", "Feed", "✨"],
+              ["rolls", "Rolls", "🎞️"],
+              ["you", "You", "🪪"],
             ] as const
-          ).map(([id, label]) => (
+          ).map(([id, label, emoji]) => (
             <button key={id} type="button" aria-pressed={tab === id && !guestId} onClick={() => chooseTab(id)}>
+              <span className="nav-emoji" aria-hidden="true">{emoji}</span>
               {label}
               {id === "lab" && labReady ? <i className="dot" aria-label="Ready to develop" /> : null}
               {id === "lab" && !labReady && labCount > 0 ? <sup>{labCount}</sup> : null}

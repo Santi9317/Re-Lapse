@@ -48,6 +48,10 @@ function headers(jsonBody: boolean): HeadersInit {
   return result;
 }
 
+export function photoHeaders(): HeadersInit {
+  return headers(false);
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, { cache: "no-store", ...init });
   const data = (await response.json().catch(() => null)) as (T & { error?: string }) | null;
@@ -114,6 +118,10 @@ export function developPhoto(id: string): Promise<{ developedAt: number }> {
 
 export function publishPhoto(id: string): Promise<{ publishedAt: number }> {
   return request(`/api/photos/${id}/publish`, { method: "POST", headers: headers(false) });
+}
+
+export function deletePhoto(id: string): Promise<{ ok: boolean }> {
+  return request(`/api/photos/${id}`, { method: "DELETE", headers: headers(false) });
 }
 
 export function filePhoto(id: string, albumId: string | null): Promise<{ ok: boolean }> {

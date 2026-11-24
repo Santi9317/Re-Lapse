@@ -1,3 +1,5 @@
+import { FEED_TTL_MS } from "@/lib/clock";
+
 export function frames(count: number): string {
   return `${count} ${count === 1 ? "frame" : "frames"}`;
 }
@@ -28,6 +30,16 @@ export function ago(ms: number, now = Date.now()): string {
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
   if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
   return new Date(ms).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+export function leavesIn(sortAt: number, now = Date.now()): string {
+  const left = sortAt + FEED_TTL_MS - now;
+  if (left <= 0) return "leaving now";
+  const day = 86_400_000;
+  if (left >= day) return `gone in ${Math.ceil(left / day)}d`;
+  const hour = 3_600_000;
+  if (left >= hour) return `gone in ${Math.ceil(left / hour)}h`;
+  return `gone in ${Math.max(1, Math.ceil(left / 60_000))}m`;
 }
 
 export function clockLabel(ms: number): string {

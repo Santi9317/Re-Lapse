@@ -354,7 +354,7 @@ function IdentityCard({ profile, onEditPhoto }: { profile: Profile; onEditPhoto?
           <span key={slot}>{emoji || "·"}</span>
         ))}
       </p>
-      <p className="stock-line">RELAPSE 400</p>
+      <p className="stock-line">RE-LAPSE 400</p>
     </figure>
   );
 }
