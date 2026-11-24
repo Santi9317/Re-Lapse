@@ -158,7 +158,7 @@ export function Profile({ revision }: { revision: number }) {
     setFormError("");
     setSaving(true);
     try {
-      const saved = await persist(draft);
+      const saved = await persist(draft, true);
       if (!saved) return;
       clearDraft();
       setDraft(saved);
@@ -171,10 +171,10 @@ export function Profile({ revision }: { revision: number }) {
     }
   }
 
-  async function persist(next: Profile): Promise<Profile | null> {
+  async function persist(next: Profile, replaceRemoved = false): Promise<Profile | null> {
     const ticket = write.current + 1;
     write.current = ticket;
-    const remote = profileFromServer(await saveOwnProfile(profileWrite(next)));
+    const remote = profileFromServer(await saveOwnProfile(profileWrite(next), { replaceRemoved }));
     if (ticket !== write.current) return null;
     const bytes = next.avatarDataUrl
       ? next.avatarDataUrl

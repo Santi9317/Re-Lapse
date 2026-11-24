@@ -272,6 +272,18 @@ export function clearDraft(): void {
   }
 }
 
+/** Drop the profile this phone kept. The camera and its PIN stay. */
+export async function clearStoredProfile(): Promise<void> {
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+    clearDraft();
+    await snapshotPhone();
+  } catch {
+    /* already gone */
+  }
+  if (typeof window !== "undefined") window.dispatchEvent(new Event("relapse-profile"));
+}
+
 export function saveProfile(profile: Profile): Profile {
   const clean = normalizeProfile(profile);
   if (!clean.username) throw new Error("Give yourself a short name.");
