@@ -1,18 +1,16 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { devClockRequested, eventTimes, FEED_DAYS, personalReadyAt } from "@/lib/clock";
 import { sql } from "@/lib/db";
-import type { Album, EventDetail, EventRoll, EventStatus, FeedItem, LabItem, LabState, ProfileWrite, SharedProfile } from "@/lib/types";
+import type { Album, EventDetail, EventRoll, EventStatus, FeedItem, LabItem, LabState, ProfileWrite, RollMember, SharedProfile } from "@/lib/types";
 import { HttpError } from "@/server/http";
 import { assertCreateAllowed, cameraIsYoung, noteCreate } from "@/server/quota";
 import { cleanJpeg } from "@/server/validate";
 
-// A shared frame stays on the feed for a week and is then deleted. Each camera
-// can only hold so many of its own rows. Cameras that have been here a day use
-// the main pool and, when it is full, replace only their own rows. A camera
-// newer than a day, including a brand-new id, uses a small day-one pool. When
-// that pool is full, the oldest day-one frame past the develop timer is
-// retired so a newcomer still gets a slot. A settled camera's frame is never
-// removed to make that room. Address headers are not read.
+// A shared frame stays on the feed for a week and is then deleted. Only a
+// camera the server issued can create anything, and that camera spends only
+// its own window. Cameras newer than a day use a small day-one pool. When
+// that pool is full, this camera can replace its own oldest row and nothing
+// of anyone else's. Address headers are not read.
 const OWN_PHOTO_CAP = 24;
 const OWN_ALBUM_CAP = 8;
 const OWN_EVENT_CAP = 4;
@@ -30,9 +28,10 @@ let lastReclaim = 0;
 // (and the picture stored on it) is removed.
 const feedLifetime = `(${FEED_DAYS} * interval '1 day')`;
 const livePersonal = `p.event_id is null and p.published_at is not null and p.published_at >= now() - ${feedLifetime}`;
+const liveEvent = `p.event_id is not null and e.reveal_at <= now() and e.reveal_at >= now() - ${feedLifetime} and (p.published_at is not null or e.invite_only = false)`;
 const liveOnFeed = `(
   (${livePersonal})
-  or (p.event_id is not null and e.reveal_at <= now() and e.reveal_at >= now() - ${feedLifetime})
+  or (${liveEvent})
 )`;
 
 function num(value: unknown): number {
@@ -160,56 +159,58 @@ async function countAged(table: "photos" | "albums" | "events", young: boolean):
   return num(rows[0]?.n);
 }
 
-async function dropOldestYoungPhoto(): Promise<boolean> {
+async function dropOwnYoungPhoto(token: string): Promise<boolean> {
   const rows = await sql<{ id: string }>(
     `delete from photos
      where id = (
        select p.id
        from photos p
-       join cameras c on c.token = p.shooter_token
-       where c.created_at > now() - interval '24 hours'
+       where p.shooter_token = $1
          and p.created_at < now() - interval '35 minutes'
-       order by (p.published_at is null) desc, p.created_at asc
+       order by p.created_at asc
        limit 1
      )
      returning id`,
+    [token],
   );
   return Boolean(rows[0]);
 }
 
-async function dropOldestYoungAlbum(): Promise<boolean> {
+async function dropOwnYoungAlbum(token: string): Promise<boolean> {
   const oldest = await sql<{ id: string }>(
-    `select a.id
-     from albums a
-     join cameras c on c.token = a.owner_token
-     where c.created_at > now() - interval '24 hours'
-     order by a.created_at asc
-     limit 1`,
+    `select id from albums where owner_token = $1 order by created_at asc limit 1`,
+    [token],
   );
   const id = oldest[0]?.id;
   if (!id) return false;
   await sql(`update photos set album_id = null where album_id = $1`, [id]);
-  const dropped = await sql<{ id: string }>(`delete from albums where id = $1 returning id`, [id]);
+  const dropped = await sql<{ id: string }>(
+    `delete from albums where id = $1 and owner_token = $2 returning id`,
+    [id, token],
+  );
   return Boolean(dropped[0]);
 }
 
-async function dropOldestYoungEvent(): Promise<boolean> {
+async function dropOwnYoungEvent(token: string): Promise<boolean> {
   const oldest = await sql<{ id: string }>(
     `select e.id
      from events e
-     join cameras c on c.token = e.owner_token
-     where c.created_at > now() - interval '24 hours'
+     where e.owner_token = $1
        and not exists (
          select 1 from photos p
-         where p.event_id = e.id and p.shooter_token <> e.owner_token
+         where p.event_id = e.id and p.shooter_token <> $1
        )
      order by e.created_at asc
      limit 1`,
+    [token],
   );
   const id = oldest[0]?.id;
   if (!id) return false;
-  await sql(`delete from photos where event_id = $1`, [id]);
-  const dropped = await sql<{ id: string }>(`delete from events where id = $1 returning id`, [id]);
+  await sql(`delete from photos where event_id = $1 and shooter_token = $2`, [id, token]);
+  const dropped = await sql<{ id: string }>(
+    `delete from events where id = $1 and owner_token = $2 returning id`,
+    [id, token],
+  );
   return Boolean(dropped[0]);
 }
 
@@ -223,7 +224,7 @@ async function fitPhotos(token: string): Promise<void> {
     const ceiling = young ? YOUNG_PHOTO_CAP : PHOTO_CAP - YOUNG_PHOTO_CAP;
     if (aged < ceiling && total < PHOTO_CAP) return;
     if (young) {
-      if (!(await dropOldestYoungPhoto())) break;
+      if (!(await dropOwnYoungPhoto(token))) break;
       continue;
     }
     const dropped = await sql<{ id: string }>(
@@ -253,7 +254,7 @@ async function fitAlbums(token: string): Promise<void> {
     const ceiling = young ? YOUNG_ALBUM_CAP : ALBUM_CAP - YOUNG_ALBUM_CAP;
     if (aged < ceiling && total < ALBUM_CAP) return;
     if (young) {
-      if (!(await dropOldestYoungAlbum())) break;
+      if (!(await dropOwnYoungAlbum(token))) break;
       continue;
     }
     const oldest = await sql<{ id: string }>(
@@ -282,7 +283,7 @@ async function fitEvents(token: string): Promise<void> {
     const ceiling = young ? YOUNG_EVENT_CAP : EVENT_CAP - YOUNG_EVENT_CAP;
     if (aged < ceiling && total < EVENT_CAP) return;
     if (young) {
-      if (!(await dropOldestYoungEvent())) break;
+      if (!(await dropOwnYoungEvent(token))) break;
       continue;
     }
     const oldest = await sql<{ id: string }>(
@@ -397,6 +398,7 @@ function feedItem(row: Record<string, unknown>): FeedItem {
       ? [String(row.emoji_1 ?? ""), String(row.emoji_2 ?? ""), String(row.emoji_3 ?? "")]
       : null,
     profileAvatar: flag(row.has_avatar),
+    onFeed: flag(row.on_feed),
   };
 }
 
@@ -406,12 +408,20 @@ const feedSelect = `
     p.caption,
     (extract(epoch from p.created_at) * 1000) as created_ms,
     (extract(epoch from p.developed_at) * 1000) as developed_ms,
-    (extract(epoch from coalesce(p.published_at, e.reveal_at)) * 1000) as sort_ms,
+    (extract(epoch from case when p.event_id is null then p.published_at else e.reveal_at end) * 1000) as sort_ms,
     p.album_id,
     a.name as album_name,
     p.event_id,
     e.name as event_name,
     (p.shooter_token = $1) as mine,
+    (
+      (p.event_id is null and p.published_at is not null)
+      or (
+        p.event_id is not null
+        and e.reveal_at <= now()
+        and (p.published_at is not null or e.invite_only = false)
+      )
+    ) as on_feed,
     r.id as profile_id,
     r.username as profile_name,
     r.emoji_1,
@@ -489,21 +499,41 @@ export async function createPhoto(input: {
   let readyAt = personalReadyAt(Date.now(), input.dev);
   let labState: LabState = "developing";
   if (input.eventId) {
-    const events = await sql<{ status: EventStatus; reveal_ms: number }>(
+    const events = await sql<{ status: EventStatus; reveal_ms: number; owner_token: string | null; invite_only: boolean; member: boolean }>(
       `select
          case
            when now() < ends_at then 'open'
            when now() < reveal_at then 'sealing'
            else 'ready'
          end as status,
-         (extract(epoch from reveal_at) * 1000) as reveal_ms
+         (extract(epoch from reveal_at) * 1000) as reveal_ms,
+         owner_token,
+         invite_only,
+         (
+           invite_only = false
+           or owner_token = $2
+           or exists (
+             select 1 from event_members m
+             where m.event_id = events.id and m.shooter_token = $2
+           )
+         ) as member
        from events
        where id = $1`,
-      [input.eventId],
+      [input.eventId, input.token],
     );
     const event = events[0];
     if (!event) throw new HttpError(404, "That event is gone.");
     if (event.status !== "open") throw new HttpError(409, "This event is closed.");
+    if (flag(event.invite_only) && !flag(event.member)) {
+      throw new HttpError(403, "Only people invited to this roll can add a frame.");
+    }
+    if (event.owner_token === input.token) {
+      await sql(
+        `insert into event_members (event_id, shooter_token) values ($1, $2)
+         on conflict (event_id, shooter_token) do nothing`,
+        [input.eventId, input.token],
+      );
+    }
     readyAt = new Date(num(event.reveal_ms));
     labState = "sealed";
   }
@@ -583,14 +613,27 @@ export async function deletePhoto(id: string, token: string): Promise<void> {
 }
 
 export async function filePhoto(id: string, token: string, albumId: string | null): Promise<void> {
+  const frames = await sql<{ shooter_token: string; event_id: string | null; published_at: string | null }>(
+    `select shooter_token, event_id, published_at from photos where id = $1`,
+    [id],
+  );
+  const frame = frames[0];
+  if (!frame) throw new HttpError(404, "That frame is already gone.");
+  if (frame.shooter_token !== token) throw new HttpError(403, "Only the person who shot it can file it.");
+  if (frame.event_id || frame.published_at == null) throw new HttpError(409, "That frame can't be filed.");
+  if (albumId) {
+    const albums = await sql<{ owner_token: string | null }>(
+      `select owner_token from albums where id = $1`,
+      [albumId],
+    );
+    const album = albums[0];
+    if (!album) throw new HttpError(409, "That roll is gone.");
+    if (album.owner_token !== token) throw new HttpError(403, "Only the person who started this roll can file into it.");
+  }
   const rows = await sql<{ id: string }>(
     `update photos
      set album_id = $1
-     where id = $2
-       and shooter_token = $3
-       and event_id is null
-       and published_at is not null
-       and ($1::text is null or exists (select 1 from albums where id = $1))
+     where id = $2 and shooter_token = $3
      returning id`,
     [albumId, id, token],
   );
@@ -602,6 +645,7 @@ export async function readImage(
   viewer: string | null,
 ): Promise<{ bytes: Buffer; visibility: "public" | "private" } | null> {
   await reclaimSoon();
+  const who = viewer ?? "00000000-0000-4000-8000-000000000000";
   const rows = await sql<{
     image_b64: string;
     shooter_token: string;
@@ -610,6 +654,7 @@ export async function readImage(
     event_id: string | null;
     revealed: boolean;
     on_feed: boolean;
+    member: boolean;
   }>(
     `select
        p.image_b64,
@@ -618,18 +663,29 @@ export async function readImage(
        p.published_at,
        p.event_id,
        coalesce(e.reveal_at <= now(), false) as revealed,
-       ${liveOnFeed} as on_feed
+       ${liveOnFeed} as on_feed,
+       (
+         e.invite_only = false
+         or e.owner_token = $2
+         or exists (
+           select 1 from event_members m
+           where m.event_id = p.event_id and m.shooter_token = $2
+         )
+       ) as member
      from photos p
      left join events e on e.id = p.event_id
      where p.id = $1`,
-    [id],
+    [id, who],
   );
   const row = rows[0];
   if (!row) return null;
   const eventPhoto = row.event_id != null;
   if (eventPhoto) {
-    if (!flag(row.revealed) || !flag(row.on_feed)) return null;
-    return { bytes: Buffer.from(row.image_b64, "base64"), visibility: "public" };
+    if (flag(row.on_feed)) return { bytes: Buffer.from(row.image_b64, "base64"), visibility: "public" };
+    if (flag(row.revealed) && flag(row.member)) {
+      return { bytes: Buffer.from(row.image_b64, "base64"), visibility: "private" };
+    }
+    return null;
   }
   if (row.published_at != null) {
     if (!flag(row.on_feed)) return null;
@@ -724,17 +780,34 @@ function eventFrom(row: Record<string, unknown>): EventRoll {
     revealAt: num(row.reveal_ms),
     status: (status === "open" || status === "sealing" || status === "ready" ? status : "ready") as EventStatus,
     frameCount: revealed ? num(row.frame_count) : null,
+    inviteOnly: flag(row.invite_only),
+    owner: flag(row.is_owner),
+    memberCount: num(row.member_count),
+    inviteCode: text(row.invite_code),
   };
 }
 
+// $1 is always the viewer token.
 const eventSelect = `
   select
     e.id,
     e.name,
     e.duration_hours,
+    e.invite_only,
     (extract(epoch from e.created_at) * 1000) as created_ms,
     (extract(epoch from e.ends_at) * 1000) as ends_ms,
     (extract(epoch from e.reveal_at) * 1000) as reveal_ms,
+    (e.owner_token = $1) as is_owner,
+    case
+      when e.owner_token = $1 then (
+        select i.code from event_invites i
+        where i.event_id = e.id
+        order by i.created_at asc
+        limit 1
+      )
+      else null
+    end as invite_code,
+    (select count(*)::int from event_members m where m.event_id = e.id) as member_count,
     case
       when now() < e.ends_at then 'open'
       when now() < e.reveal_at then 'sealing'
@@ -748,10 +821,71 @@ const eventSelect = `
   from events e
 `;
 
-export async function listEvents(): Promise<EventRoll[]> {
+const visibleEvent = `(
+  e.invite_only = false
+  or e.owner_token = $1
+  or exists (
+    select 1 from event_members m
+    where m.event_id = e.id and m.shooter_token = $1
+  )
+)`;
+
+const INVITE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+function makeInviteCode(): string {
+  const bytes = randomBytes(6);
+  let code = "";
+  for (const byte of bytes) code += INVITE_ALPHABET[byte % INVITE_ALPHABET.length];
+  return code;
+}
+
+async function ensureInvite(eventId: string): Promise<string> {
+  const existing = await sql<{ code: string }>(`select code from event_invites where event_id = $1`, [eventId]);
+  if (existing[0]) return existing[0].code;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const code = makeInviteCode();
+    try {
+      const rows = await sql<{ code: string }>(
+        `insert into event_invites (code, event_id) values ($1, $2)
+         on conflict (event_id) do nothing
+         returning code`,
+        [code, eventId],
+      );
+      if (rows[0]) return rows[0].code;
+    } catch {
+      /* the code collided; try another */
+    }
+    const again = await sql<{ code: string }>(`select code from event_invites where event_id = $1`, [eventId]);
+    if (again[0]) return again[0].code;
+  }
+  throw new HttpError(500, "The lab hit a snag.");
+}
+
+async function eventMembers(eventId: string): Promise<RollMember[]> {
+  const rows = await sql(
+    `select
+       r.username as name,
+       (m.shooter_token = e.owner_token) as owner
+     from event_members m
+     join events e on e.id = m.event_id
+     left join profiles r on r.shooter_token = m.shooter_token
+     where m.event_id = $1
+     order by (m.shooter_token = e.owner_token) desc, m.joined_at asc
+     limit 24`,
+    [eventId],
+  );
+  return rows.map((row) => ({ name: text(row.name), owner: flag(row.owner) }));
+}
+
+export async function listEvents(viewer: string): Promise<EventRoll[]> {
   await reclaimSoon();
   const rows = await sql(
-    `${eventSelect} where e.reveal_at >= now() - ${feedLifetime} order by e.created_at desc limit 100`,
+    `${eventSelect}
+     where e.reveal_at >= now() - ${feedLifetime}
+       and ${visibleEvent}
+     order by e.created_at desc
+     limit 100`,
+    [viewer],
   );
   return rows.map(eventFrom);
 }
@@ -763,37 +897,146 @@ export async function createEvent(name: string, hours: number, dev: boolean, tok
   const id = randomUUID();
   const times = eventTimes(Date.now(), hours, dev);
   const rows = await sql(
-    `insert into events (id, name, duration_hours, ends_at, reveal_at, owner_token)
-     values ($1, $2, $3, $4, $5, $6)
+    `insert into events (id, name, duration_hours, ends_at, reveal_at, owner_token, invite_only)
+     values ($1, $2, $3, $4, $5, $6, true)
      returning id`,
     [id, name, hours, times.endsAt.toISOString(), times.revealAt.toISOString(), token],
   );
   if (!rows[0]) throw new HttpError(500, "The lab hit a snag.");
+  await sql(
+    `insert into event_members (event_id, shooter_token) values ($1, $2)
+     on conflict (event_id, shooter_token) do nothing`,
+    [id, token],
+  );
+  await ensureInvite(id);
   await noteCreate("event", token);
-  const created = await sql(`${eventSelect} where e.id = $1`, [id]);
+  const created = await sql(`${eventSelect} where e.id = $2`, [token, id]);
   const row = created[0];
   if (!row) throw new HttpError(500, "The lab hit a snag.");
   return eventFrom(row);
 }
 
-export async function getEvent(id: string, viewer: string): Promise<EventDetail | null> {
-  await reclaimSoon();
+async function loadEvent(id: string, viewer: string): Promise<EventRoll | null> {
   const rows = await sql(
-    `${eventSelect} where e.id = $1 and e.reveal_at >= now() - ${feedLifetime}`,
-    [id],
+    `${eventSelect}
+     where e.id = $2
+       and e.reveal_at >= now() - ${feedLifetime}
+       and ${visibleEvent}`,
+    [viewer, id],
   );
   const row = rows[0];
   if (!row) return null;
   const event = eventFrom(row);
-  if (event.status !== "ready") return { ...event, photos: [] };
+  if (event.inviteOnly && event.owner && !event.inviteCode) {
+    return { ...event, inviteCode: await ensureInvite(event.id) };
+  }
+  return event;
+}
+
+export async function getEvent(id: string, viewer: string): Promise<EventDetail | null> {
+  await reclaimSoon();
+  const event = await loadEvent(id, viewer);
+  if (!event) return null;
+  const members = event.inviteOnly ? await eventMembers(event.id) : [];
+  if (event.status !== "ready") return { ...event, photos: [], members };
   const photos = await sql(
     `${feedSelect}
-     where p.event_id = $2 and ${liveOnFeed}
+     where p.event_id = $2
      order by p.created_at asc
      limit 80`,
     [viewer, id],
   );
-  return { ...event, photos: photos.map(feedItem) };
+  return { ...event, members, photos: photos.map(feedItem) };
+}
+
+export async function joinEvent(code: string, token: string): Promise<EventDetail> {
+  await reclaimSoon();
+  const invites = await sql<{ event_id: string }>(`select event_id from event_invites where code = $1`, [code]);
+  const eventId = invites[0]?.event_id;
+  if (!eventId) throw new HttpError(404, "That invite isn't one of ours.");
+  await sql(
+    `insert into event_members (event_id, shooter_token) values ($1, $2)
+     on conflict (event_id, shooter_token) do nothing`,
+    [eventId, token],
+  );
+  const event = await getEvent(eventId, token);
+  if (!event) throw new HttpError(404, "That roll has lapsed.");
+  return event;
+}
+
+export async function inviteToEvent(eventId: string, token: string, username: string): Promise<EventDetail> {
+  const gate = await sql<{ owner_token: string | null; invite_only: boolean }>(
+    `select owner_token, invite_only from events where id = $1`,
+    [eventId],
+  );
+  const event = gate[0];
+  if (!event) throw new HttpError(404, "That event is gone.");
+  if (!flag(event.invite_only) || event.owner_token !== token) {
+    throw new HttpError(403, "Only the person who started the roll can invite.");
+  }
+  const people = await sql<{ shooter_token: string }>(
+    `select shooter_token from profiles where lower(username) = lower($1)`,
+    [username],
+  );
+  if (people.length === 0) throw new HttpError(404, "Nobody goes by that name yet.");
+  if (people.length > 1) throw new HttpError(409, "More than one person uses that name. Send the code instead.");
+  const guest = people[0]?.shooter_token;
+  if (!guest) throw new HttpError(404, "Nobody goes by that name yet.");
+  await sql(
+    `insert into event_members (event_id, shooter_token) values ($1, $2)
+     on conflict (event_id, shooter_token) do nothing`,
+    [eventId, guest],
+  );
+  const detail = await getEvent(eventId, token);
+  if (!detail) throw new HttpError(404, "That event is gone.");
+  return detail;
+}
+
+export async function publishEventFeed(eventId: string, token: string, photoIds: string[]): Promise<EventDetail> {
+  const rows = await sql<{ owner_token: string | null; invite_only: boolean; status: string }>(
+    `select
+       owner_token,
+       invite_only,
+       case
+         when now() < ends_at then 'open'
+         when now() < reveal_at then 'sealing'
+         else 'ready'
+       end as status
+     from events
+     where id = $1`,
+    [eventId],
+  );
+  const event = rows[0];
+  if (!event) throw new HttpError(404, "That event is gone.");
+  if (!flag(event.invite_only) || event.owner_token !== token) {
+    throw new HttpError(403, "Only the person who started the roll can choose the feed.");
+  }
+  if (event.status !== "ready") throw new HttpError(409, "The roll isn't back yet.");
+  if (photoIds.length > 0) {
+    const marks = photoIds.map((_, index) => `$${index + 2}`).join(", ");
+    const found = await sql<{ n: number }>(
+      `select count(*)::int as n from photos where event_id = $1 and id in (${marks})`,
+      [eventId, ...photoIds],
+    );
+    if (num(found[0]?.n) !== photoIds.length) throw new HttpError(400, "Those frames aren't on this roll.");
+  }
+  if (photoIds.length === 0) {
+    await sql(`update photos set published_at = null where event_id = $1 and published_at is not null`, [eventId]);
+  } else {
+    const marks = photoIds.map((_, index) => `$${index + 2}`).join(", ");
+    await sql(
+      `update photos
+       set published_at = case
+         when id in (${marks}) then coalesce(published_at, now())
+         else null
+       end
+       where event_id = $1`,
+      [eventId, ...photoIds],
+    );
+  }
+  const detail = await getEvent(eventId, token);
+  if (!detail) throw new HttpError(404, "That event is gone.");
+  return detail;
 }
 
 export function wantsDevClock(header: string | null): boolean {
@@ -807,7 +1050,11 @@ const publicPhotoSql = `
   where p.id in (__IDS__)
     and (
       (p.event_id is null and p.published_at is not null)
-      or (p.event_id is not null and e.reveal_at <= now())
+      or (
+        p.event_id is not null
+        and e.reveal_at <= now()
+        and (p.published_at is not null or e.invite_only = false)
+      )
     )
 `;
 
@@ -877,24 +1124,6 @@ export async function readPublicProfile(id: string): Promise<SharedProfile | nul
 }
 
 async function fitNewProfile(): Promise<void> {
-  for (let attempt = 0; attempt < 4; attempt += 1) {
-    const rows = await sql<{ n: number }>(`select count(*)::int as n from profiles`);
-    if (num(rows[0]?.n) < PROFILE_CAP) return;
-    const dropped = await sql<{ id: string }>(
-      `delete from profiles
-       where id = (
-         select p.id
-         from profiles p
-         where not exists (select 1 from photos ph where ph.shooter_token = p.shooter_token)
-           and not exists (select 1 from albums a where a.owner_token = p.shooter_token)
-           and not exists (select 1 from events e where e.owner_token = p.shooter_token)
-         order by p.updated_at asc
-         limit 1
-       )
-       returning id`,
-    );
-    if (!dropped[0]) break;
-  }
   const rows = await sql<{ n: number }>(`select count(*)::int as n from profiles`);
   if (num(rows[0]?.n) >= PROFILE_CAP) {
     throw new HttpError(429, "The lab needs a minute. Try again shortly.");

@@ -1,21 +1,26 @@
 import { randomUUID } from "node:crypto";
 import { sql } from "@/lib/db";
 import { HttpError } from "@/server/http";
+import { isUuid } from "@/server/validate";
 
 /**
- * The caller picks the camera id, so a new id must not open its own budget.
- * An id is "day-one" until it has been seen for 24 hours. Every day-one id,
- * including one minted for a single request, shares one window. A camera row
- * is written only after that window still has room. Cameras that already had
- * frames when they were first seen keep a separate window. Address headers
- * are not read.
+ * The browser does not choose a camera id, and a made-up id is not a budget.
+ * The server issues a camera, and only when the new-camera window still has
+ * room. Sending some other UUID does not insert a row and does not open a
+ * window. A camera that was already issued keeps its own photo, roll, event,
+ * and profile window. This new-camera window does not spend those, and one
+ * camera cannot spend another's. Address headers are not read. When the
+ * new-camera window is full, only a brand-new id is refused. Nothing that
+ * already belongs to a camera is removed.
  */
 const QUOTA = {
-  photo: { windowMs: 10 * 60_000, perCamera: 12, shared: 12 },
-  album: { windowMs: 60 * 60_000, perCamera: 4, shared: 4 },
-  event: { windowMs: 60 * 60_000, perCamera: 2, shared: 2 },
-  profile: { windowMs: 60 * 60_000, perCamera: 4, shared: 12 },
+  photo: { windowMs: 10 * 60_000, limit: 12 },
+  album: { windowMs: 60 * 60_000, limit: 4 },
+  event: { windowMs: 60 * 60_000, limit: 2 },
+  profile: { windowMs: 60 * 60_000, limit: 4 },
 } as const;
+
+const NEW_CAMERA = { windowMs: 10 * 60_000, limit: 24 };
 
 export type CreateKind = keyof typeof QUOTA;
 
@@ -39,19 +44,6 @@ async function countForCamera(kind: CreateKind, windowMs: number, token: string)
   return asCount(rows[0]?.n);
 }
 
-async function countYoung(kind: CreateKind, windowMs: number): Promise<number> {
-  const rows = await sql<{ n: number }>(
-    `select count(*)::int as n
-     from create_log c
-     join cameras cam on cam.token = c.camera_key
-     where c.kind = $1
-       and c.created_at > now() - ($2::int * interval '1 millisecond')
-       and cam.created_at > now() - interval '24 hours'`,
-    [kind, windowMs],
-  );
-  return asCount(rows[0]?.n);
-}
-
 type CameraAge = "missing" | "young" | "settled";
 
 /** A missing camera is day-one. This read does not insert a row. */
@@ -71,36 +63,37 @@ export async function cameraIsYoung(token: string): Promise<boolean> {
   return age !== "settled";
 }
 
-async function claimCamera(token: string): Promise<void> {
-  await sql(
+export async function issueCamera(presented: string | null): Promise<string> {
+  const known = presented && isUuid(presented) ? presented.toLowerCase() : null;
+  if (known) {
+    const existing = await sql<{ token: string }>(`select token from cameras where token = $1`, [known]);
+    if (existing[0]) return String(existing[0].token);
+  }
+  const token = randomUUID();
+  const rows = await sql<{ token: string }>(
     `insert into cameras (token, created_at)
-     select $1::text,
-       case
-         when exists (select 1 from photos where shooter_token = $1::text)
-           or exists (select 1 from albums where owner_token = $1::text)
-           or exists (select 1 from events where owner_token = $1::text)
-         then now() - interval '25 hours'
-         else now()
-       end
-     on conflict (token) do nothing`,
-    [token],
+     select $1::text, now()
+     where (
+       select count(*)::int
+       from cameras
+       where created_at > now() - ($2::int * interval '1 millisecond')
+     ) < $3::int
+     returning token`,
+    [token, NEW_CAMERA.windowMs, NEW_CAMERA.limit],
   );
+  const issued = rows[0]?.token;
+  if (!issued) throw new HttpError(429, "New cameras need a minute. Try again shortly.");
+  return String(issued);
 }
 
 export async function assertCreateAllowed(kind: CreateKind, token: string): Promise<void> {
   const age = await cameraAge(token);
+  if (age === "missing") throw new HttpError(403, "This camera hasn't been issued.");
   const rule = QUOTA[kind];
-  const own = age === "missing" ? 0 : await countForCamera(kind, rule.windowMs, token);
-  if (own >= rule.perCamera) {
+  const own = await countForCamera(kind, rule.windowMs, token);
+  if (own >= rule.limit) {
     throw new HttpError(429, "This camera needs a minute. Try again shortly.");
   }
-  if (age !== "settled") {
-    const shared = await countYoung(kind, rule.windowMs);
-    if (shared >= rule.shared) {
-      throw new HttpError(429, "The lab needs a minute. Try again shortly.");
-    }
-  }
-  if (age === "missing") await claimCamera(token);
 }
 
 export async function noteCreate(kind: CreateKind, token: string): Promise<void> {
