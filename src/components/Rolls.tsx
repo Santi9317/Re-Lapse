@@ -184,7 +184,7 @@ export function Rolls({
         ) : null}
         {eventDetail.status === "ready" && eventDetail.photos.length === 0 ? (
           <div className="empty">
-            <h2>The roll came back empty.</h2>
+            <h2>The roll came back empty. 🎞️</h2>
             <p>Nobody shot this one.</p>
           </div>
         ) : null}
@@ -207,7 +207,7 @@ export function Rolls({
   return (
     <div className="scroll" data-screen="rolls">
       <p className="fine">
-        Rolls are named stacks of developed frames. Events are cameras that stay open for a set time, then seal for a day.
+        Rolls are stacks of keepers. 🎞️ Events stay open, then the whole roll takes a 24-hour lapse.
       </p>
       {error ? <p className="error">{error}</p> : null}
       <h2 className="section">Rolls</h2>
@@ -228,7 +228,7 @@ export function Rolls({
       </div>
       {albums.length === 0 ? (
         <div className="empty">
-          <h2>No rolls yet.</h2>
+          <h2>No rolls yet. 🎞️</h2>
           <p>Name one, send a frame to the feed, then file it.</p>
         </div>
       ) : (
@@ -266,7 +266,7 @@ export function Rolls({
       <div style={{ height: 14 }} />
       {events.length === 0 ? (
         <div className="empty">
-          <h2>No events yet.</h2>
+          <h2>No events yet. 🎉</h2>
           <p>Start one and everybody with the link can shoot until it closes.</p>
         </div>
       ) : (

@@ -53,8 +53,8 @@ export function Feed({ revision }: { revision: number }) {
       {error ? <p className="error">{error}</p> : null}
       {photos.length === 0 ? (
         <div className="empty">
-          <h2>Nothing back from the lab.</h2>
-          <p>Develop a frame in the lab, then send it if you want it here.</p>
+          <h2>Nothing back yet. 🌈</h2>
+          <p>Develop a frame, then send the ones worth a relapse.</p>
         </div>
       ) : (
         <div className="thread">
