@@ -6,7 +6,7 @@ import { isUuid } from "@/server/validate";
 
 const WINDOW_MS = 15 * 60_000;
 const RESCUE_WINDOW_MS = 10 * 60_000;
-const RESCUE_PER_PHONE = 4;
+const RESCUE_PER_WINDOW = 8;
 
 function countOf(value: unknown): number {
   return typeof value === "number" ? value : Number(value ?? 0);
@@ -23,30 +23,29 @@ function hashMatches(stored: string, given: string): boolean {
 
 type Budget = { recent: number; fresh: boolean };
 
-async function lockBudget(q: Sql, id: string): Promise<Budget> {
+async function lockSharedBudget(q: Sql): Promise<Budget> {
   await q(
-    `insert into pin_client (id, window_start, n) values ($1, now(), 0) on conflict (id) do nothing`,
-    [id],
+    `insert into pin_guess_slot (id, window_start, n) values (1, now(), 0) on conflict (id) do nothing`,
   );
   const slot = await q<{ n: number; fresh: boolean | string | number }>(
     `select n,
-            window_start <= now() - ($2::int * interval '1 millisecond') as fresh
-     from pin_client
-     where id = $1
+            window_start <= now() - ($1::int * interval '1 millisecond') as fresh
+     from pin_guess_slot
+     where id = 1
      for update`,
-    [id, WINDOW_MS],
+    [WINDOW_MS],
   );
   const fresh = guessFlag(slot[0]?.fresh);
   return { recent: fresh ? 0 : countOf(slot[0]?.n), fresh };
 }
 
-async function markMiss(q: Sql, id: string, budget: Budget): Promise<void> {
+async function markSharedMiss(q: Sql, budget: Budget): Promise<void> {
   await q(
-    `update pin_client
-     set n = $2,
-         window_start = case when $3::boolean then now() else window_start end
-     where id = $1`,
-    [id, budget.fresh ? 1 : budget.recent + 1, budget.fresh],
+    `update pin_guess_slot
+     set n = $1,
+         window_start = case when $2::boolean then now() else window_start end
+     where id = 1`,
+    [budget.fresh ? 1 : budget.recent + 1, budget.fresh],
   );
 }
 
@@ -80,7 +79,8 @@ export type RescueAsk =
 
 /**
  * A matching name and PIN open a request for Santiago. They do not open the camera.
- * A miss is counted on this phone only. Zero matches and several matches look the same.
+ * Misses share one budget, so a new browser does not start over.
+ * Zero matches and several matches look the same.
  */
 export async function requestRecovery(booth: string, pin: string, name: string): Promise<RescueAsk> {
   if (!isUuid(booth)) return { ok: false, reason: "blocked" };
@@ -100,16 +100,15 @@ export async function requestRecovery(booth: string, pin: string, name: string):
     if (waiting[0]?.id) {
       return { ok: true, id: String(waiting[0].id), name: String(waiting[0].username), status: "pending" };
     }
-    const budget = await lockBudget(q, phone);
+    const budget = await lockSharedBudget(q);
     if (!pinRestoreOpen(budget.recent)) return { ok: false, reason: "blocked" };
     const recent = await q<{ n: number }>(
       `select count(*)::int as n
        from recovery_requests
-       where booth = $1
-         and created_at > now() - ($2::int * interval '1 millisecond')`,
-      [phone, RESCUE_WINDOW_MS],
+       where created_at > now() - ($1::int * interval '1 millisecond')`,
+      [RESCUE_WINDOW_MS],
     );
-    if (countOf(recent[0]?.n) >= RESCUE_PER_PHONE) return { ok: false, reason: "blocked" };
+    if (countOf(recent[0]?.n) >= RESCUE_PER_WINDOW) return { ok: false, reason: "blocked" };
     const found = await q<{ token: string; username: string; pin_hash: string | null }>(
       `select c.token, p.username, c.pin_hash
        from cameras c
@@ -121,7 +120,7 @@ export async function requestRecovery(booth: string, pin: string, name: string):
     const token = row?.token && isUuid(String(row.token)) ? String(row.token).toLowerCase() : "";
     const matches = token.length > 0 && hashMatches(String(row?.pin_hash ?? ""), hash);
     if (!matches || !row) {
-      await markMiss(q, phone, budget);
+      await markSharedMiss(q, budget);
       return { ok: false, reason: "wrong" };
     }
     const id = randomUUID();

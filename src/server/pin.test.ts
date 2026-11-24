@@ -14,7 +14,7 @@ test("a profile PIN is six digits", () => {
   assert.equal(normalizePin(""), null);
 });
 
-test("this phone stops checking PINs after a short run", () => {
+test("PIN checks share one short run, and a new browser does not reset it", () => {
   assert.equal(pinRestoreOpen(0), true);
   assert.equal(pinRestoreOpen(PIN_RESTORE_LIMIT - 1), true);
   assert.equal(pinRestoreOpen(PIN_RESTORE_LIMIT), false);

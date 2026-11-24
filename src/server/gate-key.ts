@@ -20,7 +20,7 @@ export function gateGuessBlocked(recentFailures: number): boolean {
   return Number.isFinite(recentFailures) && recentFailures >= GATE_GUESS_LIMIT;
 }
 
-/** A guess is checked only when this phone is still under its own limit. */
+/** A guess is checked only while the whole gate is still under its shared limit. */
 export function guessMayCompare(failures: number): boolean {
   if (!Number.isFinite(failures) || failures < 0) return false;
   return failures < GATE_GUESS_LIMIT;
