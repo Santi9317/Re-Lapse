@@ -505,7 +505,66 @@ h1, h2, h3, p { margin: 0; }
   display: block;
   width: 100%;
   padding: 0;
+  touch-action: manipulation;
 }
+.frame-stage { position: relative; }
+.stickers {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  pointer-events: none;
+  z-index: 2;
+}
+.sticker {
+  position: absolute;
+  width: 34px;
+  height: 34px;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  font-size: 20px;
+  line-height: 1;
+  background: #fffdf8;
+  border-radius: 9px;
+  box-shadow:
+    0 2px 0 rgba(90, 60, 40, 0.18),
+    0 6px 12px rgba(20, 10, 8, 0.28);
+  transform: translate(-50%, -50%) rotate(var(--tilt));
+  font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
+  user-select: none;
+  pointer-events: auto;
+}
+button.sticker { color: #1a1028; }
+button.sticker:active { transform: translate(-50%, -50%) rotate(var(--tilt)) scale(0.94); }
+.sticker[data-inert="true"] { pointer-events: none; }
+.sticker[data-mine="true"] {
+  box-shadow:
+    0 0 0 2px #ffb06a,
+    0 6px 12px rgba(20, 10, 8, 0.28);
+}
+.grid .sticker {
+  width: 22px;
+  height: 22px;
+  font-size: 13px;
+  border-radius: 6px;
+}
+.sticker-picker {
+  margin-top: 8px;
+  padding: 10px;
+  background: #120c22;
+  color: var(--ink);
+  border-radius: 16px;
+  max-height: 320px;
+  overflow: auto;
+}
+.sticker-picker .fine { color: var(--muted); }
+.sticker-picker .field { color: var(--ink); margin-top: 8px; }
+.sticker-picker .kicker { margin-top: 8px; }
+.sticker-picker .emoji-grid button { color: var(--ink); }
+.sticker-picker .ghost { margin-top: 8px; }
 .print img {
   display: block;
   width: 100%;

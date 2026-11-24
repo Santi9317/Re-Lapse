@@ -1,3 +1,10 @@
+export type FrameSticker = {
+  emoji: string;
+  profileId: string;
+  profileName: string;
+  mine: boolean;
+};
+
 export type FeedItem = {
   id: string;
   caption: string;
@@ -13,6 +20,7 @@ export type FeedItem = {
   profileName: string | null;
   profileEmojis: [string, string, string] | null;
   profileAvatar: boolean;
+  stickers: FrameSticker[];
   onFeed: boolean;
 };
 

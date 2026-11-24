@@ -1,4 +1,4 @@
-import type { Album, EventDetail, EventRoll, FeedItem, LabItem, ProfileWrite, SharedProfile } from "@/lib/types";
+import type { Album, EventDetail, EventRoll, FeedItem, FrameSticker, LabItem, ProfileWrite, SharedProfile } from "@/lib/types";
 
 const DEV_KEY = "relapse.devtimers";
 const TOKEN_KEY = "relapse.shooter";
@@ -160,6 +160,14 @@ export async function publishPhoto(id: string): Promise<{ publishedAt: number }>
 
 export async function deletePhoto(id: string): Promise<{ ok: boolean }> {
   return request(`/api/photos/${id}`, { method: "DELETE", headers: await headers(false) });
+}
+
+export async function setFrameSticker(id: string, emoji: string): Promise<{ stickers: FrameSticker[] }> {
+  return request(`/api/photos/${id}/sticker`, {
+    method: "PUT",
+    headers: await headers(true),
+    body: JSON.stringify({ emoji }),
+  });
 }
 
 export async function filePhoto(id: string, albumId: string | null): Promise<{ ok: boolean }> {

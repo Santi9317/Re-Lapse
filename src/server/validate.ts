@@ -36,6 +36,11 @@ export function cleanName(value: unknown): string {
   return name;
 }
 
+export function cleanStickerEmoji(value: unknown): string {
+  if (typeof value !== "string" || !isEmoji(value)) throw new HttpError(400, "Pick an emoji.");
+  return value;
+}
+
 export function cleanCaption(value: unknown): string {
   const caption = scrub(value ?? "", 80, true);
   if (caption == null) throw new HttpError(400, "Keep the caption short.");
