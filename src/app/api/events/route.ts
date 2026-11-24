@@ -1,13 +1,19 @@
 import { asRecord, json, readJson, toErrorResponse } from "@/server/http";
 import { createEvent, listEvents, wantsDevClock } from "@/server/store";
-import { cleanHours, cleanName, requireUuid } from "@/server/validate";
+import { cleanHours, cleanName, isUuid, requireUuid } from "@/server/validate";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+function viewer(request: Request): string {
+  const token = request.headers.get("x-shooter-token") ?? "";
+  if (isUuid(token)) return token.toLowerCase();
+  return "00000000-0000-4000-8000-000000000000";
+}
+
+export async function GET(request: Request) {
   try {
-    return json({ events: await listEvents() });
+    return json({ events: await listEvents(viewer(request)) });
   } catch (error) {
     return toErrorResponse(error);
   }

@@ -21,6 +21,7 @@ export type FeedItem = {
   profileEmojis: [string, string, string] | null;
   profileAvatar: boolean;
   stickers: FrameSticker[];
+  onFeed: boolean;
 };
 
 export type SharedProfile = {
@@ -63,6 +64,11 @@ export type Album = {
 
 export type EventStatus = "open" | "sealing" | "ready";
 
+export type RollMember = {
+  name: string | null;
+  owner: boolean;
+};
+
 export type EventRoll = {
   id: string;
   name: string;
@@ -72,8 +78,13 @@ export type EventRoll = {
   revealAt: number;
   status: EventStatus;
   frameCount: number | null;
+  inviteOnly: boolean;
+  owner: boolean;
+  memberCount: number;
+  inviteCode: string | null;
 };
 
 export type EventDetail = EventRoll & {
   photos: FeedItem[];
+  members: RollMember[];
 };
