@@ -13,22 +13,54 @@ type GlobalDb = {
 const globalForDb = globalThis as typeof globalThis & { __relapseDb?: GlobalDb };
 globalForDb.__relapseDb ??= {};
 
-export async function sql<T = Record<string, unknown>>(
-  text: string,
-  params: unknown[] = [],
-): Promise<T[]> {
-  if (databaseUrl !== "") {
-    globalForDb.__relapseDb!.pool ??= new pg.Pool({
-      connectionString: databaseUrl,
-      max: 5,
-    });
-    return (await globalForDb.__relapseDb!.pool.query(text, params)).rows as T[];
-  }
+export type Sql = <T = Record<string, unknown>>(text: string, params?: unknown[]) => Promise<T[]>;
+
+function pool(): pg.Pool {
+  globalForDb.__relapseDb!.pool ??= new pg.Pool({
+    connectionString: databaseUrl,
+    max: 5,
+  });
+  return globalForDb.__relapseDb!.pool!;
+}
+
+async function localDb(): Promise<PGlite> {
   globalForDb.__relapseDb!.local ??= startLocal().catch((error: unknown) => {
     globalForDb.__relapseDb!.local = undefined;
     throw error;
   });
-  return (await (await globalForDb.__relapseDb!.local).query<T>(text, params)).rows;
+  return globalForDb.__relapseDb!.local!;
+}
+
+export async function sql<T = Record<string, unknown>>(
+  text: string,
+  params: unknown[] = [],
+): Promise<T[]> {
+  if (databaseUrl !== "") return (await pool().query(text, params)).rows as T[];
+  return (await (await localDb()).query<T>(text, params)).rows;
+}
+
+/** Runs the callback on one connection, so a row lock covers every statement inside. */
+export async function withTransaction<T>(fn: (q: Sql) => Promise<T>): Promise<T> {
+  if (databaseUrl !== "") {
+    const client = await pool().connect();
+    const q: Sql = async (text, params = []) => (await client.query(text, params)).rows as never[];
+    try {
+      await client.query("begin");
+      const value = await fn(q);
+      await client.query("commit");
+      return value;
+    } catch (error) {
+      await client.query("rollback");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+  const db = await localDb();
+  return db.transaction(async (tx) => {
+    const q: Sql = async (text, params = []) => (await tx.query(text, params)).rows as never[];
+    return fn(q);
+  });
 }
 
 async function startLocal(): Promise<PGlite> {

@@ -1,8 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { sql } from "@/lib/db";
+import { sql, withTransaction, type Sql } from "@/lib/db";
 import { HttpError } from "@/server/http";
-import { GATE_GUESS_LIMIT, gateCookie, gateSecret, sameSecret } from "@/server/gate-key";
-import { cameraProof, issueCamera, provenCamera } from "@/server/quota";
+import { gateCookie, gateSecret, guessMayCompare, sameSecret } from "@/server/gate-key";
+import { JOIN_LIMITS, joinRoom } from "@/server/join-line";
+import { mintRoom } from "@/server/mint";
+import { cameraProof, provenCamera } from "@/server/quota";
+import { isUuid } from "@/server/validate";
 
 export type GateDecision = "pending" | "accepted" | "declined";
 
@@ -54,27 +57,79 @@ export async function readMembership(request: Request): Promise<{ status: GateDe
   return findByToken(token);
 }
 
+const MINT_WINDOW_MS = 10 * 60_000;
+
+function countOf(value: unknown): number {
+  return typeof value === "number" ? value : Number(value ?? 0);
+}
+
+async function lockJoinLine(q: Sql): Promise<void> {
+  await q(`insert into join_queue_lock (id) values (1) on conflict (id) do nothing`);
+  await q(`select id from join_queue_lock where id = 1 for update`);
+}
+
 export async function askToJoin(request: Request, name: string, booth: string): Promise<Membership> {
   const known = await provenCamera(request);
-  let token: string;
-  let proof: string;
   if (known) {
-    token = known;
-    proof = await cameraProof(known);
-  } else {
-    const issued = await issueCamera(null, null, booth);
-    token = issued.token;
-    proof = issued.proof;
+    const existing = await findByToken(known);
+    if (existing) {
+      return { token: known, proof: await cameraProof(known), status: existing.status, name: existing.name };
+    }
+    const reserved = await withTransaction(async (q) => {
+      await lockJoinLine(q);
+      const counts = await q<{ pending: number; recent: number }>(
+        `select
+           (select count(*)::int from join_requests where status = 'pending') as pending,
+           (select count(*)::int from join_requests where created_at > now() - ($1::int * interval '1 millisecond')) as recent`,
+        [JOIN_LIMITS.windowMs],
+      );
+      const pending = countOf(counts[0]?.pending);
+      const recent = countOf(counts[0]?.recent);
+      if (!joinRoom(pending, recent)) return false;
+      const inserted = await q<{ camera_token: string }>(
+        `insert into join_requests (id, camera_token, display_name, status)
+         values ($1, $2, $3, 'pending')
+         on conflict (camera_token) do nothing
+         returning camera_token`,
+        [randomUUID(), known, name],
+      );
+      return Boolean(inserted[0]);
+    });
+    if (!reserved) throw new HttpError(429, "The line is full. Try again shortly.");
+    const row = await findByToken(known);
+    if (!row) throw new HttpError(500, "The lab hit a snag.");
+    return { token: known, proof: await cameraProof(known), status: row.status, name: row.name };
   }
-  const existing = await findByToken(token);
-  if (existing) return { token, proof, status: existing.status, name: existing.name };
 
-  await sql(
-    `insert into join_requests (id, camera_token, display_name, status)
-     values ($1, $2, $3, 'pending')
-     on conflict (camera_token) do nothing`,
-    [randomUUID(), token, name],
-  );
+  if (!isUuid(booth)) throw new HttpError(400, "The lab didn't answer.");
+  const token = randomUUID();
+  const reserved = await withTransaction(async (q) => {
+    await lockJoinLine(q);
+    const counts = await q<{ pending: number; recent: number; minted: number; booth_n: number }>(
+      `select
+         (select count(*)::int from join_requests where status = 'pending') as pending,
+         (select count(*)::int from join_requests where created_at > now() - ($1::int * interval '1 millisecond')) as recent,
+         (select count(*)::int from camera_mints where created_at > now() - ($2::int * interval '1 millisecond')) as minted,
+         (select count(*)::int from camera_mints where booth = $3 and created_at > now() - ($2::int * interval '1 millisecond')) as booth_n`,
+      [JOIN_LIMITS.windowMs, MINT_WINDOW_MS, booth.toLowerCase()],
+    );
+    const pending = countOf(counts[0]?.pending);
+    const recent = countOf(counts[0]?.recent);
+    const minted = countOf(counts[0]?.minted);
+    const boothCount = countOf(counts[0]?.booth_n);
+    if (!joinRoom(pending, recent) || !mintRoom(boothCount, minted)) return false;
+    await q(
+      `insert into camera_mints (token, created_at, booth) values ($1, now(), $2)`,
+      [token, booth.toLowerCase()],
+    );
+    await q(
+      `insert into join_requests (id, camera_token, display_name, status) values ($1, $2, $3, 'pending')`,
+      [randomUUID(), token, name],
+    );
+    return true;
+  });
+  if (!reserved) throw new HttpError(429, "The line is full. Try again shortly.");
+  const proof = await cameraProof(token);
   const row = await findByToken(token);
   if (!row) throw new HttpError(500, "The lab hit a snag.");
   return { token, proof, status: row.status, name: row.name };
@@ -113,7 +168,8 @@ export async function listPending(): Promise<PendingRequest[]> {
      from join_requests
      where status = 'pending'
      order by created_at asc
-     limit 100`,
+     limit $1`,
+    [JOIN_LIMITS.pendingMax],
   );
   return rows.map((row) => ({
     id: String(row.id),
@@ -158,48 +214,61 @@ function guessFlag(value: unknown): boolean {
   return value === true || value === "t" || value === "true" || value === 1;
 }
 
+export type GateGuessResult = "ok" | "wrong" | "blocked";
+
 /**
- * Counts this wrong key under a row lock, so parallel guesses cannot all
- * read the old total and slip past. The key itself is not written.
- * Returns whether the window was already full before this guess.
+ * Checks a gate key only when this browser still has room. The check and the
+ * count share one lock, so parallel guesses cannot all read the old total.
+ * A browser that is already full is refused before the key is compared.
+ * The key itself is not written.
  */
-export async function recordGateGuess(): Promise<boolean> {
-  await sql(
-    `insert into gate_guess_slot (id, window_start, n)
-     values (1, now(), 0)
-     on conflict (id) do nothing`,
-  );
-  const rows = await sql<{ blocked: boolean | string | number }>(
-    `with prev as (
-       select n, window_start
-       from gate_guess_slot
-       where id = 1
-       for update
-     ),
-     upd as (
-       update gate_guess_slot as slot
-       set
-         window_start = case
-           when prev.window_start <= now() - ($1::int * interval '1 millisecond') then now()
-           else prev.window_start
-         end,
-         n = case
-           when prev.window_start <= now() - ($1::int * interval '1 millisecond') then 1
-           when prev.n >= $2::int then prev.n
-           else prev.n + 1
-         end
-       from prev
-       where slot.id = 1
-     )
-     select
-       case
-         when prev.window_start <= now() - ($1::int * interval '1 millisecond') then false
-         else prev.n >= $2::int
-       end as blocked
-     from prev`,
-    [GUESS_WINDOW_MS, GATE_GUESS_LIMIT],
-  );
-  return guessFlag(rows[0]?.blocked);
+export async function takeGateGuess(clientId: string, given: string, secret: string): Promise<GateGuessResult> {
+  if (!isUuid(clientId)) return "blocked";
+  return withTransaction(async (q) => {
+    await q(
+      `insert into gate_guess_slot (id, window_start, n) values (1, now(), 0) on conflict (id) do nothing`,
+    );
+    await q(`select id from gate_guess_slot where id = 1 for update`);
+    await q(`delete from gate_client where window_start <= now() - interval '2 hours'`);
+    const existing = await q<{ n: number; fresh: boolean | string | number }>(
+      `select n,
+              window_start <= now() - ($2::int * interval '1 millisecond') as fresh
+       from gate_client
+       where id = $1
+       for update`,
+      [clientId, GUESS_WINDOW_MS],
+    );
+    const row = existing[0];
+    const isNewClient = !row;
+    const failures = !row || guessFlag(row.fresh) ? 0 : countOf(row.n);
+    let otherClients = 0;
+    if (isNewClient) {
+      const active = await q<{ n: number }>(
+        `select count(*)::int as n
+         from gate_client
+         where n > 0
+           and window_start > now() - ($1::int * interval '1 millisecond')`,
+        [GUESS_WINDOW_MS],
+      );
+      otherClients = countOf(active[0]?.n);
+    }
+    if (!guessMayCompare(failures, otherClients, isNewClient)) return "blocked";
+    const matches = given.length > 0 && sameSecret(given, secret);
+    if (isNewClient) {
+      await q(
+        `insert into gate_client (id, window_start, n) values ($1, now(), $2)`,
+        [clientId, matches ? 0 : 1],
+      );
+    } else if (matches || guessFlag(row.fresh)) {
+      await q(
+        `update gate_client set n = $2, window_start = now() where id = $1`,
+        [clientId, matches ? 0 : 1],
+      );
+    } else {
+      await q(`update gate_client set n = n + 1 where id = $1`, [clientId]);
+    }
+    return matches ? "ok" : "wrong";
+  });
 }
 
 export function assertGate(request: Request): void {
