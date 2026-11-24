@@ -11,10 +11,10 @@ type Ctx = { params: Promise<{ id: string }> };
 export async function GET(request: Request, ctx: Ctx) {
   try {
     const { id } = await ctx.params;
-    const eventId = requireUuid(id, "That event is gone.");
+    const eventId = requireUuid(id, "That timecapsule is gone.");
     const viewer = await requireMember(request);
     const event = await getEvent(eventId, viewer);
-    if (!event) return json({ error: "That event is gone." }, 404);
+    if (!event) return json({ error: "That timecapsule is gone." }, 404);
     return json(event);
   } catch (error) {
     return toErrorResponse(error);

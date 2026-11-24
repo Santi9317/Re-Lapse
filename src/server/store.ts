@@ -2,7 +2,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { devClockRequested, eventTimes, FEED_DAYS, personalReadyAt } from "@/lib/clock";
 import { sql, withTransaction } from "@/lib/db";
 import { isEmoji } from "@/lib/profile";
-import type { Album, EventDetail, EventRoll, EventStatus, FeedItem, FrameSticker, LabItem, LabState, ProfileWrite, RollMember, SharedProfile } from "@/lib/types";
+import type { Album, AlbumDetail, EventDetail, EventRoll, EventStatus, FeedItem, FrameSticker, GalleryCard, LabItem, LabState, ProfileWrite, RollMember, SharedProfile } from "@/lib/types";
 import { HttpError } from "@/server/http";
 import { assertCreateAllowed, assertJoinAllowed, claimCamera, noteCreate } from "@/server/quota";
 import { cleanJpeg } from "@/server/validate";
@@ -289,12 +289,12 @@ async function fitPhotos(token: string): Promise<void> {
 
 async function fitAlbums(token: string): Promise<void> {
   await trimOwnAlbums(token);
-  await fitCohort(token, "albums", ALBUM_CAP, YOUNG_ALBUM_CAP, dropOwnAlbum, "There are enough rolls already.");
+  await fitCohort(token, "albums", ALBUM_CAP, YOUNG_ALBUM_CAP, dropOwnAlbum, "There are enough galleries already.");
 }
 
 async function fitEvents(token: string): Promise<void> {
   await trimOwnEvents(token);
-  await fitCohort(token, "events", EVENT_CAP, YOUNG_EVENT_CAP, dropOwnEvent, "There are enough events already.");
+  await fitCohort(token, "events", EVENT_CAP, YOUNG_EVENT_CAP, dropOwnEvent, "There are enough timecapsules already.");
 }
 
 async function trimOwnPhotos(token: string): Promise<void> {
@@ -359,7 +359,7 @@ async function trimOwnEvents(token: string): Promise<void> {
     );
     const id = oldest[0]?.id;
     if (!id) {
-      throw new HttpError(429, "This camera already has enough events open.");
+      throw new HttpError(429, "This camera already has enough timecapsules open.");
     }
     await sql(`delete from photos where event_id = $1 and shooter_token = $2`, [id, token]);
     await sql(`delete from events where id = $1 and owner_token = $2`, [id, token]);
@@ -571,10 +571,10 @@ export async function createPhoto(input: {
       [input.eventId, input.token],
     );
     const event = events[0];
-    if (!event) throw new HttpError(404, "That event is gone.");
-    if (event.status !== "open") throw new HttpError(409, "This event is closed.");
+    if (!event) throw new HttpError(404, "That timecapsule is gone.");
+    if (event.status !== "open") throw new HttpError(409, "This timecapsule is closed.");
     if (flag(event.invite_only) && !flag(event.member)) {
-      throw new HttpError(403, "Only people invited to this roll can add a frame.");
+      throw new HttpError(403, "Only people invited to this timecapsule can add a frame.");
     }
     if (event.owner_token === input.token) {
       await sql(
@@ -663,22 +663,22 @@ export async function deletePhoto(id: string, token: string): Promise<void> {
 }
 
 export async function filePhoto(id: string, token: string, albumId: string | null): Promise<void> {
-  const frames = await sql<{ shooter_token: string; event_id: string | null; published_at: string | null }>(
-    `select shooter_token, event_id, published_at from photos where id = $1`,
+  const frames = await sql<{ shooter_token: string; event_id: string | null; published_at: string | null; album_id: string | null }>(
+    `select shooter_token, event_id, published_at, album_id from photos where id = $1`,
     [id],
   );
   const frame = frames[0];
   if (!frame) throw new HttpError(404, "That frame is already gone.");
-  if (frame.shooter_token !== token) throw new HttpError(403, "Only the person who shot it can file it.");
-  if (frame.event_id || frame.published_at == null) throw new HttpError(409, "That frame can't be filed.");
+  if (frame.shooter_token !== token) throw new HttpError(403, "Only the person who shot it can add it to a gallery.");
+  if (frame.event_id || frame.published_at == null) throw new HttpError(409, "That photo can't be added to a gallery.");
   if (albumId) {
     const albums = await sql<{ owner_token: string | null }>(
       `select owner_token from albums where id = $1`,
       [albumId],
     );
     const album = albums[0];
-    if (!album) throw new HttpError(409, "That roll is gone.");
-    if (album.owner_token !== token) throw new HttpError(403, "Only the person who started this roll can file into it.");
+    if (!album) throw new HttpError(409, "That gallery is gone.");
+    if (album.owner_token !== token) throw new HttpError(403, "Only the person who made this gallery can change it.");
   }
   const rows = await sql<{ id: string }>(
     `update photos
@@ -687,7 +687,11 @@ export async function filePhoto(id: string, token: string, albumId: string | nul
      returning id`,
     [albumId, id, token],
   );
-  if (!rows[0]) throw new HttpError(409, "That frame can't be filed.");
+  if (!rows[0]) throw new HttpError(409, "That photo can't be added to a gallery.");
+  const previous = text(frame.album_id);
+  if (previous && previous !== albumId) {
+    await sql(`update albums set cover_photo_id = null where id = $1 and cover_photo_id = $2`, [previous, id]);
+  }
 }
 
 // One sticker per camera per frame. Picking again replaces that camera's emoji.
@@ -784,27 +788,92 @@ export async function readImage(
   return null;
 }
 
-export async function listAlbums(): Promise<Album[]> {
-  await reclaimSoon();
-  const rows = await sql(
-    `select
-       a.id,
-       a.name,
-       (extract(epoch from a.created_at) * 1000) as created_ms,
-       (
-         select count(*)::int from photos p
-         where p.album_id = a.id and ${livePersonal}
-       ) as frame_count
-     from albums a
-     order by a.created_at desc
-     limit 100`,
-  );
-  return rows.map((row) => ({
+const galleryColumns = `
+  a.id,
+  a.name,
+  a.owner_token,
+  (extract(epoch from a.created_at) * 1000) as created_ms,
+  (
+    select count(*)::int from photos p
+    where p.album_id = a.id
+      and p.shooter_token = a.owner_token
+      and ${livePersonal}
+  ) as frame_count,
+  coalesce(
+    (
+      select p.id from photos p
+      where p.id = a.cover_photo_id
+        and p.album_id = a.id
+        and p.shooter_token = a.owner_token
+        and ${livePersonal}
+    ),
+    (
+      select p.id from photos p
+      where p.album_id = a.id
+        and p.shooter_token = a.owner_token
+        and ${livePersonal}
+      order by p.published_at asc, p.created_at asc
+      limit 1
+    )
+  ) as cover_photo_id
+`;
+
+function albumFrom(row: Record<string, unknown>, viewer: string): Album {
+  return {
     id: String(row.id),
     name: String(row.name),
     createdAt: num(row.created_ms),
     frameCount: num(row.frame_count),
-  }));
+    coverPhotoId: text(row.cover_photo_id),
+    owner: text(row.owner_token) === viewer,
+  };
+}
+
+function galleryCard(row: Record<string, unknown>): GalleryCard {
+  return {
+    id: String(row.id),
+    name: String(row.name),
+    frameCount: num(row.frame_count),
+    coverPhotoId: text(row.cover_photo_id),
+  };
+}
+
+export async function listAlbums(viewer: string): Promise<Album[]> {
+  await reclaimSoon();
+  const rows = await sql(
+    `select ${galleryColumns}
+     from albums a
+     where a.owner_token = $1
+     order by a.created_at desc
+     limit 100`,
+    [viewer],
+  );
+  return rows.map((row) => albumFrom(row, viewer));
+}
+
+async function galleriesForToken(token: string): Promise<GalleryCard[]> {
+  const rows = await sql(
+    `select ${galleryColumns}
+     from albums a
+     where a.owner_token = $1
+     order by a.created_at desc
+     limit 40`,
+    [token],
+  );
+  return rows.map(galleryCard);
+}
+
+async function galleriesForProfile(profileId: string): Promise<GalleryCard[]> {
+  const rows = await sql(
+    `select ${galleryColumns}
+     from albums a
+     join profiles r on r.shooter_token = a.owner_token
+     where r.id = $1
+     order by a.created_at desc
+     limit 40`,
+    [profileId],
+  );
+  return rows.map(galleryCard);
 }
 
 export async function createAlbum(name: string, token: string, proof: string | null): Promise<Album> {
@@ -819,41 +888,105 @@ export async function createAlbum(name: string, token: string, proof: string | n
     [id, name, token],
   );
   await noteCreate("album", token);
-  return { id, name, createdAt: num(rows[0]?.created_ms), frameCount: 0 };
+  return { id, name, createdAt: num(rows[0]?.created_ms), frameCount: 0, coverPhotoId: null, owner: true };
 }
 
-export async function getAlbum(id: string, viewer: string): Promise<{ album: Album; photos: FeedItem[] } | null> {
+export async function getAlbum(id: string, viewer: string): Promise<AlbumDetail | null> {
   const albums = await sql(
-    `select
-       a.id,
-       a.name,
-       (extract(epoch from a.created_at) * 1000) as created_ms,
-       (
-         select count(*)::int from photos p
-         where p.album_id = a.id and ${livePersonal}
-       ) as frame_count
+    `select ${galleryColumns}
      from albums a
      where a.id = $1`,
     [id],
   );
-  const album = albums[0];
-  if (!album) return null;
+  const row = albums[0];
+  if (!row) return null;
+  const album = albumFrom(row, viewer);
   const photos = await sql(
     `${feedSelect}
-     where p.album_id = $2 and ${livePersonal}
-     order by p.published_at desc, p.created_at desc
+     where p.album_id = $2
+       and p.shooter_token = $3
+       and ${livePersonal}
+     order by p.published_at asc, p.created_at asc
      limit 80`,
-    [viewer, id],
+    [viewer, id, text(row.owner_token) ?? ""],
   );
+  const library = album.owner
+    ? await sql(
+        `${feedSelect}
+         where p.shooter_token = $1
+           and p.event_id is null
+           and ${livePersonal}
+         order by p.published_at desc, p.created_at desc
+         limit 80`,
+        [viewer],
+      )
+    : [];
   return {
-    album: {
-      id: String(album.id),
-      name: String(album.name),
-      createdAt: num(album.created_ms),
-      frameCount: num(album.frame_count),
-    },
+    album,
     photos: await attachStickers(photos.map(feedItem), viewer),
+    library: await attachStickers(library.map(feedItem), viewer),
   };
+}
+
+async function ownAlbum(id: string, token: string): Promise<void> {
+  const rows = await sql<{ owner_token: string | null }>(`select owner_token from albums where id = $1`, [id]);
+  const album = rows[0];
+  if (!album) throw new HttpError(404, "That gallery is gone.");
+  if (album.owner_token !== token) throw new HttpError(403, "Only the person who made this gallery can change it.");
+}
+
+export async function updateAlbum(
+  id: string,
+  token: string,
+  patch: { name?: string; coverPhotoId?: string | null },
+): Promise<Album> {
+  await ownAlbum(id, token);
+  if (patch.name) await sql(`update albums set name = $1 where id = $2 and owner_token = $3`, [patch.name, id, token]);
+  if (patch.coverPhotoId !== undefined) {
+    if (patch.coverPhotoId === null) {
+      await sql(`update albums set cover_photo_id = null where id = $1 and owner_token = $2`, [id, token]);
+    } else {
+      const covers = await sql<{ id: string }>(
+        `select p.id
+         from photos p
+         where p.id = $1
+           and p.album_id = $2
+           and p.shooter_token = $3
+           and ${livePersonal}`,
+        [patch.coverPhotoId, id, token],
+      );
+      if (!covers[0]) throw new HttpError(400, "Pick a cover from this gallery.");
+      await sql(`update albums set cover_photo_id = $1 where id = $2 and owner_token = $3`, [patch.coverPhotoId, id, token]);
+    }
+  }
+  const found = await getAlbum(id, token);
+  if (!found) throw new HttpError(404, "That gallery is gone.");
+  return found.album;
+}
+
+export async function deleteAlbum(id: string, token: string): Promise<void> {
+  await ownAlbum(id, token);
+  await withTransaction(async (q) => {
+    // A photo lives on the camera roll. Gallery membership is album_id.
+    // Only a row with no image of its own would leave with the gallery, and the
+    // photo check does not allow that row.
+    await q(
+      `delete from photos
+       where album_id = $1
+         and shooter_token = $2
+         and event_id is null
+         and published_at is null
+         and developed_at is null
+         and char_length(coalesce(image_b64, '')) < 100`,
+      [id, token],
+    );
+    await q(`update photos set album_id = null where album_id = $1`, [id]);
+    const dropped = await q<{ id: string }>(
+      `delete from albums where id = $1 and owner_token = $2 returning id`,
+      [id, token],
+    );
+    if (!dropped[0]) throw new HttpError(404, "That gallery is gone.");
+  });
 }
 
 function eventFrom(row: Record<string, unknown>): EventRoll {
@@ -1053,7 +1186,7 @@ export async function joinEvent(code: string, token: string, proof: string | nul
     [eventId, token],
   );
   const event = await getEvent(eventId, token);
-  if (!event) throw new HttpError(404, "That roll has lapsed.");
+  if (!event) throw new HttpError(404, "That timecapsule has lapsed.");
   return event;
 }
 
@@ -1063,9 +1196,9 @@ export async function inviteToEvent(eventId: string, token: string, username: st
     [eventId],
   );
   const event = gate[0];
-  if (!event) throw new HttpError(404, "That event is gone.");
+  if (!event) throw new HttpError(404, "That timecapsule is gone.");
   if (!flag(event.invite_only) || event.owner_token !== token) {
-    throw new HttpError(403, "Only the person who started the roll can invite.");
+    throw new HttpError(403, "Only the person who started the timecapsule can invite.");
   }
   const people = await sql<{ shooter_token: string }>(
     `select shooter_token from profiles where lower(username) = lower($1)`,
@@ -1081,7 +1214,7 @@ export async function inviteToEvent(eventId: string, token: string, username: st
     [eventId, guest],
   );
   const detail = await getEvent(eventId, token);
-  if (!detail) throw new HttpError(404, "That event is gone.");
+  if (!detail) throw new HttpError(404, "That timecapsule is gone.");
   return detail;
 }
 
@@ -1100,18 +1233,18 @@ export async function publishEventFeed(eventId: string, token: string, photoIds:
     [eventId],
   );
   const event = rows[0];
-  if (!event) throw new HttpError(404, "That event is gone.");
+  if (!event) throw new HttpError(404, "That timecapsule is gone.");
   if (!flag(event.invite_only) || event.owner_token !== token) {
-    throw new HttpError(403, "Only the person who started the roll can choose the feed.");
+    throw new HttpError(403, "Only the person who started the timecapsule can choose the feed.");
   }
-  if (event.status !== "ready") throw new HttpError(409, "The roll isn't back yet.");
+  if (event.status !== "ready") throw new HttpError(409, "The timecapsule isn't back yet.");
   if (photoIds.length > 0) {
     const marks = photoIds.map((_, index) => `$${index + 2}`).join(", ");
     const found = await sql<{ n: number }>(
       `select count(*)::int as n from photos where event_id = $1 and id in (${marks})`,
       [eventId, ...photoIds],
     );
-    if (num(found[0]?.n) !== photoIds.length) throw new HttpError(400, "Those frames aren't on this roll.");
+    if (num(found[0]?.n) !== photoIds.length) throw new HttpError(400, "Those frames aren't on this timecapsule.");
   }
   if (photoIds.length === 0) {
     await sql(`update photos set published_at = null where event_id = $1 and published_at is not null`, [eventId]);
@@ -1128,7 +1261,7 @@ export async function publishEventFeed(eventId: string, token: string, photoIds:
     );
   }
   const detail = await getEvent(eventId, token);
-  if (!detail) throw new HttpError(404, "That event is gone.");
+  if (!detail) throw new HttpError(404, "That timecapsule is gone.");
   return detail;
 }
 
@@ -1170,7 +1303,7 @@ function parseCarousel(value: unknown): string[] {
   }
 }
 
-function sharedProfile(row: Record<string, unknown>, carouselIds: string[]): SharedProfile {
+function sharedProfile(row: Record<string, unknown>, carouselIds: string[], galleries: GalleryCard[]): SharedProfile {
   const id = String(row.id);
   const avatarPhotoId = text(row.avatar_photo_id);
   const hasUpload = row.avatar_image != null && String(row.avatar_image) !== "";
@@ -1184,6 +1317,7 @@ function sharedProfile(row: Record<string, unknown>, carouselIds: string[]): Sha
     avatarPhotoId: hasUpload ? null : avatarPhotoId,
     avatarUrl,
     carouselIds,
+    galleries,
   };
 }
 
@@ -1200,7 +1334,7 @@ async function profileRow(where: "id" | "shooter_token", value: string): Promise
 export async function readOwnProfile(token: string): Promise<SharedProfile | null> {
   const row = await profileRow("shooter_token", token);
   if (!row) return null;
-  return sharedProfile(row, parseCarousel(row.carousel));
+  return sharedProfile(row, parseCarousel(row.carousel), await galleriesForToken(token));
 }
 
 export type ActiveProfile = {
@@ -1271,7 +1405,7 @@ export async function readPublicProfile(id: string): Promise<SharedProfile | nul
     const stillPublic = await publicPhotoIds([avatarPhotoId]);
     if (stillPublic.length === 0) row.avatar_photo_id = null;
   }
-  return sharedProfile(row, carouselIds);
+  return sharedProfile(row, carouselIds, await galleriesForProfile(id));
 }
 
 async function fitNewProfile(token: string): Promise<void> {

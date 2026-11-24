@@ -474,7 +474,7 @@ export function Shoot({
     const blob = blobRef.current;
     if (!blob || busy) return;
     if (armed && eventClosed) {
-      setError("This event just closed.");
+      setError("This timecapsule just closed.");
       return;
     }
     setBusy(true);
@@ -570,7 +570,7 @@ export function Shoot({
         {armed ? (
           <div className="tape">
             {armed.name} · {eventClosed ? "closed" : "open"}
-            <button type="button" onClick={onDisarm} aria-label="Stop shooting this event">
+            <button type="button" onClick={onDisarm} aria-label="Stop shooting this timecapsule">
               ×
             </button>
           </div>
@@ -624,7 +624,7 @@ export function Shoot({
           </div>
           <p className="hint">
             {armed && !eventClosed
-              ? `Sealed with ${armed.name}. The roll comes back a day after it closes, and then the frames for the feed get picked. 🔒`
+              ? `Sealed with ${armed.name}. The timecapsule comes back a day after it closes, and then the frames for the feed get picked. 🔒`
               : devTimers
                 ? `Short lab clock is on. ${lapseQuip(String(frames))}`
                 : `${lapseQuip(String(frames))} Give it 5 to 30 minutes, then develop.`}
@@ -650,7 +650,7 @@ export function Shoot({
           {error ? <p className="error">{error}</p> : null}
           <div className="stack">
             <button className="primary" type="button" data-send disabled={busy || rendering} onClick={() => void send()}>
-              {busy ? "Sending…" : armed && !eventClosed ? "Send with the roll 🎞️" : "Send to the lab 🧪"}
+              {busy ? "Sending…" : armed && !eventClosed ? "Send with the timecapsule 🎞️" : "Send to the lab 🧪"}
             </button>
             <button className="ghost" type="button" onClick={retake} disabled={busy}>
               Retake

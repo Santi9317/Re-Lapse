@@ -8,7 +8,7 @@ import {
   storeCameraProfile,
   withCameraPortrait,
 } from "@/lib/profile";
-import type { Album, EventDetail, EventRoll, FeedItem, FrameSticker, LabItem, ProfileWrite, SharedProfile } from "@/lib/types";
+import type { Album, AlbumDetail, EventDetail, EventRoll, FeedItem, FrameSticker, GalleryCard, LabItem, ProfileWrite, SharedProfile } from "@/lib/types";
 
 const DEV_KEY = "relapse.devtimers";
 const TOKEN_KEY = "relapse.shooter";
@@ -194,7 +194,7 @@ export async function fetchOwnProfile(): Promise<SharedProfile | null> {
     throw new ProfileRemovedError();
   }
   if (!response.ok) throw new Error(data?.error || "The lab didn't answer.");
-  return data as SharedProfile;
+  return withGalleries(data as SharedProfile);
 }
 
 export async function saveOwnProfile(
@@ -211,14 +211,36 @@ export async function saveOwnProfile(
   });
   const data = (await response.json().catch(() => null)) as (SharedProfile & { error?: string }) | null;
   if (!response.ok || !data) throw new Error(data?.error || "The lab didn't answer.");
-  return {
+  return withGalleries({
     id: data.id,
     username: data.username,
     emojis: data.emojis,
     avatarPhotoId: data.avatarPhotoId,
     avatarUrl: data.avatarUrl,
     carouselIds: data.carouselIds,
-  };
+    galleries: data.galleries,
+  });
+}
+
+function withGalleries(profile: SharedProfile): SharedProfile {
+  return { ...profile, galleries: galleryCards(profile.galleries) };
+}
+
+function galleryCards(value: unknown): GalleryCard[] {
+  if (!Array.isArray(value)) return [];
+  const cards: GalleryCard[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== "object") continue;
+    const row = item as Record<string, unknown>;
+    if (typeof row.id !== "string" || typeof row.name !== "string") continue;
+    cards.push({
+      id: row.id,
+      name: row.name,
+      frameCount: typeof row.frameCount === "number" ? row.frameCount : 0,
+      coverPhotoId: typeof row.coverPhotoId === "string" ? row.coverPhotoId : null,
+    });
+  }
+  return cards;
 }
 
 export async function adoptSavedProfile(): Promise<void> {
@@ -294,7 +316,7 @@ export async function fetchRescue(): Promise<{ status: GateStatus; name: string 
 }
 
 export async function fetchPublicProfile(id: string): Promise<SharedProfile> {
-  return request(`/api/profiles/${id}`, { headers: await headers(false) });
+  return withGalleries(await request<SharedProfile>(`/api/profiles/${id}`, { headers: await headers(false) }));
 }
 
 export function fetchConfig(): Promise<{ devTimers: boolean }> {
@@ -372,8 +394,23 @@ export async function createAlbum(name: string): Promise<Album> {
   });
 }
 
-export async function fetchAlbum(id: string): Promise<{ album: Album; photos: FeedItem[] }> {
+export async function fetchAlbum(id: string): Promise<AlbumDetail> {
   return request(`/api/albums/${id}`, { headers: await headers(false) });
+}
+
+export async function updateAlbum(
+  id: string,
+  patch: { name?: string; coverPhotoId?: string | null },
+): Promise<Album> {
+  return request(`/api/albums/${id}`, {
+    method: "PATCH",
+    headers: await headers(true),
+    body: JSON.stringify(patch),
+  });
+}
+
+export async function deleteAlbum(id: string): Promise<{ ok: boolean }> {
+  return request(`/api/albums/${id}`, { method: "DELETE", headers: await headers(false) });
 }
 
 export async function fetchEvents(): Promise<EventRoll[]> {

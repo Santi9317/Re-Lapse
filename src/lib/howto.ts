@@ -18,9 +18,18 @@ export const HOW_TO: HowToSection[] = [
     ],
   },
   {
-    id: "albums",
-    title: "Albums",
-    body: ["Albums are stacks you name. File a frame you shot into one you started."],
+    id: "keepsakes",
+    title: "Keepsakes",
+    body: [
+      "A gallery is photos you sent to the feed. Name the album, pick a cover, and add or remove your frames on that gallery. It shows on your profile.",
+    ],
+  },
+  {
+    id: "timecapsules",
+    title: "Timecapsules",
+    body: [
+      "A timecapsule stays open for 1 to 24 hours, then it seals for a day. Invite people, and when it opens you pick which frames hit the feed.",
+    ],
   },
   {
     id: "stickers",
@@ -44,7 +53,7 @@ export const HOW_TO: HowToSection[] = [
   {
     id: "profile",
     title: "Profile",
-    body: ["Your name, your photo, and three emojis. They show up on the frames you share."],
+    body: ["Your name, your photo, and three emojis. They show up on the frames you share. Galleries you make show here too."],
   },
   {
     id: "menu",

@@ -1,13 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { deletePhoto, fetchAlbums, fetchFeed, filePhoto } from "@/lib/api";
-import type { Album, FeedItem, FrameSticker } from "@/lib/types";
+import { deletePhoto, fetchFeed } from "@/lib/api";
+import type { FeedItem, FrameSticker } from "@/lib/types";
 import { Lightbox, PrintView } from "@/components/Print";
 
 export function Feed({ revision, onOpenProfile }: { revision: number; onOpenProfile: (id: string) => void }) {
   const [photos, setPhotos] = useState<FeedItem[]>([]);
-  const [albums, setAlbums] = useState<Album[]>([]);
   const [error, setError] = useState("");
   const [open, setOpen] = useState<FeedItem | null>(null);
   const removed = useRef(new Set<string>());
@@ -18,7 +17,7 @@ export function Feed({ revision, onOpenProfile }: { revision: number; onOpenProf
     async function load() {
       const ticket = ++generation.current;
       try {
-        const [feed, rolls] = await Promise.all([fetchFeed(), fetchAlbums()]);
+        const feed = await fetchFeed();
         if (stop || ticket !== generation.current) return;
         const next = feed.photos.filter((photo) => !removed.current.has(photo.id));
         setPhotos(next);
@@ -26,7 +25,6 @@ export function Feed({ revision, onOpenProfile }: { revision: number; onOpenProf
           if (!current || removed.current.has(current.id)) return null;
           return next.find((photo) => photo.id === current.id) ?? null;
         });
-        setAlbums(rolls);
         setError("");
       } catch (err) {
         if (!stop && ticket === generation.current) setError(err instanceof Error ? err.message : "The lab didn't answer.");
@@ -39,22 +37,6 @@ export function Feed({ revision, onOpenProfile }: { revision: number; onOpenProf
       window.clearInterval(id);
     };
   }, [revision]);
-
-  async function onFile(id: string, albumId: string | null) {
-    const previous = photos;
-    const album = albums.find((item) => item.id === albumId) ?? null;
-    setPhotos((current) =>
-      current.map((photo) =>
-        photo.id === id ? { ...photo, albumId, albumName: album?.name ?? null } : photo,
-      ),
-    );
-    try {
-      await filePhoto(id, albumId);
-    } catch (err) {
-      setPhotos(previous);
-      setError(err instanceof Error ? err.message : "That frame can't be filed.");
-    }
-  }
 
   function onStickers(id: string, stickers: FrameSticker[]) {
     generation.current += 1;
@@ -94,8 +76,6 @@ export function Feed({ revision, onOpenProfile }: { revision: number; onOpenProf
             <PrintView
               key={photo.id}
               item={photo}
-              albums={albums}
-              onFile={onFile}
               onOpen={setOpen}
               onOpenProfile={onOpenProfile}
               onDelete={onDelete}

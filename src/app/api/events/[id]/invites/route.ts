@@ -13,7 +13,7 @@ export async function POST(request: Request, ctx: Ctx) {
     const { id } = await ctx.params;
     const body = asRecord(await readJson(request));
     const token = await requireMember(request);
-    const event = await inviteToEvent(requireUuid(id, "That event is gone."), token, cleanInviteName(body.username));
+    const event = await inviteToEvent(requireUuid(id, "That timecapsule is gone."), token, cleanInviteName(body.username));
     return json(event);
   } catch (error) {
     return toErrorResponse(error);
