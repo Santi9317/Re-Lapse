@@ -200,25 +200,24 @@ export async function adoptSavedProfile(): Promise<void> {
   storeCameraProfile(saved);
 }
 
-export async function fetchRecoveryPin(): Promise<string | null> {
+export async function fetchRecoveryPin(): Promise<boolean> {
   const response = await fetch("/api/profile/pin", { headers: await headers(false), cache: "no-store" });
-  const data = (await response.json().catch(() => null)) as { pin?: unknown; error?: string } | null;
+  const data = (await response.json().catch(() => null)) as { set?: unknown; error?: string } | null;
   if (!response.ok) throw new Error(data?.error || "The lab didn't answer.");
-  return typeof data?.pin === "string" && /^\d{6}$/.test(data.pin) ? data.pin : null;
+  return data?.set === true;
 }
 
-export async function saveRecoveryPin(pin: string): Promise<string> {
+export async function saveRecoveryPin(pin: string): Promise<void> {
   const response = await fetch("/api/profile/pin", {
     method: "PUT",
     headers: await headers(true),
     cache: "no-store",
     body: JSON.stringify({ pin }),
   });
-  const data = (await response.json().catch(() => null)) as { pin?: unknown; error?: string } | null;
-  if (!response.ok || typeof data?.pin !== "string" || !/^\d{6}$/.test(data.pin)) {
+  const data = (await response.json().catch(() => null)) as { set?: unknown; error?: string } | null;
+  if (!response.ok || data?.set !== true) {
     throw new Error(data?.error || "The lab didn't answer.");
   }
-  return data.pin;
 }
 
 export async function restoreWithPin(pin: string): Promise<{ status: GateStatus; name: string }> {
@@ -230,7 +229,6 @@ export async function restoreWithPin(pin: string): Promise<{ status: GateStatus;
     body: JSON.stringify({ pin }),
   });
   const data = (await response.json().catch(() => null)) as {
-    token?: string;
     status?: string;
     name?: string;
     profile?: SharedProfile;
@@ -238,13 +236,11 @@ export async function restoreWithPin(pin: string): Promise<{ status: GateStatus;
   } | null;
   if (
     !response.ok ||
-    !data?.token ||
-    !UUID.test(data.token) ||
-    (data.status !== "pending" && data.status !== "accepted" && data.status !== "declined")
+    (data?.status !== "pending" && data?.status !== "accepted" && data?.status !== "declined")
   ) {
     throw new Error(data?.error || "That PIN doesn't match a profile.");
   }
-  rememberCamera(data.token);
+  await ensureCamera();
   if (data.profile) {
     try {
       const saved = profileFromServer(data.profile);

@@ -1,5 +1,12 @@
 import { createHmac } from "node:crypto";
 
+/** Wrong PIN checks for the whole gate, not one browser. A cookie cannot open another budget. */
+export const PIN_RESTORE_LIMIT = 8;
+
+export function pinRestoreOpen(recentChecks: number): boolean {
+  return Number.isFinite(recentChecks) && recentChecks >= 0 && recentChecks < PIN_RESTORE_LIMIT;
+}
+
 /** A profile PIN is six digits, including leading zeros. Spaces are not part of it. */
 export function normalizePin(value: unknown): string | null {
   if (typeof value !== "string") return null;

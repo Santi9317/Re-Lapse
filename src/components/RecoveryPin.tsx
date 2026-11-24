@@ -37,10 +37,10 @@ export function RecoveryPinFields({
     setBusy(true);
     setError("");
     try {
-      const saved = await saveRecoveryPin(pin);
+      await saveRecoveryPin(pin);
       setPin("");
       setAgain("");
-      onSaved(saved);
+      onSaved(pin);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "The lab didn't answer.");
     } finally {
@@ -93,25 +93,29 @@ export function RecoveryPinFields({
 }
 
 export function RecoveryPinPanel({
+  saved,
   pin,
   onPin,
 }: {
+  saved: boolean;
   pin: string | null;
   onPin: (pin: string) => void;
 }) {
-  const chosen = Boolean(pin);
+  const chosen = saved || Boolean(pin);
   return (
     <div className="sleeve-copy" data-recovery-panel={chosen ? "change" : "choose"}>
       <h2 className="section">{chosen ? "Your recovery PIN" : "Set a recovery PIN"}</h2>
-      {chosen && pin ? (
+      {pin ? (
         <>
           <p className="pin-digits" data-recovery-pin={pin} aria-label={`Recovery PIN ${pin.split("").join(" ")}`}>
             {groupedPin(pin)}
           </p>
-          <p>This is the PIN for this profile. The gate uses it to bring the profile back. A new one replaces it.</p>
+          <p>Write it down. This menu will not show it again. The gate uses it to bring the profile back. A new one replaces it.</p>
         </>
+      ) : chosen ? (
+        <p>A PIN is set for this profile. It is not shown again. A new one replaces it.</p>
       ) : (
-        <p>You don't have one yet. Pick six digits. The You menu keeps them, and the gate uses them to bring this profile back.</p>
+        <p>You don't have one yet. Pick six digits and keep them somewhere you trust. The gate uses them to bring this profile back.</p>
       )}
       <RecoveryPinFields mode={chosen ? "change" : "choose"} onSaved={onPin} />
     </div>
@@ -128,9 +132,9 @@ export function ChoosePin({ onReady }: { onReady: () => void }) {
   useEffect(() => {
     let stop = false;
     void fetchRecoveryPin()
-      .then((pin) => {
+      .then((set) => {
         if (stop) return;
-        if (pin) readyRef.current();
+        if (set) readyRef.current();
         else setPhase("choose");
       })
       .catch((err: unknown) => {
@@ -163,8 +167,8 @@ export function ChoosePin({ onReady }: { onReady: () => void }) {
                 <p className="kicker">You're in</p>
                 <h2 className="section">Choose a recovery PIN</h2>
                 <p className="fine">
-                  Pick six digits. They stay in the You menu, where you can see them and change them. At the gate, this PIN
-                  brings this profile back onto a phone. It does not make a second one.
+                  Pick six digits and keep them somewhere you trust. This menu will not show them again. At the gate, this
+                  PIN brings this profile back onto a phone. It does not make a second one.
                 </p>
                 <RecoveryPinFields
                   mode="choose"

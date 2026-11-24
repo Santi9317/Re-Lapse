@@ -1,7 +1,8 @@
 /**
  * The join line is one shared queue. A browser cookie cannot open another
  * line. Pending rows stay within what the portal can show, and new requests
- * in a short window stay within what one sitting can review.
+ * in a short window stay within what one sitting can review. Asking to join
+ * does not spend a new camera id.
  */
 export const JOIN_LIMITS = {
   pendingMax: 80,

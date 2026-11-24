@@ -1,5 +1,5 @@
-import { sql, withTransaction, type Sql } from "@/lib/db";
-import { guessMayCompare } from "@/server/gate-key";
+import { sql, withTransaction } from "@/lib/db";
+import { pinRestoreOpen } from "@/server/pin";
 import { hashProfilePin } from "@/server/quota";
 import { isUuid } from "@/server/validate";
 
@@ -15,64 +15,44 @@ function guessFlag(value: unknown): boolean {
 
 export type PinRestore = { ok: true; token: string } | { ok: false; reason: "wrong" | "blocked" };
 
-async function notePin(q: Sql, clientId: string, isNewClient: boolean, fresh: boolean, matches: boolean): Promise<void> {
-  if (isNewClient) {
-    await q(`insert into pin_client (id, window_start, n) values ($1, now(), $2)`, [clientId, matches ? 0 : 1]);
-    return;
-  }
-  if (matches || fresh) {
-    await q(`update pin_client set n = $2, window_start = now() where id = $1`, [clientId, matches ? 0 : 1]);
-    return;
-  }
-  await q(`update pin_client set n = n + 1 where id = $1`, [clientId]);
-}
-
 /**
  * A correct PIN returns the camera that already owns that profile.
- * A wrong PIN is counted and not stored. A browser that is already full
- * is refused before the PIN is compared.
+ * Wrong checks share one gate-wide budget, so a new browser cannot keep guessing.
+ * Once that budget is full, the PIN is not looked up.
  */
-export async function takePinRestore(clientId: string, pin: string): Promise<PinRestore> {
-  if (!isUuid(clientId)) return { ok: false, reason: "blocked" };
+export async function takePinRestore(pin: string): Promise<PinRestore> {
   const hash = await hashProfilePin(pin);
   return withTransaction(async (q) => {
     await q(
       `insert into pin_guess_slot (id, window_start, n) values (1, now(), 0) on conflict (id) do nothing`,
     );
-    await q(`select id from pin_guess_slot where id = 1 for update`);
-    await q(`delete from pin_client where window_start <= now() - interval '2 hours'`);
-    const existing = await q<{ n: number; fresh: boolean | string | number }>(
+    const slot = await q<{ n: number; fresh: boolean | string | number }>(
       `select n,
-              window_start <= now() - ($2::int * interval '1 millisecond') as fresh
-       from pin_client
-       where id = $1
+              window_start <= now() - ($1::int * interval '1 millisecond') as fresh
+       from pin_guess_slot
+       where id = 1
        for update`,
-      [clientId, WINDOW_MS],
+      [WINDOW_MS],
     );
-    const row = existing[0];
-    const isNewClient = !row;
-    const fresh = guessFlag(row?.fresh);
-    const failures = !row || fresh ? 0 : countOf(row.n);
-    let otherClients = 0;
-    if (isNewClient) {
-      const active = await q<{ n: number }>(
-        `select count(*)::int as n
-         from pin_client
-         where n > 0
-           and window_start > now() - ($1::int * interval '1 millisecond')`,
-        [WINDOW_MS],
-      );
-      otherClients = countOf(active[0]?.n);
-    }
-    if (!guessMayCompare(failures, otherClients, isNewClient)) return { ok: false, reason: "blocked" };
+    const fresh = guessFlag(slot[0]?.fresh);
+    const recent = fresh ? 0 : countOf(slot[0]?.n);
+    if (!pinRestoreOpen(recent)) return { ok: false, reason: "blocked" };
     const found = await q<{ shooter_token: string }>(
       `select token as shooter_token from cameras where pin_hash = $1`,
       [hash],
     );
     const token = found[0]?.shooter_token ? String(found[0].shooter_token) : "";
     const matches = isUuid(token);
-    await notePin(q, clientId, isNewClient, fresh, matches);
-    if (!matches) return { ok: false, reason: "wrong" };
+    if (!matches) {
+      await q(
+        `update pin_guess_slot
+         set n = $1,
+             window_start = case when $2::boolean then now() else window_start end
+         where id = 1`,
+        [fresh ? 1 : recent + 1, fresh],
+      );
+      return { ok: false, reason: "wrong" };
+    }
     return { ok: true, token };
   });
 }
@@ -84,20 +64,20 @@ function isPinCollision(error: unknown): boolean {
   const row = error as { code?: unknown; constraint?: unknown; message?: unknown };
   if (row.code !== "23505") return false;
   const text = `${row.constraint ?? ""} ${row.message ?? ""}`;
-  return text.includes("pin_hash") || text.includes("pin_code");
+  return text.includes("pin_hash");
 }
 
-/** The digits the owner can read back. Absent until they choose one. */
-export async function readRecoveryPin(token: string): Promise<string | null> {
-  const rows = await sql<{ pin_code: string | null }>(`select pin_code from cameras where token = $1`, [token]);
-  const pin = rows[0]?.pin_code ? String(rows[0].pin_code) : "";
-  return /^\d{6}$/.test(pin) ? pin : null;
+/** Whether this camera has chosen a PIN. The digits are not stored. */
+export async function recoveryPinSet(token: string): Promise<boolean> {
+  const rows = await sql<{ pin_hash: string | null }>(`select pin_hash from cameras where token = $1`, [token]);
+  const hash = rows[0]?.pin_hash ? String(rows[0].pin_hash) : "";
+  return /^[0-9a-f]{64}$/i.test(hash);
 }
 
 export type PinSave = "saved" | "taken" | "blocked";
 
 /**
- * Stores the six digits they chose, and the hash the gate compares.
+ * Stores only the hash the gate compares. The digits are not written.
  * A PIN already held by another camera is refused. The old PIN stops matching.
  */
 export async function saveRecoveryPin(token: string, pin: string): Promise<PinSave> {
@@ -122,8 +102,8 @@ export async function saveRecoveryPin(token: string, pin: string): Promise<PinSa
       const failures = !row || fresh ? 0 : countOf(row.n);
       if (failures >= CHOICE_LIMIT) return "blocked";
       const cameras = await q<{ token: string }>(
-        `select token from cameras where (pin_hash = $1 or pin_code = $2) and token <> $3`,
-        [hash, pin, token],
+        `select token from cameras where pin_hash = $1 and token <> $2`,
+        [hash, token],
       );
       const profiles = await q<{ shooter_token: string }>(
         `select shooter_token from profiles where pin_hash = $1 and shooter_token <> $2`,
@@ -138,10 +118,10 @@ export async function saveRecoveryPin(token: string, pin: string): Promise<PinSa
         return "taken";
       }
       await q(
-        `insert into cameras (token, created_at, pin_code, pin_hash)
-         values ($1, now(), $2, $3)
-         on conflict (token) do update set pin_code = excluded.pin_code, pin_hash = excluded.pin_hash`,
-        [token, pin, hash],
+        `insert into cameras (token, created_at, pin_hash)
+         values ($1, now(), $2)
+         on conflict (token) do update set pin_hash = excluded.pin_hash`,
+        [token, hash],
       );
       await q(`update profiles set pin_hash = $2 where shooter_token = $1`, [token, hash]);
       await q(`update pin_choice set n = 0, window_start = now() where id = $1`, [token]);
