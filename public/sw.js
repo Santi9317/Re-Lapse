@@ -28,6 +28,7 @@ self.addEventListener("install", (event) => {
 });
 
 self.addEventListener("message", (event) => {
+  if (!event.source) return;
   if (event.data && event.data.type === "SKIP_WAITING") self.skipWaiting();
 });
 

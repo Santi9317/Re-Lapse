@@ -17,6 +17,7 @@ test("the You menu recovers through the existing name and PIN check", () => {
   assert.match(api, /replaceDevice/);
   assert.match(api, /clearStoredProfile\(\)/);
   assert.match(api, /installRecoveredCamera\(\)/);
+  assert.doesNotMatch(api, /installRecoveredCamera[\s\S]*x-shooter-token/);
   assert.match(route, /requestRecovery\(/);
   assert.match(route, /claimRecovery\(/);
   assert.equal(route.includes("replaceDevice"), false);
