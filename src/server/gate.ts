@@ -5,6 +5,7 @@ import { BOOTH_HANDOFF } from "@/lib/booth-handoff";
 import { prepareBooth } from "@/server/booth";
 import { gateCookie, gateGuessDecision, gateSecret, sameSecret } from "@/server/gate-key";
 import { JOIN_LIMITS, joinAllowed } from "@/server/join-line";
+import { budgetPhone } from "@/server/phone-budget";
 import { decideRecoveryRequest } from "@/server/profile-pin";
 import { cameraProof, provenCamera } from "@/server/quota";
 import { isUuid } from "@/server/validate";
@@ -73,10 +74,10 @@ async function lockJoinLine(q: Sql): Promise<void> {
   await q(`select id from join_queue_lock where id = 1 for update`);
 }
 
-/** Shared line and this phone. A camera that already has a cookie uses this too. */
+/** Shared line, then this phone. A new booth on the same phone counts here too. */
 async function assertJoinRoom(q: Sql, boothId: string): Promise<void> {
-  const issued = await q<{ id: string }>(`select id from issued_booths where id = $1`, [boothId]);
-  if (!issued[0]) throw new HttpError(400, "The lab didn't answer.", boothId);
+  const phone = await budgetPhone(q, boothId);
+  if (!phone) throw new HttpError(400, "The lab didn't answer.", boothId);
   const shared = await q<{ pending: number; recent: number }>(
     `select
        (select count(*)::int from join_requests where status = 'pending') as pending,
@@ -85,10 +86,13 @@ async function assertJoinRoom(q: Sql, boothId: string): Promise<void> {
   );
   const counts = await q<{ recent: number }>(
     `select count(*)::int as recent
-     from join_requests
-     where booth = $1
-       and created_at > now() - ($2::int * interval '1 millisecond')`,
-    [boothId, JOIN_LIMITS.windowMs],
+     from join_requests j
+     where j.created_at > now() - ($2::int * interval '1 millisecond')
+       and exists (
+         select 1 from issued_booths b
+         where b.id = j.booth and b.phone = $1
+       )`,
+    [phone, JOIN_LIMITS.windowMs],
   );
   const room = joinAllowed(countOf(shared[0]?.pending), countOf(shared[0]?.recent), countOf(counts[0]?.recent));
   if (room === "shared") throw new HttpError(429, "The line is full. Try again shortly.", boothId);
