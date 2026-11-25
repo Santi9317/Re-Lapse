@@ -38,7 +38,7 @@ function captionFor(id: string, photos: FeedItem[]): string {
   return caption || "Frame";
 }
 
-export function Profile({ revision }: { revision: number }) {
+export function Profile({ revision, refresh = 0 }: { revision: number; refresh?: number }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [draft, setDraft] = useState<Profile>(emptyProfile);
   const [mode, setMode] = useState<Mode | null>(null);
@@ -50,35 +50,45 @@ export function Profile({ revision }: { revision: number }) {
   const [typedHint, setTypedHint] = useState("");
   const [reading, setReading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [moreFrames, setMoreFrames] = useState(false);
   const [index, setIndex] = useState(0);
   const [openId, setOpenId] = useState<string | null>(null);
   const [galleries, setGalleries] = useState<GalleryCard[]>([]);
   const [openGallery, setOpenGallery] = useState<string | null>(null);
   const mounted = useRef(true);
   const write = useRef(0);
+  const modeRef = useRef<Mode | null>(null);
+  modeRef.current = mode;
 
   useEffect(() => {
     mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
     let stop = false;
     async function load() {
+      const seenWrite = write.current;
+      const holdEditor = () => modeRef.current === "edit" || modeRef.current === "arrange";
       try {
         const local = loadProfile();
         const remote = await fetchOwnProfile();
-        if (stop) return;
+        if (stop || seenWrite !== write.current) return;
         setGalleries(remote?.galleries ?? []);
         let saved = remote ? withCameraPortrait(profileFromServer(remote), local) : emptyProfile();
         if (!remote && profileReady(local)) {
           const created = await saveOwnProfile(profilePatch(local, null));
-          if (stop) return;
+          if (stop || seenWrite !== write.current) return;
           setGalleries(created.galleries ?? []);
           saved = withCameraPortrait(profileFromServer(created), local);
           saveProfile(saved);
         } else if (remote) {
           storeCameraProfile(saved);
         }
-        const pending = loadDraft();
         setProfile(saved);
+        if (holdEditor()) return;
+        const pending = loadDraft();
         if (pending && !profilesEqual(pending, saved)) {
           setDraft(draftWithSavedPortrait(pending, saved));
           setMode("edit");
@@ -88,21 +98,21 @@ export function Profile({ revision }: { revision: number }) {
           setMode(profileReady(saved) ? "page" : "edit");
         }
       } catch (err) {
-        if (stop) return;
+        if (stop || seenWrite !== write.current) return;
         const local = loadProfile();
-        const pending = loadDraft();
         setProfile(local);
+        setFormError(err instanceof Error ? err.message : "The lab didn't answer.");
+        if (holdEditor()) return;
+        const pending = loadDraft();
         setDraft(pending && !profilesEqual(pending, local) ? draftWithSavedPortrait(pending, local) : local);
         setMode(profileReady(local) ? "page" : "edit");
-        setFormError(err instanceof Error ? err.message : "The lab didn't answer.");
       }
     }
     void load();
     return () => {
       stop = true;
-      mounted.current = false;
     };
-  }, []);
+  }, [revision, refresh]);
 
   useEffect(() => {
     if (mode !== "edit") return;
@@ -127,7 +137,7 @@ export function Profile({ revision }: { revision: number }) {
       stop = true;
       window.clearInterval(id);
     };
-  }, [revision]);
+  }, [revision, refresh]);
 
   useEffect(() => {
     if (!openId) return;
@@ -145,7 +155,6 @@ export function Profile({ revision }: { revision: number }) {
     setTyped("");
     setTypedHint("");
     setFormError("");
-    setMoreFrames(false);
     setMode("edit");
   }
 
@@ -217,7 +226,6 @@ export function Profile({ revision }: { revision: number }) {
         setActiveSlot(0);
         setTyped("");
         setTypedHint("");
-        setMoreFrames(false);
         setMode("edit");
       } else {
         setDraft((current) => ({ ...current, avatarDataUrl, avatarPhotoId: null, avatarUrl: null }));
@@ -257,6 +265,8 @@ export function Profile({ revision }: { revision: number }) {
       <div className="profile-screen" data-screen="profile">
         <Gallery
           id={openGallery}
+          refresh={refresh + revision}
+          place="profile"
           backLabel="Profile"
           onBack={() => setOpenGallery(null)}
           onChanged={() => {
@@ -313,14 +323,12 @@ export function Profile({ revision }: { revision: number }) {
           typed={typed}
           typedHint={typedHint}
           reading={reading}
-          moreFrames={moreFrames}
           onDraft={setDraft}
           onSlot={setActiveSlot}
           onTyped={setTyped}
           onTypedHint={setTypedHint}
           onChoose={chooseEmoji}
           onFile={(file) => void onPortraitFile(file)}
-          onMore={() => setMoreFrames(true)}
           onBack={discardEdit}
           onSave={(event) => void onSave(event)}
           busy={saving}
@@ -491,7 +499,7 @@ function Portrait({ profile }: { profile: Profile }) {
 function FrameImage({ id, alt, missing }: { id: string; alt: string; missing: string }) {
   const [dead, setDead] = useState(false);
   if (dead) return <div className="gone-frame">{missing}</div>;
-  return <img src={`/api/photos/${id}/image`} alt={alt} onError={() => setDead(true)} />;
+  return <img src={`/api/photos/${id}/image`} alt={alt} draggable={false} onError={() => setDead(true)} />;
 }
 
 function Carousel({
@@ -614,14 +622,12 @@ function ProfileEditor({
   typed,
   typedHint,
   reading,
-  moreFrames,
   onDraft,
   onSlot,
   onTyped,
   onTypedHint,
   onChoose,
   onFile,
-  onMore,
   onBack,
   onSave,
   busy,
@@ -634,21 +640,18 @@ function ProfileEditor({
   typed: string;
   typedHint: string;
   reading: boolean;
-  moreFrames: boolean;
   onDraft: (profile: Profile) => void;
   onSlot: (slot: number) => void;
   onTyped: (value: string) => void;
   onTypedHint: (value: string) => void;
   onChoose: (emoji: string) => void;
   onFile: (file: File | undefined) => void;
-  onMore: () => void;
   onBack: () => void;
   onSave: (event: FormEvent) => void;
   busy: boolean;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const nameRef = useRef<HTMLInputElement>(null);
-  const frames = moreFrames ? photos : photos.slice(0, 12);
   const ready = profileReady(draft);
 
   useEffect(() => {
@@ -733,8 +736,8 @@ function ProfileEditor({
         <p className="fine">Nothing shared yet. Develop a frame and send it, or use a photo from this device.</p>
       ) : (
         <>
-          <div className="pick-grid" role="group" aria-label="Frames for your profile photo">
-            {frames.map((photo) => {
+          <div className="photo-strip pick-grid" data-photo-strip="profile-frames" role="group" aria-label="Frames for your profile photo">
+            {photos.map((photo) => {
               const selected = draft.avatarPhotoId === photo.id && !draft.avatarDataUrl;
               const label = photo.caption.trim() || "Untitled frame";
               return (
@@ -752,16 +755,11 @@ function ProfileEditor({
                     })
                   }
                 >
-                  <img src={`/api/photos/${photo.id}/image`} alt="" />
+                  <img src={`/api/photos/${photo.id}/image`} alt="" draggable={false} />
                 </button>
               );
             })}
           </div>
-          {!moreFrames && photos.length > 12 ? (
-            <button className="ghost" type="button" onClick={onMore}>
-              More frames
-            </button>
-          ) : null}
         </>
       )}
 
@@ -862,13 +860,13 @@ function StripArranger({
       {ids.length === 0 ? (
         <p className="fine">Nothing on the strip yet.</p>
       ) : (
-        <ol className="order-list">
+        <ol className="photo-strip order-list" data-photo-strip="order" aria-label="The strip">
           {ids.map((id, position) => {
             const label = captionFor(id, photos);
             return (
               <li
                 key={id}
-                className={`order-row${over === position ? " is-over" : ""}`}
+                className={`photo-strip-card${over === position ? " is-over" : ""}`}
                 onDragOver={(event) => {
                   event.preventDefault();
                   setOver(position);
@@ -931,7 +929,7 @@ function StripArranger({
           <p>You haven't shared a frame yet.</p>
         </div>
       ) : (
-        <div className="pick-grid">
+        <div className="photo-strip pick-grid" data-photo-strip="add-frame" role="group" aria-label="Add a frame">
           {ownPhotos.map((photo) => {
             const selected = chosen.has(photo.id);
             const position = ids.indexOf(photo.id);
@@ -951,7 +949,7 @@ function StripArranger({
                 }
                 onClick={() => onToggle(photo.id)}
               >
-                <img src={`/api/photos/${photo.id}/image`} alt="" />
+                <img src={`/api/photos/${photo.id}/image`} alt="" draggable={false} />
                 {selected ? <span className="pick-badge">{position + 1}</span> : null}
               </button>
             );
@@ -992,10 +990,12 @@ function FrameDialog({
 export function GuestProfile({
   id,
   onBack,
+  refresh = 0,
   load = fetchPublicProfile,
 }: {
   id: string;
   onBack: () => void;
+  refresh?: number;
   load?: (id: string) => Promise<SharedProfile>;
 }) {
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -1004,14 +1004,19 @@ export function GuestProfile({
   const [index, setIndex] = useState(0);
   const [openId, setOpenId] = useState<string | null>(null);
   const [openGallery, setOpenGallery] = useState<string | null>(null);
+  const seenId = useRef<string | null>(null);
 
   useEffect(() => {
     let stop = false;
-    setProfile(null);
-    setGalleries([]);
-    setOpenGallery(null);
-    setError("");
-    setIndex(0);
+    const switched = seenId.current !== id;
+    seenId.current = id;
+    if (switched) {
+      setProfile(null);
+      setGalleries([]);
+      setOpenGallery(null);
+      setError("");
+      setIndex(0);
+    }
     load(id)
       .then((row) => {
         if (stop) return;
@@ -1024,7 +1029,7 @@ export function GuestProfile({
     return () => {
       stop = true;
     };
-  }, [id, load]);
+  }, [id, load, refresh]);
 
   useEffect(() => {
     if (!openId) return;
@@ -1041,6 +1046,8 @@ export function GuestProfile({
     return (
       <Gallery
         id={openGallery}
+        refresh={refresh}
+        place="profile"
         backLabel="Profile"
         onBack={() => setOpenGallery(null)}
         onChanged={() => {

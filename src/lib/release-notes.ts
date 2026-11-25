@@ -6,6 +6,12 @@
 export const RELEASE_NOTES = [
   "Your home screen icon changes to the wink.",
   "The gate icon stays the shutter.",
+  "A mark on Feed when someone else adds a photo.",
+  "A gallery on a profile shows only the photos in it.",
+  "Feed names sit a little larger, with the emojis tucked together, and download and delete match the other buttons.",
+  "The date stamp switch now matches the rest of the camera.",
+  "Choosing photos slides sideways, so the buttons below stay close.",
+  "New photos and other changes show up when you switch tabs.",
 ] as const;
 
 export type PublishedRelease = {

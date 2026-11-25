@@ -6,6 +6,7 @@ import { cameraWake, isHardwareShutter, openCamera, peekCamera, type CameraWake 
 import { shouldFlipOnDoubleTap } from "@/lib/tap";
 import { isIosDevice, setTorch, wait } from "@/lib/flash";
 import { renderDisposable } from "@/lib/filter";
+import { disposableDate } from "@/lib/format";
 import { exposureLine, lapseQuip } from "@/lib/quips";
 import type { EventRoll } from "@/lib/types";
 import {
@@ -629,9 +630,25 @@ export function Shoot({
                 ? `Short lab clock is on. ${lapseQuip(String(frames))}`
                 : `${lapseQuip(String(frames))} Give it 5 to 30 minutes, then develop.`}
           </p>
-          <label className="check">
-            <input type="checkbox" checked={stamp} disabled={busy || rendering} onChange={() => void toggleStamp()} />
-            Date stamp
+          <label className="stamp-toggle" data-date-stamp={stamp ? "on" : "off"}>
+            <input
+              type="checkbox"
+              role="switch"
+              checked={stamp}
+              aria-checked={stamp}
+              disabled={busy || rendering}
+              onChange={() => void toggleStamp()}
+            />
+            <span className="stamp-imprint" aria-hidden="true">
+              {disposableDate(new Date())}
+            </span>
+            <span className="stamp-copy">
+              Date stamp
+              <span aria-hidden="true">{stamp ? "On" : "Off"}</span>
+            </span>
+            <span className="stamp-track" aria-hidden="true">
+              <span />
+            </span>
           </label>
           <input
             className="field"

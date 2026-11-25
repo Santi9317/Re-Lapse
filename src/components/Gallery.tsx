@@ -3,7 +3,9 @@
 import { useEffect, useState } from "react";
 import { deleteAlbum, deletePhoto, fetchAlbum, filePhoto, updateAlbum } from "@/lib/api";
 import { frames } from "@/lib/format";
+import { galleryView, type GalleryPlace } from "@/lib/gallery-view";
 import type { AlbumDetail, FeedItem, GalleryCard } from "@/lib/types";
+import { PhotoStrip, StripShot } from "@/components/PhotoStrip";
 import { Lightbox, PrintView } from "@/components/Print";
 
 function Cover({ id }: { id: string | null }) {
@@ -52,12 +54,16 @@ export function GalleryStrip({
 
 export function Gallery({
   id,
+  refresh = 0,
+  place,
   onBack,
   backLabel = "Keepsakes",
   onOpenProfile,
   onChanged,
 }: {
   id: string;
+  refresh?: number;
+  place: GalleryPlace;
   onBack: () => void;
   backLabel?: string;
   onOpenProfile?: (id: string) => void;
@@ -70,6 +76,16 @@ export function Gallery({
   const [confirming, setConfirming] = useState(false);
   const [open, setOpen] = useState<FeedItem | null>(null);
   const [tick, setTick] = useState(0);
+
+  useEffect(() => {
+    if (!confirming) return;
+    const node = document.querySelector("[data-confirm-delete-gallery]");
+    const scroller = node?.closest(".scroll");
+    if (!(node instanceof HTMLElement) || !(scroller instanceof HTMLElement)) return;
+    const navTop = document.querySelector(".nav")?.getBoundingClientRect().top ?? scroller.getBoundingClientRect().bottom;
+    const overflow = node.getBoundingClientRect().bottom - (navTop - 12);
+    if (overflow > 0) scroller.scrollTop += overflow;
+  }, [confirming]);
 
   useEffect(() => {
     let stop = false;
@@ -87,7 +103,7 @@ export function Gallery({
     return () => {
       stop = true;
     };
-  }, [id, tick]);
+  }, [id, tick, refresh]);
 
   function reload() {
     onChanged?.();
@@ -177,7 +193,7 @@ export function Gallery({
 
   if (!detail) {
     return (
-      <div className="scroll" data-screen="gallery">
+      <div className="scroll" data-screen="gallery" data-place={place}>
         <button className="ghost back" type="button" onClick={onBack}>
           ← {backLabel}
         </button>
@@ -187,16 +203,29 @@ export function Gallery({
   }
 
   const owner = detail.album.owner;
-  const inGallery = new Set(detail.photos.map((photo) => photo.id));
-  const available = detail.library.filter((photo) => !inGallery.has(photo.id));
+  const view = galleryView({
+    place,
+    owner,
+    albumId: detail.album.id,
+    photos: detail.photos,
+    library: detail.library,
+  });
+  const canEdit = view.editing;
+  const available = view.addable;
   const coverId = detail.album.coverPhotoId;
 
   return (
-    <div className="scroll" data-screen="gallery" data-owner={owner ? "yes" : "no"}>
+    <div
+      className="scroll"
+      data-screen="gallery"
+      data-place={place}
+      data-owner={owner ? "yes" : "no"}
+      data-editing={canEdit ? "yes" : "no"}
+    >
       <button className="ghost back" type="button" onClick={onBack}>
         ← {backLabel}
       </button>
-      {owner ? (
+      {canEdit ? (
         <>
           <label className="fine gallery-label" htmlFor="gallery-title">
             Album title
@@ -227,40 +256,47 @@ export function Gallery({
       )}
       <p className="fine">{frames(detail.album.frameCount)}</p>
       {error ? <p className="error">{error}</p> : null}
-      {detail.photos.length === 0 ? (
+      {view.photos.length === 0 ? (
         <div className="empty">
           <h2>Empty gallery.</h2>
-          <p>{owner ? "Add a photo you already sent to the feed." : "Nothing in this gallery yet."}</p>
+          <p>{canEdit ? "Add a photo you already sent to the feed." : "Nothing in this gallery yet."}</p>
         </div>
+      ) : canEdit ? (
+        <PhotoStrip name="members" label="Photos in this gallery">
+          {view.photos.map((photo) => {
+            const caption = photo.caption.trim();
+            return (
+              <div className="photo-strip-card" role="listitem" key={photo.id} data-gallery-photo={photo.id}>
+                <StripShot
+                  id={photo.id}
+                  label={caption ? `Open ${caption}` : "Open photo"}
+                  onOpen={() => setOpen(photo)}
+                />
+                {caption ? <span className="photo-strip-caption">{caption}</span> : null}
+                {photo.id === coverId ? (
+                  <span className="cover-pill">Cover</span>
+                ) : (
+                  <button className="ghost" type="button" data-set-cover={photo.id} disabled={busy} onClick={() => void setCover(photo.id)}>
+                    Set cover
+                  </button>
+                )}
+                <button className="ghost" type="button" data-remove-photo={photo.id} disabled={busy} onClick={() => void removePhoto(photo.id)}>
+                  Remove
+                </button>
+              </div>
+            );
+          })}
+        </PhotoStrip>
       ) : (
         <div className="thread">
-          {detail.photos.map((photo) => (
+          {view.photos.map((photo) => (
             <div className="gallery-frame" key={photo.id} data-gallery-photo={photo.id}>
-              {owner ? (
-                <div className="gallery-frame-bar">
-                  {photo.id === coverId ? (
-                    <span className="cover-pill">Cover</span>
-                  ) : (
-                    <button className="ghost" type="button" data-set-cover={photo.id} disabled={busy} onClick={() => void setCover(photo.id)}>
-                      Set cover
-                    </button>
-                  )}
-                  <button className="ghost" type="button" data-remove-photo={photo.id} disabled={busy} onClick={() => void removePhoto(photo.id)}>
-                    Remove
-                  </button>
-                </div>
-              ) : null}
-              <PrintView
-                item={photo}
-                onOpen={setOpen}
-                onOpenProfile={onOpenProfile}
-                onDelete={owner ? onDelete : undefined}
-              />
+              <PrintView item={photo} onOpen={setOpen} onOpenProfile={onOpenProfile} />
             </div>
           ))}
         </div>
       )}
-      {owner ? (
+      {canEdit ? (
         <>
           <h2 className="section">Your photos</h2>
           {detail.library.length === 0 ? (
@@ -271,22 +307,28 @@ export function Gallery({
           ) : available.length === 0 ? (
             <p className="fine">Every photo you sent is already in this gallery.</p>
           ) : (
-            <div className="thread">
-              {available.map((photo) => (
-                <div className="gallery-frame" key={photo.id} data-library-photo={photo.id}>
-                  <div className="gallery-frame-bar">
+            <PhotoStrip name="library" label="Your photos">
+              {available.map((photo) => {
+                const caption = photo.caption.trim();
+                return (
+                  <div className="photo-strip-card" role="listitem" key={photo.id} data-library-photo={photo.id}>
+                    <StripShot
+                      id={photo.id}
+                      label={caption ? `Open ${caption}` : "Open photo"}
+                      onOpen={() => setOpen(photo)}
+                    />
+                    {caption ? <span className="photo-strip-caption">{caption}</span> : null}
                     <button className="ghost" type="button" data-add-photo={photo.id} disabled={busy} onClick={() => void addPhoto(photo.id)}>
                       Add
                     </button>
                     {photo.albumName ? <span className="fine">In {photo.albumName}</span> : null}
                   </div>
-                  <PrintView item={photo} onOpen={setOpen} onOpenProfile={onOpenProfile} compact />
-                </div>
-              ))}
-            </div>
+                );
+              })}
+            </PhotoStrip>
           )}
           {confirming ? (
-            <div className="empty" data-confirm-delete-gallery>
+            <div className="empty gallery-confirm" data-confirm-delete-gallery>
               <h2>Delete this gallery?</h2>
               <p>The photos stay on your camera roll and the thread.</p>
               <div className="stack">
@@ -306,7 +348,7 @@ export function Gallery({
         </>
       ) : null}
       {open ? (
-        <Lightbox item={open} onClose={() => setOpen(null)} onOpenProfile={onOpenProfile} onDelete={owner ? onDelete : undefined} />
+        <Lightbox item={open} onClose={() => setOpen(null)} onOpenProfile={onOpenProfile} onDelete={canEdit ? onDelete : undefined} />
       ) : null}
     </div>
   );

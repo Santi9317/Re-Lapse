@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { adoptSavedProfile, devFlagStored, ensureCamera, fetchConfig, fetchLab, joinEvent } from "@/lib/api";
+import { useEffect, useRef, useState } from "react";
+import { adoptSavedProfile, devFlagStored, ensureCamera, fetchConfig, fetchFeed, fetchLab, joinEvent } from "@/lib/api";
+import { noteFeedLook } from "@/lib/feed-mark";
 import { restorePhone } from "@/lib/identity";
+import { shouldReloadOnPageSignal, shouldReloadOnTabChange, type MainTab } from "@/lib/refresh";
 import { isSafariUa } from "@/lib/shell";
-import type { EventRoll } from "@/lib/types";
+import type { EventRoll, FeedItem } from "@/lib/types";
 import { Feed } from "@/components/Feed";
 import { Lab } from "@/components/Lab";
 import { GuestProfile, Profile } from "@/components/Profile";
@@ -14,10 +16,9 @@ import { JoinGate } from "@/components/JoinGate";
 import { ChoosePin } from "@/components/RecoveryPin";
 import { Shoot } from "@/components/Shoot";
 
-type Tab = "shoot" | "lab" | "feed" | "rolls" | "you";
 type InstallPrompt = Event & { prompt: () => Promise<void> };
 
-const lede: Record<Exclude<Tab, "shoot">, string> = {
+const lede: Record<Exclude<MainTab, "shoot">, string> = {
   lab: "Let them lapse. Develop when the clock hits zero. 🧪",
   feed: "Everyone with this link. A frame stays up for a week, then it lapses. ✨",
   rolls: "Your galleries, and timecapsules that open, then seal. 🎞️",
@@ -60,12 +61,16 @@ export function App() {
 }
 
 function CameraDesk() {
-  const [tab, setTab] = useState<Tab>("shoot");
+  const [tab, setTab] = useState<MainTab>("shoot");
+  const [landed, setLanded] = useState(0);
+  const tabNow = useRef<MainTab>("shoot");
+  tabNow.current = tab;
   const [armed, setArmed] = useState<EventRoll | null>(null);
   const [labRevision, setLabRevision] = useState(0);
   const [feedRevision, setFeedRevision] = useState(0);
   const [labCount, setLabCount] = useState(0);
   const [labReady, setLabReady] = useState(false);
+  const [feedFresh, setFeedFresh] = useState(false);
   const [devTimers, setDevTimers] = useState(false);
   const [install, setInstall] = useState<InstallPrompt | null>(null);
   const [hideInstall, setHideInstall] = useState(true);
@@ -74,8 +79,9 @@ function CameraDesk() {
   const [focusEventId, setFocusEventId] = useState<string | null>(null);
   const [joinNotice, setJoinNotice] = useState("");
 
-  function chooseTab(next: Tab) {
+  function chooseTab(next: MainTab) {
     setGuestId(null);
+    if (shouldReloadOnTabChange(tabNow.current, next)) setLanded((value) => value + 1);
     setTab(next);
   }
 
@@ -97,6 +103,27 @@ function CameraDesk() {
   }, []);
 
   useEffect(() => {
+    // Coming back onto the open tab reloads its lists. The camera keeps its track.
+    let shownAt = 0;
+    const show = () => {
+      if (!shouldReloadOnPageSignal("show")) return;
+      const now = Date.now();
+      if (now - shownAt < 500) return;
+      shownAt = now;
+      setLanded((value) => value + 1);
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") show();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("pageshow", show);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("pageshow", show);
+    };
+  }, []);
+
+  useEffect(() => {
     if (tokenReady === 0) return;
     const params = new URLSearchParams(window.location.search);
     const code = params.get("join");
@@ -110,8 +137,7 @@ function CameraDesk() {
         window.history.replaceState(null, "", next ? `/?${next}` : "/");
         setJoinNotice("");
         setFocusEventId(event.id);
-        setGuestId(null);
-        setTab("rolls");
+        chooseTab("rolls");
       })
       .catch((err: unknown) => {
         if (stop) return;
@@ -119,8 +145,7 @@ function CameraDesk() {
         const next = params.toString();
         window.history.replaceState(null, "", next ? `/?${next}` : "/");
         setJoinNotice(err instanceof Error ? err.message : "That invite isn't one of ours.");
-        setGuestId(null);
-        setTab("rolls");
+        chooseTab("rolls");
       });
     return () => {
       stop = true;
@@ -150,7 +175,50 @@ function CameraDesk() {
       window.clearInterval(id);
       document.removeEventListener("visibilitychange", onVis);
     };
-  }, [tokenReady, labRevision, feedRevision]);
+  }, [tokenReady, labRevision, feedRevision, landed]);
+
+  useEffect(() => {
+    if (tokenReady === 0 || (tab === "feed" && !guestId)) return;
+    let stop = false;
+    async function pull() {
+      try {
+        const data = await fetchFeed();
+        if (stop) return;
+        setFeedFresh(
+          noteFeedLook({
+            storage: localStorage,
+            photos: data.photos.map((photo) => ({ mine: photo.mine, addedAt: photo.addedAt })),
+            feedVisible: false,
+            now: Date.now(),
+          }),
+        );
+      } catch {
+        /* the badge can wait */
+      }
+    }
+    void pull();
+    const id = window.setInterval(() => void pull(), 8000);
+    const onVis = () => {
+      if (document.visibilityState === "visible") void pull();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      stop = true;
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, [tokenReady, feedRevision, tab, guestId, landed]);
+
+  function sawFeed(photos: FeedItem[]) {
+    setFeedFresh(
+      noteFeedLook({
+        storage: localStorage,
+        photos: photos.map((photo) => ({ mine: photo.mine, addedAt: photo.addedAt })),
+        feedVisible: true,
+        now: Date.now(),
+      }),
+    );
+  }
 
   function dismissInstall() {
     localStorage.setItem("relapse.hideInstall", "1");
@@ -185,6 +253,7 @@ function CameraDesk() {
           {tab === "lab" ? (
             <Lab
               revision={labRevision}
+              refresh={landed}
               onPublished={() => {
                 setFeedRevision((value) => value + 1);
                 setLabRevision((value) => value + 1);
@@ -194,14 +263,15 @@ function CameraDesk() {
             />
           ) : null}
           {guestId ? (
-            <GuestProfile id={guestId} onBack={() => setGuestId(null)} />
+            <GuestProfile id={guestId} refresh={landed} onBack={() => setGuestId(null)} />
           ) : (
             <>
-              {tab === "feed" ? <Feed revision={feedRevision} onOpenProfile={setGuestId} /> : null}
-              {tab === "you" ? <Profile revision={feedRevision} /> : null}
+              {tab === "feed" ? <Feed revision={feedRevision} refresh={landed} onOpenProfile={setGuestId} onSeen={sawFeed} /> : null}
+              {tab === "you" ? <Profile revision={feedRevision} refresh={landed} /> : null}
               {tab === "rolls" ? (
                 <Rolls
                   revision={feedRevision}
+                  refresh={landed}
                   focusEventId={focusEventId}
                   joinNotice={joinNotice}
                   onArm={(event) => {
@@ -253,6 +323,7 @@ function CameraDesk() {
               {label}
               {id === "lab" && labReady ? <i className="dot" aria-label="Ready to develop" /> : null}
               {id === "lab" && !labReady && labCount > 0 ? <sup>{labCount}</sup> : null}
+              {id === "feed" && feedFresh ? <i className="dot" aria-label="New photos" /> : null}
             </button>
           ))}
         </nav>

@@ -13,6 +13,7 @@ import {
   publishEventFeed,
 } from "@/lib/api";
 import { Gallery, GalleryCardButton } from "@/components/Gallery";
+import { PhotoStrip, StripShot } from "@/components/PhotoStrip";
 import { clockLabel, frames, longRemain } from "@/lib/format";
 import type { Album, EventDetail, EventRoll, EventStatus, FeedItem } from "@/lib/types";
 import { Lightbox, PrintView } from "@/components/Print";
@@ -67,6 +68,7 @@ function inviteLink(code: string): string {
 
 export function Rolls({
   revision,
+  refresh = 0,
   focusEventId,
   joinNotice,
   onArm,
@@ -75,6 +77,7 @@ export function Rolls({
   onFocusConsumed,
 }: {
   revision: number;
+  refresh?: number;
   focusEventId?: string | null;
   joinNotice?: string;
   onArm: (event: EventRoll) => void;
@@ -125,23 +128,30 @@ export function Rolls({
       stop = true;
       window.clearInterval(id);
     };
-  }, [revision, tick]);
+  }, [revision, refresh, tick]);
 
   const watchedEvent = eventDetail?.id ?? null;
   useEffect(() => {
     if (!watchedEvent) return;
-    const id = window.setInterval(() => {
+    let stop = false;
+    const pull = () => {
       void fetchEvent(watchedEvent)
         .then((detail) => {
+          if (stop) return;
           setEventDetail({
             ...detail,
             photos: detail.photos.filter((photo) => !removed.current.has(photo.id)),
           });
         })
         .catch(() => undefined);
-    }, 3000);
-    return () => window.clearInterval(id);
-  }, [watchedEvent]);
+    };
+    pull();
+    const id = window.setInterval(pull, 3000);
+    return () => {
+      stop = true;
+      window.clearInterval(id);
+    };
+  }, [watchedEvent, revision, refresh]);
 
   const detailKey = eventDetail?.id ?? "";
   useEffect(() => {
@@ -327,6 +337,8 @@ export function Rolls({
     return (
       <Gallery
         id={galleryId}
+        refresh={refresh + revision}
+        place="keepsakes"
         onBack={() => {
           setGalleryId(null);
           setTick((value) => value + 1);
@@ -425,38 +437,53 @@ export function Rolls({
               <p className="fine">The timecapsule is back. Frames on the feed are the ones everyone can see.</p>
             ) : null}
             <p className="section">In the order they were shot</p>
-            <div className="thread">
-              {eventDetail.photos.map((photo) => (
-                <div className="roll-frame" key={photo.id} data-roll-frame={photo.id}>
-                  {eventDetail.inviteOnly ? (
-                    <div className="roll-frame-bar">
-                      {eventDetail.owner ? (
-                        <label className="check">
-                          <input
-                            type="checkbox"
-                            checked={picked.has(photo.id)}
-                            data-feed-pick={photo.id}
-                            aria-label={photo.caption ? `Add ${photo.caption} to the feed` : "Add this frame to the feed"}
-                            onChange={() => togglePick(photo.id)}
-                          />
-                          Feed
-                        </label>
-                      ) : (
+            {feedReady ? (
+              <PhotoStrip name="feed-picks" label="Frames in this timecapsule">
+                {eventDetail.photos.map((photo) => {
+                  const caption = photo.caption.trim();
+                  return (
+                    <div className="photo-strip-card" role="listitem" key={photo.id} data-roll-frame={photo.id}>
+                      <StripShot
+                        id={photo.id}
+                        label={caption ? `Open ${caption}` : "Open frame"}
+                        onOpen={() => setOpen(photo)}
+                      />
+                      {caption ? <span className="photo-strip-caption">{caption}</span> : null}
+                      <label className="check">
+                        <input
+                          type="checkbox"
+                          checked={picked.has(photo.id)}
+                          data-feed-pick={photo.id}
+                          aria-label={caption ? `Add ${caption} to the feed` : "Add this frame to the feed"}
+                          onChange={() => togglePick(photo.id)}
+                        />
+                        Feed
+                      </label>
+                    </div>
+                  );
+                })}
+              </PhotoStrip>
+            ) : (
+              <div className="thread">
+                {eventDetail.photos.map((photo) => (
+                  <div className="roll-frame" key={photo.id} data-roll-frame={photo.id}>
+                    {eventDetail.inviteOnly ? (
+                      <div className="roll-frame-bar">
                         <span className="pill" data-status={photo.onFeed ? "ready" : undefined}>
                           {photo.onFeed ? "On the feed" : "Held back"}
                         </span>
-                      )}
-                    </div>
-                  ) : null}
-                  <PrintView
-                    item={photo}
-                    onOpen={setOpen}
-                    onOpenProfile={onOpenProfile}
-                    onDelete={onDelete}
-                  />
-                </div>
-              ))}
-            </div>
+                      </div>
+                    ) : null}
+                    <PrintView
+                      item={photo}
+                      onOpen={setOpen}
+                      onOpenProfile={onOpenProfile}
+                      onDelete={onDelete}
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
             {feedReady ? (
               <button
                 className="primary"
