@@ -24,6 +24,7 @@ import {
 import {
   RELEASE_NOTES,
   notesControlForUpdate,
+  notesPromptOnEntry,
   publishedReleaseFromJson,
   type PublishedRelease,
 } from "@/lib/release-notes";
@@ -64,8 +65,8 @@ export function ShellPrompts() {
   const [iconRelease, setIconRelease] = useState<IconRelease | null>(null);
   const [updateSettled, setUpdateSettled] = useState(false);
   const [iconOpen, setIconOpen] = useState(false);
-  const [notesLines, setNotesLines] = useState<readonly string[] | null>(null);
-  const [notesVersion, setNotesVersion] = useState<string | null>(null);
+  const [notesOffer, setNotesOffer] = useState<PublishedRelease | null | undefined>(undefined);
+  const [notesDismissed, setNotesDismissed] = useState(false);
   const [notesOpen, setNotesOpen] = useState(false);
   const registration = useRef<ServiceWorkerRegistration | null>(null);
   const primary = useRef<HTMLButtonElement>(null);
@@ -96,22 +97,17 @@ export function ShellPrompts() {
   }, []);
 
   useEffect(() => {
-    if (!updateOpen || !releaseReady || notesVersion) return;
-    const offer = notesControlForUpdate({
-      published,
-      bundledVersion: APP_VERSION,
-      bundledNotes: RELEASE_NOTES,
-      seen: readStorage(localStorage, NOTES_SEEN_KEY),
+    if (!releaseReady) return;
+    setNotesOffer((current) => {
+      if (current !== undefined) return current;
+      return notesControlForUpdate({
+        published,
+        bundledVersion: APP_VERSION,
+        bundledNotes: RELEASE_NOTES,
+        seen: readStorage(localStorage, NOTES_SEEN_KEY),
+      });
     });
-    if (!offer) return;
-    setNotesLines(offer.notes);
-    setNotesVersion(offer.version);
-  }, [updateOpen, releaseReady, notesVersion, published]);
-
-  useEffect(() => {
-    if (!notesVersion) return;
-    writeStorage(localStorage, NOTES_SEEN_KEY, notesVersion);
-  }, [notesVersion]);
+  }, [releaseReady, published]);
 
   useEffect(() => {
     justUpdated.current = readStorage(sessionStorage, UPDATE_RELOAD_KEY) === "1";
@@ -138,6 +134,10 @@ export function ShellPrompts() {
 
     let dropped = false;
     let removeVis: (() => void) | null = null;
+    // Notes on entry should not wait forever for a worker check that never settles.
+    const settleTimer = window.setTimeout(() => {
+      if (!dropped) setUpdateSettled(true);
+    }, 4000);
     const onController = () => {
       if (readStorage(sessionStorage, UPDATE_ACCEPT_KEY) !== "1") return;
       if (readStorage(sessionStorage, UPDATE_RELOAD_KEY) === "1") return;
@@ -209,11 +209,27 @@ export function ShellPrompts() {
 
     return () => {
       dropped = true;
+      window.clearTimeout(settleTimer);
       removeVis?.();
       window.removeEventListener("beforeinstallprompt", onPrompt);
       if ("serviceWorker" in navigator) navigator.serviceWorker.removeEventListener("controllerchange", onController);
     };
   }, []);
+
+  const notesVisible =
+    !notesDismissed &&
+    notesPromptOnEntry({
+      offer: notesOffer ?? null,
+      updateOpen,
+      updateSettled,
+      blocked: homeAsk || steps !== null,
+    });
+
+  useEffect(() => {
+    if (!notesOffer) return;
+    if (!notesVisible && !updateOpen) return;
+    writeStorage(localStorage, NOTES_SEEN_KEY, notesOffer.version);
+  }, [notesOffer, notesVisible, updateOpen]);
 
   useEffect(() => {
     if (!updateSettled || !releaseReady) return;
@@ -226,7 +242,7 @@ export function ShellPrompts() {
       pending,
       updateWaiting: sawWaitingUpdate.current,
       justUpdated: justUpdated.current,
-      blocked: updateOpen || homeAsk || steps !== null,
+      blocked: updateOpen || homeAsk || steps !== null || notesVisible || notesOffer === undefined,
     });
     if (plan.pending !== pending) {
       if (plan.pending) writeStorage(localStorage, ICON_PROMPT_PENDING_KEY, plan.pending);
@@ -239,11 +255,11 @@ export function ShellPrompts() {
       clearStorage(localStorage, ICON_PROMPT_PENDING_KEY);
     }, 0);
     return () => window.clearTimeout(markSeen);
-  }, [updateSettled, releaseReady, iconRelease, updateOpen, homeAsk, steps]);
+  }, [updateSettled, releaseReady, iconRelease, updateOpen, homeAsk, steps, notesOffer, notesVisible]);
 
   useEffect(() => {
-    if (updateOpen || homeAsk || steps || iconOpen) primary.current?.focus();
-  }, [updateOpen, homeAsk, steps, iconOpen]);
+    if (updateOpen || notesVisible || homeAsk || steps || iconOpen) primary.current?.focus();
+  }, [updateOpen, notesVisible, homeAsk, steps, iconOpen]);
 
   function developUpdate() {
     const waiting = registration.current?.waiting;
@@ -271,7 +287,7 @@ export function ShellPrompts() {
 
   const askVisible = homeAsk && !updateOpen;
   const stepsVisible = steps !== null && !updateOpen;
-  const iconVisible = iconOpen && !updateOpen && !homeAsk && steps === null;
+  const iconVisible = iconOpen && !updateOpen && !notesVisible && !homeAsk && steps === null;
 
   return (
     <>
@@ -280,9 +296,9 @@ export function ShellPrompts() {
           <div className="sheet-card">
             <p className="kicker">In the lab</p>
             <h2 id="update-title">Santi is in the lab, developing a better camera for you.</h2>
-            {notesLines ? (
+            {notesOffer ? (
               <ul id="update-notes" className="sheet-notes" data-release-notes hidden={!notesOpen}>
-                {notesLines.map((line) => (
+                {notesOffer.notes.map((line) => (
                   <li key={line}>{line}</li>
                 ))}
               </ul>
@@ -290,7 +306,7 @@ export function ShellPrompts() {
             <button ref={primary} className="primary" type="button" disabled={developing} onClick={developUpdate}>
               Develop the update
             </button>
-            {notesLines ? (
+            {notesOffer ? (
               <button
                 className="ghost"
                 type="button"
@@ -302,6 +318,33 @@ export function ShellPrompts() {
                 {notesOpen ? "Hide what's new" : "See what's new"}
               </button>
             ) : null}
+          </div>
+        </div>
+      ) : null}
+      {notesVisible && notesOffer ? (
+        <div className="lab-sheet" role="dialog" aria-modal="true" aria-labelledby="notes-title" data-shell="notes">
+          <div className="sheet-card">
+            <p className="kicker">What's new</p>
+            <h2 id="notes-title">A better camera is ready.</h2>
+            <ul id="entry-notes" className="sheet-notes" data-release-notes hidden={!notesOpen}>
+              {notesOffer.notes.map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ul>
+            <button
+              ref={primary}
+              className="primary"
+              type="button"
+              data-release-notes-control
+              aria-expanded={notesOpen}
+              aria-controls="entry-notes"
+              onClick={() => setNotesOpen((open) => !open)}
+            >
+              {notesOpen ? "Hide what's new" : "See what's new"}
+            </button>
+            <button className="ghost" type="button" onClick={() => setNotesDismissed(true)}>
+              Got it
+            </button>
           </div>
         </div>
       ) : null}

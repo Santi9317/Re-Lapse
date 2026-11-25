@@ -39,3 +39,19 @@ export function notesControlForUpdate(input: {
   if (!input.bundledVersion || input.seen === input.bundledVersion) return null;
   return { version: input.bundledVersion, notes: input.bundledNotes };
 }
+
+/**
+ * Show that control when the camera opens, including when no service worker is waiting.
+ * The update dialog already carries it, so this sheet stays down while that dialog is up.
+ * Wait until the update check settles so the two sheets do not stack, and let Home Screen prompts go first.
+ */
+export function notesPromptOnEntry(input: {
+  offer: { notes: readonly string[] } | null;
+  updateOpen: boolean;
+  updateSettled: boolean;
+  blocked: boolean;
+}): boolean {
+  if (!input.offer || input.offer.notes.length === 0) return false;
+  if (input.updateOpen || !input.updateSettled || input.blocked) return false;
+  return true;
+}
