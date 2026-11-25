@@ -35,6 +35,27 @@ export function shouldAskForHome(input: {
   return true;
 }
 
+/**
+ * Browsers other than Safari used to show a one-line install bar with Hide.
+ * That bar is not a prompt. Those people get the step-by-step Home Screen
+ * instructions instead, once, until they tap Got it.
+ */
+export function shouldOpenInstallInstructions(input: {
+  safari: boolean;
+  standalone: boolean;
+  stored: string | null;
+  legacyHidden: boolean;
+}): boolean {
+  if (input.safari || input.standalone || input.legacyHidden) return false;
+  if (input.stored === "yes" || input.stored === "no") return false;
+  return true;
+}
+
+/** Yes, and the install nudge, open these steps. A phone uses the share sheet. */
+export function homeInstructions(ios: boolean): "ios" | "desk" {
+  return ios ? "ios" : "desk";
+}
+
 export type UpdateDecision = "show" | "finish" | "idle";
 
 export function updateDecision(input: {

@@ -1,10 +1,12 @@
 /**
  * What this publish says is new. Write these for someone using the camera.
- * One short line each. Do not invent lines for publishes that shipped without them.
+ * One short line each, and only the lines for this publish.
+ * Do not invent lines for publishes that shipped without them.
  * Keep public/release.json in step with this list, and keep its version equal to APP_VERSION.
  */
 export const RELEASE_NOTES = [
-  "The header says tinker with the bath.",
+  "Adding the camera walks through the Home Screen steps.",
+  "The Home Screen shortcut stays unless the icon changes.",
 ] as const;
 
 export type PublishedRelease = {

@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
+  homeInstructions,
   isIosDevice,
   isSafariUa,
   isStandaloneDisplay,
   shouldAskForHome,
   shouldClearUpdateAcceptance,
+  shouldOpenInstallInstructions,
   updateDecision,
 } from "./shell.ts";
 
@@ -38,6 +41,31 @@ test("home prompt is once, Safari-only, and never when installed", () => {
   assert.equal(isStandaloneDisplay(true, undefined), true);
   assert.equal(isStandaloneDisplay(false, true), true);
   assert.equal(isStandaloneDisplay(false, false), false);
+});
+
+test("the install nudge opens the home screen steps instead of the one-line bar", () => {
+  const nudge = { safari: false, standalone: false, stored: null, legacyHidden: false };
+  assert.equal(shouldAskForHome(nudge), false);
+  assert.equal(shouldOpenInstallInstructions(nudge), true);
+  assert.equal(shouldOpenInstallInstructions({ ...nudge, safari: true }), false);
+  assert.equal(shouldOpenInstallInstructions({ ...nudge, standalone: true }), false);
+  assert.equal(shouldOpenInstallInstructions({ ...nudge, stored: "no" }), false);
+  assert.equal(shouldOpenInstallInstructions({ ...nudge, stored: "yes" }), false);
+  assert.equal(shouldOpenInstallInstructions({ ...nudge, legacyHidden: true }), false);
+  assert.equal(homeInstructions(true), "ios");
+  assert.equal(homeInstructions(false), "desk");
+  const app = readFileSync(new URL("../components/App.tsx", import.meta.url), "utf8");
+  const shell = readFileSync(new URL("../components/Shell.tsx", import.meta.url), "utf8");
+  const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+  assert.equal(app.includes('className="install"'), false);
+  assert.equal(app.includes("Add Re-Lapse to your home screen."), false);
+  assert.equal(app.includes("beforeinstallprompt"), false);
+  assert.equal(/\.prompt\(/.test(app), false);
+  assert.equal(/\.prompt\(/.test(shell), false);
+  assert.match(shell, /shouldOpenInstallInstructions\(home\)\) openInstructions\(\)/);
+  assert.match(shell, /setSteps\(homeInstructions\(/);
+  assert.match(shell, /data-shell="steps"/);
+  assert.equal(css.includes(".install"), false);
 });
 
 test("iOS steps are for iPhone, iPad, and iPadOS desktop UA", () => {

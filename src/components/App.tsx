@@ -5,7 +5,6 @@ import { adoptSavedProfile, devFlagStored, ensureCamera, fetchConfig, fetchFeed,
 import { noteFeedLook } from "@/lib/feed-mark";
 import { restorePhone } from "@/lib/identity";
 import { shouldReloadOnPageSignal, shouldReloadOnTabChange, type MainTab } from "@/lib/refresh";
-import { isSafariUa } from "@/lib/shell";
 import type { EventRoll, FeedItem } from "@/lib/types";
 import { Feed } from "@/components/Feed";
 import { Lab } from "@/components/Lab";
@@ -15,8 +14,6 @@ import { ShellPrompts } from "@/components/Shell";
 import { JoinGate } from "@/components/JoinGate";
 import { ChoosePin } from "@/components/RecoveryPin";
 import { Shoot } from "@/components/Shoot";
-
-type InstallPrompt = Event & { prompt: () => Promise<void> };
 
 const lede: Record<Exclude<MainTab, "shoot">, string> = {
   lab: "Let them lapse. Develop when the clock hits zero, tinker with the bath. 🧪",
@@ -72,8 +69,6 @@ function CameraDesk() {
   const [labReady, setLabReady] = useState(false);
   const [feedFresh, setFeedFresh] = useState(false);
   const [devTimers, setDevTimers] = useState(false);
-  const [install, setInstall] = useState<InstallPrompt | null>(null);
-  const [hideInstall, setHideInstall] = useState(true);
   const [tokenReady, setTokenReady] = useState(0);
   const [guestId, setGuestId] = useState<string | null>(null);
   const [focusEventId, setFocusEventId] = useState<string | null>(null);
@@ -90,16 +85,7 @@ function CameraDesk() {
       .then(() => adoptSavedProfile())
       .catch(() => undefined)
       .finally(() => setTokenReady((value) => value + 1));
-    const standalone = window.matchMedia("(display-mode: standalone)").matches || (navigator as Navigator & { standalone?: boolean }).standalone === true;
-    setHideInstall(localStorage.getItem("relapse.hideInstall") === "1" || standalone);
     void fetchConfig().then((config) => setDevTimers(config.devTimers && devFlagStored()));
-    const onPrompt = (event: Event) => {
-      if (isSafariUa(navigator.userAgent)) return;
-      event.preventDefault();
-      setInstall(event as InstallPrompt);
-    };
-    window.addEventListener("beforeinstallprompt", onPrompt);
-    return () => window.removeEventListener("beforeinstallprompt", onPrompt);
   }, []);
 
   useEffect(() => {
@@ -220,13 +206,6 @@ function CameraDesk() {
     );
   }
 
-  function dismissInstall() {
-    localStorage.setItem("relapse.hideInstall", "1");
-    setHideInstall(true);
-  }
-
-  const safari = typeof navigator !== "undefined" && isSafariUa(navigator.userAgent);
-
   return (
     <div className="desk">
       <div className={tab === "shoot" ? "phone" : "phone pin-tabs"}>
@@ -286,28 +265,6 @@ function CameraDesk() {
             </>
           )}
         </div>
-        {!hideInstall && !safari ? (
-          <div className="install">
-            <span>
-              {install ? "Keep the camera on your home screen." : <>Add <span className="namemark">Re-Lapse</span> to your home screen.</>}
-            </span>
-            {install ? (
-              <button
-                type="button"
-                onClick={() => {
-                  void install.prompt();
-                  setInstall(null);
-                }}
-              >
-                Install
-              </button>
-            ) : (
-              <button type="button" onClick={dismissInstall}>
-                Hide
-              </button>
-            )}
-          </div>
-        ) : null}
         <nav className="nav">
           {(
             [
