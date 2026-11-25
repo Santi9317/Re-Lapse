@@ -70,7 +70,7 @@ test("the sheet is separate and does not activate a worker or stop the camera", 
 });
 
 test("this artwork differs from the previous publish, so the open after the update asks once", () => {
-  const release = { version: "8.1", icon: ICON_DIGEST, previousIcon: PREVIOUS_ICON_DIGEST };
+  const release = { version: "8.1", icon: "wink", previousIcon: "before" };
   assert.equal(iconFilesChanged(release.icon, release.previousIcon), true);
   const waiting = iconPromptPlan({
     release,
