@@ -44,9 +44,11 @@ export function GalleryStrip({
           <p>{empty}</p>
         </div>
       ) : (
-        galleries.map((gallery) => (
-          <GalleryCardButton key={gallery.id} gallery={gallery} onOpen={() => onOpen(gallery.id)} />
-        ))
+        <div className="gallery-grid">
+          {galleries.map((gallery) => (
+            <GalleryCardButton key={gallery.id} gallery={gallery} onOpen={() => onOpen(gallery.id)} />
+          ))}
+        </div>
       )}
     </>
   );

@@ -534,9 +534,11 @@ export function Rolls({
           <p>Name one, send a photo to the feed, then add it here.</p>
         </div>
       ) : (
-        albums.map((album) => (
-          <GalleryCardButton key={album.id} gallery={album} onOpen={() => showAlbum(album.id)} />
-        ))
+        <div className="gallery-grid">
+          {albums.map((album) => (
+            <GalleryCardButton key={album.id} gallery={album} onOpen={() => showAlbum(album.id)} />
+          ))}
+        </div>
       )}
       <h2 className="section">Timecapsules</h2>
       <input
