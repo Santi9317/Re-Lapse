@@ -23,6 +23,7 @@ test("this publish carries the same notes the camera can show", () => {
   assert.deepEqual(publishedReleaseFromJson(release), { version: APP_VERSION, notes: [...RELEASE_NOTES] });
   const notes = RELEASE_NOTES.join("\n");
   const lower = notes.toLowerCase();
+  assert.match(notes, /Daylight and Night are under Additional chemistry\./);
   assert.match(notes, /Wednesday's date stamp reads as a W\./);
   assert.match(notes, /The Home Screen shortcut prompt works again after an update\./);
   assert.match(notes, /Gallery cards stack the cover, the name, and the frame count\./);
