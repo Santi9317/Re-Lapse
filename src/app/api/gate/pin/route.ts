@@ -1,4 +1,5 @@
-import { adoptBooth } from "@/server/booth";
+import { BOOTH_HANDOFF } from "@/lib/booth-handoff";
+import { prepareBooth } from "@/server/booth";
 import { asRecord, json, readBooth, readJson, readRescue, sealBooth, sealCamera, sealRescue, toErrorResponse } from "@/server/http";
 import { ensureRestoredApproval } from "@/server/gate";
 import { GATE_GUESS_DELAY_MS } from "@/server/gate-key";
@@ -55,8 +56,10 @@ export async function POST(request: Request) {
     const name = rescueName(body.name);
     if (!name) return sealBooth(json({ error: "Enter the profile name." }, 400), request, booth);
     if (!pin) return sealBooth(json({ error: "Enter the 6-digit PIN." }, 400), request, booth);
-    booth = await adoptBooth(booth);
-    const result = await requestRecovery(booth, pin, name);
+    const pass = await prepareBooth(booth);
+    if (pass.shared) return sealBooth(json({ error: BOOTH_HANDOFF }, 409), request, pass.id);
+    booth = pass.id;
+    const result = await requestRecovery(booth, pin, name, pass.fresh);
     if (!result.ok) {
       await delay(GATE_GUESS_DELAY_MS);
       const blocked = result.reason === "blocked";
