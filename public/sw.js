@@ -1,6 +1,6 @@
 // Keep RELEASE_VERSION equal to APP_VERSION. A new string is how an installed
 // shortcut notices a publish: the next cold open can see a waiting worker.
-const RELEASE_VERSION = "1.57";
+const RELEASE_VERSION = "1.58";
 self.releaseVersion = RELEASE_VERSION;
 const CACHE = "relapse-shell-v4";
 const SHELL = ["/", "/manifest.webmanifest", "/icons/icon-192.png", "/icons/icon-512.png"];
