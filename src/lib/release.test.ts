@@ -23,11 +23,7 @@ test("this publish carries the same notes the camera can show", () => {
   assert.deepEqual(publishedReleaseFromJson(release), { version: APP_VERSION, notes: [...RELEASE_NOTES] });
   assert.deepEqual(
     [...RELEASE_NOTES],
-    [
-      "The date stamp switch sits with your prints. A developed frame gets the date only when it is on.",
-      "A caption shows up on a photo after you send it to the feed.",
-      "The shutter sends the frame on, and the next shot is ready right away.",
-    ],
+    ["Write a caption while a photo is on its way to the feed. Once it is up, that line stays as it is."],
   );
   const notes = RELEASE_NOTES.join("\n");
   const lower = notes.toLowerCase();
@@ -50,6 +46,9 @@ test("this publish carries the same notes the camera can show", () => {
     "Wednesday's date stamp reads as a W.",
     "Your home screen icon changes to the wink.",
     "New photos and other changes show up when you switch tabs.",
+    "The date stamp switch sits with your prints. A developed frame gets the date only when it is on.",
+    "A caption shows up on a photo after you send it to the feed.",
+    "The shutter sends the frame on, and the next shot is ready right away.",
   ]) {
     assert.equal(notes.includes(older), false);
   }

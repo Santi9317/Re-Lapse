@@ -5,9 +5,7 @@
  * Keep public/release.json in step with this list, and keep its version equal to APP_VERSION.
  */
 export const RELEASE_NOTES = [
-  "The date stamp switch sits with your prints. A developed frame gets the date only when it is on.",
-  "A caption shows up on a photo after you send it to the feed.",
-  "The shutter sends the frame on, and the next shot is ready right away.",
+  "Write a caption while a photo is on its way to the feed. Once it is up, that line stays as it is.",
 ] as const;
 
 export type PublishedRelease = {
