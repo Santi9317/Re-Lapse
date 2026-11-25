@@ -411,8 +411,8 @@ export async function developPhoto(
 
 export async function chooseChemistry(
   id: string,
-  chemistry: Chemistry,
-): Promise<{ chemistry: Chemistry; develop: boolean }> {
+  chemistry: Chemistry | null,
+): Promise<{ chemistry: Chemistry | null; develop: boolean }> {
   return request(`/api/photos/${id}/chemistry`, {
     method: "PATCH",
     headers: await headers(true),

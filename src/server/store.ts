@@ -694,9 +694,9 @@ export async function createPhoto(input: {
 export async function chooseChemistry(
   id: string,
   token: string,
-  chemistry: Chemistry,
-): Promise<{ chemistry: Chemistry; develop: boolean }> {
-  const rows = await sql<{ chemistry: string; ready: boolean }>(
+  chemistry: Chemistry | null,
+): Promise<{ chemistry: Chemistry | null; develop: boolean }> {
+  const rows = await sql<{ chemistry: string | null; ready: boolean }>(
     `update photos
      set chemistry = $3
      where id = $1
@@ -709,10 +709,13 @@ export async function chooseChemistry(
     [id, token, chemistry],
   );
   const row = rows[0];
-  if (!row || (row.chemistry !== "default" && row.chemistry !== "daylight" && row.chemistry !== "night")) {
+  if (!row) throw new HttpError(409, "That frame can't be developed yet.");
+  const saved =
+    row.chemistry === "default" || row.chemistry === "daylight" || row.chemistry === "night" ? row.chemistry : null;
+  if ((row.chemistry != null && saved == null) || saved !== chemistry) {
     throw new HttpError(409, "That frame can't be developed yet.");
   }
-  return { chemistry: row.chemistry, develop: flag(row.ready) };
+  return { chemistry: saved, develop: flag(row.ready) };
 }
 
 export async function readLatent(id: string, token: string): Promise<Buffer | null> {
