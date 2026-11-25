@@ -23,6 +23,7 @@ test("this publish carries the same notes the camera can show", () => {
   assert.deepEqual(publishedReleaseFromJson(release), { version: APP_VERSION, notes: [...RELEASE_NOTES] });
   const notes = RELEASE_NOTES.join("\n");
   const lower = notes.toLowerCase();
+  assert.match(notes, /Save the shortcut to the Home Screen again so the new icon appears\./);
   assert.match(notes, /Your home screen icon changes to the wink\./);
   assert.match(notes, /The gate icon stays the shutter\./);
   assert.match(notes, /A mark on Feed when someone else adds a photo\./);
