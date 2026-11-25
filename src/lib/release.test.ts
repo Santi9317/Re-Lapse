@@ -24,13 +24,14 @@ test("this publish carries the same notes the camera can show", () => {
   assert.deepEqual(
     [...RELEASE_NOTES],
     [
-      "Adding the camera walks through the Home Screen steps.",
-      "The Home Screen shortcut stays unless the icon changes.",
+      "Posted photos leave off the RE-LAPSE 400 line.",
     ],
   );
   const notes = RELEASE_NOTES.join("\n");
   const lower = notes.toLowerCase();
   for (const older of [
+    "Adding the camera walks through the Home Screen steps.",
+    "The Home Screen shortcut stays unless the icon changes.",
     "The header says tinker with the bath.",
     "Daylight and Night are under Additional chemistry.",
     "Wednesday's date stamp reads as a W.",

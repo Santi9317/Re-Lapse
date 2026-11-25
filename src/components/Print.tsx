@@ -625,7 +625,6 @@ export function PrintView({
       {!compact && item.caption ? <figcaption className="caption">{item.caption}</figcaption> : null}
       {!compact ? <ProfileLink item={item} onOpenProfile={onOpenProfile} /> : null}
       <p className="meta">{meta}</p>
-      {!compact ? <p className="stock-line">RE-LAPSE 400</p> : null}
       <FrameActions item={item} getImage={() => imageRef.current} onDelete={onDelete} />
     </figure>
   );
