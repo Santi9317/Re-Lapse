@@ -1,6 +1,7 @@
 {
-  "version": "1.57",
+  "version": "1.64",
   "notes": [
-    "Tapping the empty profile photo adds a photo."
+    "Your home screen icon changes to the wink.",
+    "The gate icon stays the shutter."
   ]
 }

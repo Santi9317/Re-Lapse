@@ -4,7 +4,8 @@
  * Keep public/release.json in step with this list, and keep its version equal to APP_VERSION.
  */
 export const RELEASE_NOTES = [
-  "Tapping the empty profile photo adds a photo.",
+  "Your home screen icon changes to the wink.",
+  "The gate icon stays the shutter.",
 ] as const;
 
 export type PublishedRelease = {
