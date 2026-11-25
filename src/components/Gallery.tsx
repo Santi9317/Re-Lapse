@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { deleteAlbum, deletePhoto, fetchAlbum, filePhoto, updateAlbum } from "@/lib/api";
 import { frames } from "@/lib/format";
+import { galleryView, type GalleryPlace } from "@/lib/gallery-view";
 import type { AlbumDetail, FeedItem, GalleryCard } from "@/lib/types";
 import { PhotoStrip, StripShot } from "@/components/PhotoStrip";
 import { Lightbox, PrintView } from "@/components/Print";
@@ -53,12 +54,14 @@ export function GalleryStrip({
 
 export function Gallery({
   id,
+  place,
   onBack,
   backLabel = "Keepsakes",
   onOpenProfile,
   onChanged,
 }: {
   id: string;
+  place: GalleryPlace;
   onBack: () => void;
   backLabel?: string;
   onOpenProfile?: (id: string) => void;
@@ -188,7 +191,7 @@ export function Gallery({
 
   if (!detail) {
     return (
-      <div className="scroll" data-screen="gallery">
+      <div className="scroll" data-screen="gallery" data-place={place}>
         <button className="ghost back" type="button" onClick={onBack}>
           ← {backLabel}
         </button>
@@ -198,16 +201,29 @@ export function Gallery({
   }
 
   const owner = detail.album.owner;
-  const inGallery = new Set(detail.photos.map((photo) => photo.id));
-  const available = detail.library.filter((photo) => !inGallery.has(photo.id));
+  const view = galleryView({
+    place,
+    owner,
+    albumId: detail.album.id,
+    photos: detail.photos,
+    library: detail.library,
+  });
+  const canEdit = view.editing;
+  const available = view.addable;
   const coverId = detail.album.coverPhotoId;
 
   return (
-    <div className="scroll" data-screen="gallery" data-owner={owner ? "yes" : "no"}>
+    <div
+      className="scroll"
+      data-screen="gallery"
+      data-place={place}
+      data-owner={owner ? "yes" : "no"}
+      data-editing={canEdit ? "yes" : "no"}
+    >
       <button className="ghost back" type="button" onClick={onBack}>
         ← {backLabel}
       </button>
-      {owner ? (
+      {canEdit ? (
         <>
           <label className="fine gallery-label" htmlFor="gallery-title">
             Album title
@@ -238,14 +254,14 @@ export function Gallery({
       )}
       <p className="fine">{frames(detail.album.frameCount)}</p>
       {error ? <p className="error">{error}</p> : null}
-      {detail.photos.length === 0 ? (
+      {view.photos.length === 0 ? (
         <div className="empty">
           <h2>Empty gallery.</h2>
-          <p>{owner ? "Add a photo you already sent to the feed." : "Nothing in this gallery yet."}</p>
+          <p>{canEdit ? "Add a photo you already sent to the feed." : "Nothing in this gallery yet."}</p>
         </div>
-      ) : owner ? (
+      ) : canEdit ? (
         <PhotoStrip name="members" label="Photos in this gallery">
-          {detail.photos.map((photo) => {
+          {view.photos.map((photo) => {
             const caption = photo.caption.trim();
             return (
               <div className="photo-strip-card" role="listitem" key={photo.id} data-gallery-photo={photo.id}>
@@ -271,14 +287,14 @@ export function Gallery({
         </PhotoStrip>
       ) : (
         <div className="thread">
-          {detail.photos.map((photo) => (
+          {view.photos.map((photo) => (
             <div className="gallery-frame" key={photo.id} data-gallery-photo={photo.id}>
               <PrintView item={photo} onOpen={setOpen} onOpenProfile={onOpenProfile} />
             </div>
           ))}
         </div>
       )}
-      {owner ? (
+      {canEdit ? (
         <>
           <h2 className="section">Your photos</h2>
           {detail.library.length === 0 ? (
@@ -330,7 +346,7 @@ export function Gallery({
         </>
       ) : null}
       {open ? (
-        <Lightbox item={open} onClose={() => setOpen(null)} onOpenProfile={onOpenProfile} onDelete={owner ? onDelete : undefined} />
+        <Lightbox item={open} onClose={() => setOpen(null)} onOpenProfile={onOpenProfile} onDelete={canEdit ? onDelete : undefined} />
       ) : null}
     </div>
   );

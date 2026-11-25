@@ -18,6 +18,8 @@ test("a gallery is the owner's photos, with a cover, and delete keeps those phot
   const adaId = randomUUID();
   const first = randomUUID();
   const second = randomUUID();
+  const spare = randomUUID();
+  const beaShot = randomUUID();
   const proof = await cameraProof(ada);
   await camera(ada);
   await camera(bea);
@@ -28,9 +30,11 @@ test("a gallery is the owner's photos, with a cover, and delete keeps those phot
   );
   await sql(
     `insert into photos (id, shooter_token, caption, image_b64, created_at, ready_at, developed_at, published_at)
-     values ($1, $2, 'First', $3, now() - interval '2 minutes', now(), now(), now() - interval '2 minutes'),
-            ($4, $2, 'Second', $3, now() - interval '1 minute', now(), now(), now() - interval '1 minute')`,
-    [first, ada, image, second],
+     values ($1, $2, 'First', $3, now() - interval '4 minutes', now(), now(), now() - interval '4 minutes'),
+            ($4, $2, 'Second', $3, now() - interval '3 minutes', now(), now(), now() - interval '3 minutes'),
+            ($5, $2, 'Spare', $3, now() - interval '2 minutes', now(), now(), now() - interval '2 minutes'),
+            ($6, $7, 'Bea', $3, now() - interval '1 minute', now(), now(), now() - interval '1 minute')`,
+    [first, ada, image, second, spare, beaShot, bea],
   );
 
   const made = await createAlbum("Sunday", ada, proof);
@@ -46,12 +50,19 @@ test("a gallery is the owner's photos, with a cover, and delete keeps those phot
     opened?.photos.map((photo) => photo.id),
     [first, second],
   );
-  assert.equal(opened?.library.length, 2);
+  assert.equal(opened?.photos.some((photo) => photo.id === spare), false);
+  assert.equal(opened?.photos.every((photo) => photo.albumId === made.id), true);
+  assert.equal(opened?.library.length, 3);
+  assert.equal(opened?.library.some((photo) => photo.id === spare), true);
 
   const asBea = await getAlbum(made.id, bea);
   assert.equal(asBea?.album.owner, false);
   assert.equal(asBea?.library.length, 0);
-  assert.equal(asBea?.photos.length, 2);
+  assert.deepEqual(
+    asBea?.photos.map((photo) => photo.id),
+    [first, second],
+  );
+  assert.equal(asBea?.photos.some((photo) => photo.id === beaShot || photo.id === spare), false);
 
   await assert.rejects(updateAlbum(made.id, bea, { name: "Nope" }), (error: unknown) => {
     assert.ok(error instanceof HttpError);

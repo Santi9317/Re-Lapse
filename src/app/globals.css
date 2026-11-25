@@ -570,6 +570,114 @@ html.hold-cw .phone {
   text-transform: uppercase;
   color: var(--amber);
 }
+.stamp-toggle {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 52px;
+  padding: 8px 12px 8px 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(180, 150, 255, 0.28);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--muted);
+  cursor: pointer;
+}
+.stamp-toggle input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+.stamp-toggle input:focus-visible {
+  outline: none;
+}
+.stamp-toggle:has(input:focus-visible) {
+  outline: 2px solid var(--blue);
+  outline-offset: 3px;
+}
+.stamp-toggle:has(input:disabled) {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.stamp-toggle:active:not(:has(input:disabled)) {
+  transform: translateY(1px);
+}
+.stamp-toggle[data-date-stamp="on"] {
+  color: var(--ink);
+  border-color: rgba(255, 87, 20, 0.62);
+  background:
+    linear-gradient(115deg, rgba(255, 87, 20, 0.18), rgba(255, 176, 106, 0.08) 58%, rgba(255, 255, 255, 0.04)),
+    rgba(255, 255, 255, 0.04);
+  box-shadow: 0 0 18px rgba(255, 87, 20, 0.16);
+}
+.stamp-imprint {
+  flex: none;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-weight: 600;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  color: rgba(255, 87, 20, 0.34);
+}
+.stamp-toggle[data-date-stamp="on"] .stamp-imprint {
+  color: #ff5714;
+  text-shadow: 1px 1px 0 rgba(50, 16, 0, 0.55);
+}
+.stamp-copy {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-size: 12px;
+  line-height: 1.15;
+}
+.stamp-copy span {
+  letter-spacing: 0.16em;
+  font-size: 10px;
+  color: var(--faint);
+}
+.stamp-toggle[data-date-stamp="on"] .stamp-copy span {
+  color: var(--amber);
+}
+.stamp-track {
+  flex: none;
+  width: 46px;
+  height: 26px;
+  padding: 3px;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  background: rgba(7, 6, 15, 0.55);
+  border: 1px solid rgba(180, 150, 255, 0.35);
+}
+.stamp-track span {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #6d5a96;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
+.stamp-toggle[data-date-stamp="on"] .stamp-track {
+  justify-content: flex-end;
+  background: rgba(255, 87, 20, 0.24);
+  border-color: rgba(255, 87, 20, 0.78);
+}
+.stamp-toggle[data-date-stamp="on"] .stamp-track span {
+  background: linear-gradient(160deg, #ffd3a8, #ff5714);
+  box-shadow:
+    0 0 10px rgba(255, 87, 20, 0.62),
+    inset 0 1px 0 rgba(255, 255, 255, 0.55);
+}
 .field {
   width: 100%;
   background: rgba(255, 255, 255, 0.04);
@@ -786,25 +894,40 @@ button.sticker:active { transform: translate(-50%, -50%) rotate(var(--tilt)) sca
 .print-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
   margin: 10px 4px 0;
+}
+.print-actions button,
+.lab-actions button {
+  border: 0;
+  border-radius: 999px;
+  background: linear-gradient(120deg, #ffc27a, #ffb0d4);
+  color: #1a0820;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  padding: 10px 12px;
+  text-align: center;
+  box-shadow: 0 6px 16px rgba(255, 150, 190, 0.28);
 }
 .print-actions button {
   flex: 1 1 0;
   min-width: 72px;
-  border: 1px solid #c8b8a4;
-  color: #2a160c;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  font-size: 10px;
-  padding: 8px 6px;
-  background: transparent;
 }
 .print-actions button[data-delete],
-.print-actions button[data-confirm-delete] {
-  color: #8a2e12;
+.print-actions button[data-confirm-delete],
+.lab-actions button[data-delete],
+.lab-actions button[data-confirm-delete] {
+  background: linear-gradient(120deg, #ff9a86, #ff6d93);
+  color: #1a0820;
+  box-shadow: 0 6px 16px rgba(255, 100, 130, 0.28);
 }
-.print-actions button:disabled { opacity: 0.45; }
+.print-actions button:active:not(:disabled),
+.lab-actions button:active:not(:disabled) { transform: translateY(1px); }
+.print-actions button:disabled,
+.lab-actions button:disabled { opacity: 0.45; cursor: not-allowed; }
 .print-actions .meta {
   flex: 1 0 100%;
   margin: 0;
@@ -812,8 +935,8 @@ button.sticker:active { transform: translate(-50%, -50%) rotate(var(--tilt)) sca
 .grid .print-actions { margin-top: 6px; }
 .grid .print-actions button {
   letter-spacing: 0.04em;
-  font-size: 9px;
-  padding: 7px 2px;
+  font-size: 11px;
+  padding: 8px 6px;
   min-width: 0;
 }
 
@@ -901,25 +1024,6 @@ button.sticker:active { transform: translate(-50%, -50%) rotate(var(--tilt)) sca
   gap: 8px;
   margin-top: 10px;
 }
-.lab-actions button {
-  border: 1px solid currentColor;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  font-size: 10px;
-  padding: 8px 10px;
-  color: var(--amber);
-}
-.lab-card[data-lab-state="developed"] .lab-actions button {
-  color: #2a160c;
-  border-color: #c8b8a4;
-}
-.lab-actions button[data-delete],
-.lab-actions button[data-confirm-delete],
-.lab-card[data-lab-state="developed"] .lab-actions button[data-delete],
-.lab-card[data-lab-state="developed"] .lab-actions button[data-confirm-delete] {
-  color: #8a2e12;
-}
-.lab-actions button:disabled { opacity: 0.45; }
 
 .section {
   margin: 20px 0 8px;
@@ -1402,11 +1506,13 @@ button.byline .byline-name { text-decoration: underline; text-underline-offset: 
 .byline-name {
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  font-size: 11px;
+  font-size: 14px;
+  line-height: 1;
 }
 .byline-marks {
   font-size: 14px;
-  letter-spacing: 0.08em;
+  letter-spacing: 0;
+  line-height: 1;
   font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
 }
 

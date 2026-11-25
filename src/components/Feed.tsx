@@ -5,12 +5,22 @@ import { deletePhoto, fetchFeed } from "@/lib/api";
 import type { FeedItem, FrameSticker } from "@/lib/types";
 import { Lightbox, PrintView } from "@/components/Print";
 
-export function Feed({ revision, onOpenProfile }: { revision: number; onOpenProfile: (id: string) => void }) {
+export function Feed({
+  revision,
+  onOpenProfile,
+  onSeen,
+}: {
+  revision: number;
+  onOpenProfile: (id: string) => void;
+  onSeen?: (photos: FeedItem[]) => void;
+}) {
   const [photos, setPhotos] = useState<FeedItem[]>([]);
   const [error, setError] = useState("");
   const [open, setOpen] = useState<FeedItem | null>(null);
   const removed = useRef(new Set<string>());
   const generation = useRef(0);
+  const onSeenRef = useRef(onSeen);
+  onSeenRef.current = onSeen;
 
   useEffect(() => {
     let stop = false;
@@ -26,6 +36,7 @@ export function Feed({ revision, onOpenProfile }: { revision: number; onOpenProf
           return next.find((photo) => photo.id === current.id) ?? null;
         });
         setError("");
+        onSeenRef.current?.(next);
       } catch (err) {
         if (!stop && ticket === generation.current) setError(err instanceof Error ? err.message : "The lab didn't answer.");
       }

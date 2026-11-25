@@ -4,6 +4,10 @@
  * Keep public/release.json in step with this list, and keep its version equal to APP_VERSION.
  */
 export const RELEASE_NOTES = [
+  "A mark on Feed when someone else adds a photo.",
+  "A gallery on a profile shows only the photos in it.",
+  "Feed names sit a little larger, with the emojis tucked together, and download and delete match the other buttons.",
+  "The date stamp switch now matches the rest of the camera.",
   "Choosing photos slides sideways, so the buttons below stay close.",
 ] as const;
 

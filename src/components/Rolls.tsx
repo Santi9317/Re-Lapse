@@ -328,6 +328,7 @@ export function Rolls({
     return (
       <Gallery
         id={galleryId}
+        place="keepsakes"
         onBack={() => {
           setGalleryId(null);
           setTick((value) => value + 1);
