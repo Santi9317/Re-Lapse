@@ -5,6 +5,7 @@
  */
 export const RELEASE_NOTES = [
   "A mark on Feed when someone else adds a photo.",
+  "Feed names sit a little larger, with the emojis tucked together, and download and delete match the other buttons.",
 ] as const;
 
 export type PublishedRelease = {

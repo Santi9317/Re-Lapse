@@ -1,6 +1,7 @@
 {
   "version": "1.61",
   "notes": [
-    "A mark on Feed when someone else adds a photo."
+    "A mark on Feed when someone else adds a photo.",
+    "Feed names sit a little larger, with the emojis tucked together, and download and delete match the other buttons."
   ]
 }
