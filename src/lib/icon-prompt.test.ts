@@ -138,7 +138,7 @@ test("a publish whose icon files match the previous one stays quiet", () => {
   });
 });
 
-test("icon digests follow the camera shortcut files, and later publishes keep the previous digest", () => {
+test("icon digests follow the camera shortcut files, and a later publish prompts only when those files change", () => {
   assert.deepEqual(
     SHORTCUT_ICON_FILES.filter((file) => !file.startsWith("gate-")),
     [...APP_ICON_FILES],
@@ -168,22 +168,12 @@ test("icon digests follow the camera shortcut files, and later publishes keep th
     return;
   }
   if (head === main) return;
-  // Same version as main is still that publish, including an icon change it already recorded.
-  if (release.version && release.version === base.version) return;
-  if (
-    ICON_DIGEST === base.icon &&
-    typeof base.previousIcon === "string" &&
-    base.previousIcon.length > 0 &&
-    base.previousIcon !== base.icon
-  ) {
-    assert.equal(PREVIOUS_ICON_DIGEST, base.previousIcon);
-    assert.equal(iconFilesChanged(ICON_DIGEST, PREVIOUS_ICON_DIGEST), true);
-    return;
-  }
-  if (ICON_DIGEST === base.icon && base.previousIcon === base.icon && PREVIOUS_ICON_DIGEST !== base.icon) {
-    assert.equal(iconFilesChanged(ICON_DIGEST, PREVIOUS_ICON_DIGEST), true);
+  // Unchanged shortcut files stay quiet, even when main copied an older difference forward.
+  if (ICON_DIGEST === base.icon) {
+    assert.equal(PREVIOUS_ICON_DIGEST, base.icon);
+    assert.equal(iconFilesChanged(ICON_DIGEST, PREVIOUS_ICON_DIGEST), false);
     return;
   }
   assert.equal(PREVIOUS_ICON_DIGEST, base.icon);
-  assert.equal(iconFilesChanged(ICON_DIGEST, PREVIOUS_ICON_DIGEST), ICON_DIGEST !== base.icon);
+  assert.equal(iconFilesChanged(ICON_DIGEST, PREVIOUS_ICON_DIGEST), true);
 });

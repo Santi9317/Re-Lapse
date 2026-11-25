@@ -10,12 +10,14 @@ import {
   UPDATE_ACCEPT_KEY,
   UPDATE_RELOAD_KEY,
   clearStorage,
+  homeInstructions,
   isIosDevice,
   isSafariUa,
   isStandaloneDisplay,
   readStorage,
   shouldAskForHome,
   shouldClearUpdateAcceptance,
+  shouldOpenInstallInstructions,
   updateDecision,
   writeStorage,
 } from "@/lib/shell";
@@ -38,7 +40,6 @@ import {
 } from "@/lib/icon-prompt";
 import { snapshotPhone } from "@/lib/identity";
 
-type InstallPrompt = Event & { prompt: () => Promise<void> };
 type StandaloneNavigator = Navigator & { standalone?: boolean };
 
 function standaloneNow(): boolean {
@@ -67,7 +68,6 @@ export function ShellPrompts() {
   const [notesVersion, setNotesVersion] = useState<string | null>(null);
   const [notesOpen, setNotesOpen] = useState(false);
   const registration = useRef<ServiceWorkerRegistration | null>(null);
-  const installPrompt = useRef<InstallPrompt | null>(null);
   const primary = useRef<HTMLButtonElement>(null);
   const sawWaitingUpdate = useRef(false);
   const justUpdated = useRef(false);
@@ -115,21 +115,24 @@ export function ShellPrompts() {
 
   useEffect(() => {
     justUpdated.current = readStorage(sessionStorage, UPDATE_RELOAD_KEY) === "1";
-    const safari = isSafariUa(navigator.userAgent);
-    const stored = readStorage(localStorage, HOME_CHOICE_KEY);
-    const legacyHidden = readStorage(localStorage, LEGACY_HIDE_INSTALL_KEY) === "1";
-    if (shouldAskForHome({ safari, standalone: standaloneNow(), stored, legacyHidden })) setHomeAsk(true);
+    const homeChoice = () => ({
+      safari: isSafariUa(navigator.userAgent),
+      standalone: standaloneNow(),
+      stored: readStorage(localStorage, HOME_CHOICE_KEY),
+      legacyHidden: readStorage(localStorage, LEGACY_HIDE_INSTALL_KEY) === "1",
+    });
+    const openInstructions = () => {
+      setSteps(homeInstructions(isIosDevice(navigator.userAgent, navigator.platform, navigator.maxTouchPoints)));
+    };
+    const home = homeChoice();
+    if (shouldAskForHome(home)) setHomeAsk(true);
+    else if (shouldOpenInstallInstructions(home)) openInstructions();
 
     const onPrompt = (event: Event) => {
-      const ask = shouldAskForHome({
-        safari: isSafariUa(navigator.userAgent),
-        standalone: standaloneNow(),
-        stored: readStorage(localStorage, HOME_CHOICE_KEY),
-        legacyHidden: readStorage(localStorage, LEGACY_HIDE_INSTALL_KEY) === "1",
-      });
-      if (!ask) return;
+      const next = homeChoice();
+      // Hold the browser's own install bar. The instructions are the nudge.
+      if (!shouldAskForHome(next) && !shouldOpenInstallInstructions(next)) return;
       event.preventDefault();
-      installPrompt.current = event as InstallPrompt;
     };
     window.addEventListener("beforeinstallprompt", onPrompt);
 
@@ -253,14 +256,12 @@ export function ShellPrompts() {
   function acceptHome() {
     rememberHome("yes");
     setHomeAsk(false);
-    const prompt = installPrompt.current;
-    installPrompt.current = null;
-    if (prompt) {
-      void prompt.prompt().catch(() => undefined);
-      return;
-    }
-    const ios = isIosDevice(navigator.userAgent, navigator.platform, navigator.maxTouchPoints);
-    setSteps(ios ? "ios" : "desk");
+    setSteps(homeInstructions(isIosDevice(navigator.userAgent, navigator.platform, navigator.maxTouchPoints)));
+  }
+
+  function dismissSteps() {
+    rememberHome("yes");
+    setSteps(null);
   }
 
   function declineHome() {
@@ -338,7 +339,7 @@ export function ShellPrompts() {
                 </>
               )}
             </ol>
-            <button ref={primary} className="primary" type="button" onClick={() => setSteps(null)}>
+            <button ref={primary} className="primary" type="button" onClick={dismissSteps}>
               Got it
             </button>
           </div>
