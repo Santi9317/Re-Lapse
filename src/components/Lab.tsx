@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { blobToBase64, chooseChemistry, developPhoto, deletePhoto, fetchLab, fetchLatent, fetchPrivateImage, publishPhoto, updateCaption } from "@/lib/api";
 import { CaptionField } from "@/components/CaptionField";
+import { developBath, heldChemistry, isExtraChemistry, nextChemistry, type ExtraChemistry } from "@/lib/chemistry";
 import { developStampDate, readDateStamp, writeDateStamp } from "@/lib/date-stamp";
 import { countdown, disposableDate, longRemain } from "@/lib/format";
 import { renderDisposable } from "@/lib/filter";
@@ -10,7 +11,7 @@ import { lapseQuip } from "@/lib/quips";
 import { ensurePhotoFile, iosPhotosTarget, readyPhotoFile, rememberPhotoBlob, shareOrSave } from "@/lib/save";
 import type { Chemistry, LabItem, LabState } from "@/lib/types";
 
-const EXTRA_BATHS: { id: "daylight" | "night"; label: string }[] = [
+const EXTRA_BATHS: { id: ExtraChemistry; label: string }[] = [
   { id: "daylight", label: "Daylight" },
   { id: "night", label: "Night" },
 ];
@@ -19,10 +20,6 @@ function cardState(item: LabItem, now: number): LabState {
   if (item.labState === "sealed" || item.labState === "developed") return item.labState;
   if (item.labState === "ready" || item.readyAt - now <= 0) return "ready";
   return "developing";
-}
-
-function pushed(chemistry: Chemistry | null): chemistry is "daylight" | "night" {
-  return chemistry === "daylight" || chemistry === "night";
 }
 
 export function Lab({
@@ -46,7 +43,8 @@ export function Lab({
   const [preparing, setPreparing] = useState<Set<string>>(() => new Set());
   const stampRef = useRef(true);
   const developedIds = useRef(new Set<string>());
-  const pendingBath = useRef(new Map<string, Chemistry>());
+  const pendingBath = useRef(new Map<string, Chemistry | null>());
+  const bathWrite = useRef(new Map<string, Promise<void>>());
   const grading = useRef(new Set<string>());
   const finished = useRef(new Set<string>());
   const captionDrafts = useRef(new Map<string, string>());
@@ -74,13 +72,16 @@ export function Lab({
           if (photo.labState === "developed") {
             developedIds.current.delete(photo.id);
             pendingBath.current.delete(photo.id);
-          } else if (pendingBath.current.get(photo.id) === photo.chemistry) {
+          } else if (
+            pendingBath.current.has(photo.id) &&
+            (pendingBath.current.get(photo.id) ?? null) === photo.chemistry
+          ) {
             pendingBath.current.delete(photo.id);
           }
         }
         setItems(
           data.photos.map((photo) => {
-            const chemistry = pendingBath.current.get(photo.id) ?? photo.chemistry;
+            const chemistry = heldChemistry(pendingBath.current, photo.id, photo.chemistry);
             if (developedIds.current.has(photo.id)) {
               return { ...photo, chemistry, labState: "developed", graded: true };
             }
@@ -154,19 +155,32 @@ export function Lab({
     }
   }
 
-  async function pick(item: LabItem, chemistry: Chemistry) {
+  function pick(item: LabItem, tapped: ExtraChemistry) {
     if (item.graded || grading.current.has(item.id) || finished.current.has(item.id)) return;
-    pendingBath.current.set(item.id, chemistry);
-    setItems((current) => current.map((row) => (row.id === item.id ? { ...row, chemistry } : row)));
+    const next = nextChemistry(heldChemistry(pendingBath.current, item.id, item.chemistry), tapped);
+    pendingBath.current.set(item.id, next);
+    setItems((current) => current.map((row) => (row.id === item.id ? { ...row, chemistry: next } : row)));
+    const previous = bathWrite.current.get(item.id) ?? Promise.resolve();
+    const write = previous.catch(() => undefined).then(() => saveBath(item.id, next));
+    bathWrite.current.set(item.id, write);
+  }
+
+  async function saveBath(id: string, next: Chemistry | null) {
+    if (!pendingMatches(id, next) || finished.current.has(id)) return;
     try {
-      const saved = await chooseChemistry(item.id, chemistry);
-      if (finished.current.has(item.id)) return;
-      pendingBath.current.set(item.id, saved.chemistry);
-      setItems((current) => current.map((row) => (row.id === item.id ? { ...row, chemistry: saved.chemistry } : row)));
+      const saved = await chooseChemistry(id, next);
+      if (!pendingMatches(id, next) || grading.current.has(id) || finished.current.has(id)) return;
+      pendingBath.current.set(id, saved.chemistry);
+      setItems((current) => current.map((row) => (row.id === id ? { ...row, chemistry: saved.chemistry } : row)));
     } catch (err) {
-      pendingBath.current.delete(item.id);
+      if (!pendingMatches(id, next) || grading.current.has(id) || finished.current.has(id)) return;
+      pendingBath.current.delete(id);
       setError(err instanceof Error ? err.message : "That frame can't be developed yet.");
     }
+  }
+
+  function pendingMatches(id: string, chemistry: Chemistry | null): boolean {
+    return pendingBath.current.has(id) && (pendingBath.current.get(id) ?? null) === chemistry;
   }
 
   async function publish(id: string) {
@@ -262,7 +276,6 @@ export function Lab({
           const state = cardState(item, now);
           const remaining = item.readyAt - now;
           const latent = !item.graded && state !== "sealed" && state !== "developed";
-          const bath = pushed(item.chemistry) ? item.chemistry : "default";
           return (
             <article className="lab-card" key={item.id} data-lab-state={state}>
               {state === "developed" ? (
@@ -319,7 +332,10 @@ export function Lab({
                       type="button"
                       data-develop={item.id}
                       disabled={busy === item.id}
-                      onClick={() => void (item.graded ? develop(item.id) : grade(item, bath))}
+                      onClick={() => {
+                        const chemistry = developBath(heldChemistry(pendingBath.current, item.id, item.chemistry));
+                        void (item.graded ? develop(item.id) : grade(item, chemistry));
+                      }}
                     >
                       {busy === item.id ? "Developing…" : "Develop ✨"}
                     </button>
@@ -388,9 +404,9 @@ function Bath({
 }: {
   item: LabItem;
   disabled: boolean;
-  onPick: (chemistry: Chemistry) => void;
+  onPick: (chemistry: ExtraChemistry) => void;
 }) {
-  const chosen = pushed(item.chemistry);
+  const chosen = isExtraChemistry(item.chemistry);
   const [open, setOpen] = useState(chosen);
 
   useEffect(() => {

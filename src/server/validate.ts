@@ -58,6 +58,15 @@ export function cleanChemistry(value: unknown): Chemistry | null {
   throw new HttpError(400, "That bath isn't one of ours.");
 }
 
+/** A named bath, or null when the shooter clears Daylight or Night. A missing bath is refused. */
+export function readChemistryChoice(body: Record<string, unknown>): Chemistry | null {
+  if (!("chemistry" in body)) throw new HttpError(400, "That bath isn't one of ours.");
+  if (body.chemistry === null) return null;
+  const chemistry = cleanChemistry(body.chemistry);
+  if (!chemistry) throw new HttpError(400, "That bath isn't one of ours.");
+  return chemistry;
+}
+
 export function cleanCapturedAt(value: unknown): number | null {
   if (typeof value !== "number" || !Number.isFinite(value)) return null;
   const now = Date.now();
