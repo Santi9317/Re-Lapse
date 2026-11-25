@@ -86,6 +86,8 @@ function pixel(img: { width: number; rgba: Buffer }, x: number, y: number) {
 test("a versioned shortcut path maps onto the approved file and nothing else", () => {
   assert.equal(shortcutIconDestination(`/icons/shortcut/${APP_VERSION}/apple-touch-icon.png`), "/icons/apple-touch-icon.png");
   assert.equal(shortcutIconDestination("/icons/shortcut/9.1/gate-512.png"), "/icons/gate-512.png");
+  assert.equal(shortcutIconDestination("/icons/shortcut/1.80.1/icon-192.png"), "/icons/icon-192.png");
+  assert.equal(shortcutIconDestination("/icons/shortcut/1.80.1.2/icon-192.png"), null);
   assert.equal(shortcutIconDestination("/icons/apple-touch-icon.png"), null);
   assert.equal(shortcutIconDestination("/icons/shortcut/1.57/other.png"), null);
   assert.equal(shortcutIconDestination("/icons/shortcut/1.57/../apple-touch-icon.png"), null);

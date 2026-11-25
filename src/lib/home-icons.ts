@@ -40,7 +40,7 @@ export function gateShortcutIcons(version: string) {
 
 /** Public file for a versioned shortcut icon, or null when the path is not one. */
 export function shortcutIconDestination(pathname: string): string | null {
-  const match = /^\/icons\/shortcut\/\d+\.\d+\/([a-z0-9.-]+\.png)$/.exec(pathname);
+  const match = /^\/icons\/shortcut\/\d+\.\d+(?:\.\d+)?\/([a-z0-9.-]+\.png)$/.exec(pathname);
   if (!match || !FILES.has(match[1])) return null;
   return `/icons/${match[1]}`;
 }

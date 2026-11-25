@@ -1,7 +1,7 @@
 {
-  "version": "1.80",
+  "version": "1.80.1",
   "notes": [
-    "A new booth keeps the same allowance for new cameras."
+    "The version counts a fix, a feature, or a breaking change."
   ],
   "icon": "0e6210f1bd3191d086e7c4deb1bb920768940cbf227f6f962125f415635d7665",
   "previousIcon": "0e6210f1bd3191d086e7c4deb1bb920768940cbf227f6f962125f415635d7665"
