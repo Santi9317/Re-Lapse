@@ -6,6 +6,7 @@ import { askToJoin, takeGateGuess } from "@/server/gate";
 import { GATE_GUESS_LIMIT } from "@/server/gate-key";
 import { HttpError } from "@/server/http";
 import { JOIN_LIMITS } from "@/server/join-line";
+import { MINT_LIMITS } from "@/server/mint";
 import { SHARED_PHONE } from "@/server/phone-budget";
 import { PIN_RESCUE_LIMIT, PIN_RESTORE_LIMIT } from "@/server/pin";
 import { requestRecovery } from "@/server/profile-pin";
@@ -26,6 +27,20 @@ async function ownPhone(): Promise<string> {
 async function phoneOf(booth: string): Promise<string> {
   const rows = await sql<{ phone: string }>(`select phone from issued_booths where id = $1`, [booth]);
   return String(rows[0]?.phone ?? "");
+}
+
+async function recentMints(phone: string): Promise<number> {
+  const rows = await sql<{ n: number }>(
+    `select count(*)::int as n
+     from camera_mints m
+     where m.created_at > now() - interval '10 minutes'
+       and exists (
+         select 1 from issued_booths b
+         where b.id = m.booth and b.phone = $1
+       )`,
+    [phone],
+  );
+  return Number(rows[0]?.n ?? 0);
 }
 
 /** A phone that already has its own id. A newly claimed booth does not get one. */
@@ -184,4 +199,24 @@ test("a new browser cannot mint booths or joins, and the right gate key still op
   const separate = await establishedPhone();
   const keptRight = await requestRecovery(separate, "048213", "PinAda");
   assert.equal(keptRight.ok, true);
+
+  const sharedBefore = await recentMints(SHARED_PHONE);
+  for (let i = sharedBefore; i < MINT_LIMITS.perPhone; i += 1) {
+    const booth = await ownPhone();
+    const cam = await issueCamera(null, null, booth);
+    assert.equal(cam.token.length > 0, true);
+  }
+  const spunMint = await ownPhone();
+  await assert.rejects(
+    () => issueCamera(null, null, spunMint),
+    (error: unknown) => error instanceof HttpError && error.status === 429 && /minute/.test(error.message),
+  );
+  const quietMint = await establishedPhone();
+  const keptMint = await issueCamera(null, null, quietMint);
+  assert.equal(keptMint.token.length > 0, true);
+  const stillShared = await ownPhone();
+  await assert.rejects(
+    () => issueCamera(null, null, stillShared),
+    (error: unknown) => error instanceof HttpError && error.status === 429 && /minute/.test(error.message),
+  );
 });
