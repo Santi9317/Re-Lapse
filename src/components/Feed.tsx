@@ -9,16 +9,20 @@ export function Feed({
   revision,
   refresh = 0,
   onOpenProfile,
+  onSeen,
 }: {
   revision: number;
   refresh?: number;
   onOpenProfile: (id: string) => void;
+  onSeen?: (photos: FeedItem[]) => void;
 }) {
   const [photos, setPhotos] = useState<FeedItem[]>([]);
   const [error, setError] = useState("");
   const [open, setOpen] = useState<FeedItem | null>(null);
   const removed = useRef(new Set<string>());
   const generation = useRef(0);
+  const onSeenRef = useRef(onSeen);
+  onSeenRef.current = onSeen;
 
   useEffect(() => {
     let stop = false;
@@ -34,6 +38,7 @@ export function Feed({
           return next.find((photo) => photo.id === current.id) ?? null;
         });
         setError("");
+        onSeenRef.current?.(next);
       } catch (err) {
         if (!stop && ticket === generation.current) setError(err instanceof Error ? err.message : "The lab didn't answer.");
       }

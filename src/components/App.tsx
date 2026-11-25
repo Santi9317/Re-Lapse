@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { adoptSavedProfile, devFlagStored, ensureCamera, fetchConfig, fetchLab, joinEvent } from "@/lib/api";
+import { adoptSavedProfile, devFlagStored, ensureCamera, fetchConfig, fetchFeed, fetchLab, joinEvent } from "@/lib/api";
+import { noteFeedLook } from "@/lib/feed-mark";
 import { restorePhone } from "@/lib/identity";
 import { shouldReloadOnPageSignal, shouldReloadOnTabChange, type MainTab } from "@/lib/refresh";
 import { isSafariUa } from "@/lib/shell";
-import type { EventRoll } from "@/lib/types";
+import type { EventRoll, FeedItem } from "@/lib/types";
 import { Feed } from "@/components/Feed";
 import { Lab } from "@/components/Lab";
 import { GuestProfile, Profile } from "@/components/Profile";
@@ -69,6 +70,7 @@ function CameraDesk() {
   const [feedRevision, setFeedRevision] = useState(0);
   const [labCount, setLabCount] = useState(0);
   const [labReady, setLabReady] = useState(false);
+  const [feedFresh, setFeedFresh] = useState(false);
   const [devTimers, setDevTimers] = useState(false);
   const [install, setInstall] = useState<InstallPrompt | null>(null);
   const [hideInstall, setHideInstall] = useState(true);
@@ -175,6 +177,49 @@ function CameraDesk() {
     };
   }, [tokenReady, labRevision, feedRevision, landed]);
 
+  useEffect(() => {
+    if (tokenReady === 0 || (tab === "feed" && !guestId)) return;
+    let stop = false;
+    async function pull() {
+      try {
+        const data = await fetchFeed();
+        if (stop) return;
+        setFeedFresh(
+          noteFeedLook({
+            storage: localStorage,
+            photos: data.photos.map((photo) => ({ mine: photo.mine, addedAt: photo.addedAt })),
+            feedVisible: false,
+            now: Date.now(),
+          }),
+        );
+      } catch {
+        /* the badge can wait */
+      }
+    }
+    void pull();
+    const id = window.setInterval(() => void pull(), 8000);
+    const onVis = () => {
+      if (document.visibilityState === "visible") void pull();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      stop = true;
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, [tokenReady, feedRevision, tab, guestId, landed]);
+
+  function sawFeed(photos: FeedItem[]) {
+    setFeedFresh(
+      noteFeedLook({
+        storage: localStorage,
+        photos: photos.map((photo) => ({ mine: photo.mine, addedAt: photo.addedAt })),
+        feedVisible: true,
+        now: Date.now(),
+      }),
+    );
+  }
+
   function dismissInstall() {
     localStorage.setItem("relapse.hideInstall", "1");
     setHideInstall(true);
@@ -221,7 +266,7 @@ function CameraDesk() {
             <GuestProfile id={guestId} refresh={landed} onBack={() => setGuestId(null)} />
           ) : (
             <>
-              {tab === "feed" ? <Feed revision={feedRevision} refresh={landed} onOpenProfile={setGuestId} /> : null}
+              {tab === "feed" ? <Feed revision={feedRevision} refresh={landed} onOpenProfile={setGuestId} onSeen={sawFeed} /> : null}
               {tab === "you" ? <Profile revision={feedRevision} refresh={landed} /> : null}
               {tab === "rolls" ? (
                 <Rolls
@@ -278,6 +323,7 @@ function CameraDesk() {
               {label}
               {id === "lab" && labReady ? <i className="dot" aria-label="Ready to develop" /> : null}
               {id === "lab" && !labReady && labCount > 0 ? <sup>{labCount}</sup> : null}
+              {id === "feed" && feedFresh ? <i className="dot" aria-label="New photos" /> : null}
             </button>
           ))}
         </nav>

@@ -50,7 +50,6 @@ export function Profile({ revision, refresh = 0 }: { revision: number; refresh?:
   const [typedHint, setTypedHint] = useState("");
   const [reading, setReading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [moreFrames, setMoreFrames] = useState(false);
   const [index, setIndex] = useState(0);
   const [openId, setOpenId] = useState<string | null>(null);
   const [galleries, setGalleries] = useState<GalleryCard[]>([]);
@@ -156,7 +155,6 @@ export function Profile({ revision, refresh = 0 }: { revision: number; refresh?:
     setTyped("");
     setTypedHint("");
     setFormError("");
-    setMoreFrames(false);
     setMode("edit");
   }
 
@@ -228,7 +226,6 @@ export function Profile({ revision, refresh = 0 }: { revision: number; refresh?:
         setActiveSlot(0);
         setTyped("");
         setTypedHint("");
-        setMoreFrames(false);
         setMode("edit");
       } else {
         setDraft((current) => ({ ...current, avatarDataUrl, avatarPhotoId: null, avatarUrl: null }));
@@ -269,6 +266,7 @@ export function Profile({ revision, refresh = 0 }: { revision: number; refresh?:
         <Gallery
           id={openGallery}
           refresh={refresh + revision}
+          place="profile"
           backLabel="Profile"
           onBack={() => setOpenGallery(null)}
           onChanged={() => {
@@ -325,14 +323,12 @@ export function Profile({ revision, refresh = 0 }: { revision: number; refresh?:
           typed={typed}
           typedHint={typedHint}
           reading={reading}
-          moreFrames={moreFrames}
           onDraft={setDraft}
           onSlot={setActiveSlot}
           onTyped={setTyped}
           onTypedHint={setTypedHint}
           onChoose={chooseEmoji}
           onFile={(file) => void onPortraitFile(file)}
-          onMore={() => setMoreFrames(true)}
           onBack={discardEdit}
           onSave={(event) => void onSave(event)}
           busy={saving}
@@ -503,7 +499,7 @@ function Portrait({ profile }: { profile: Profile }) {
 function FrameImage({ id, alt, missing }: { id: string; alt: string; missing: string }) {
   const [dead, setDead] = useState(false);
   if (dead) return <div className="gone-frame">{missing}</div>;
-  return <img src={`/api/photos/${id}/image`} alt={alt} onError={() => setDead(true)} />;
+  return <img src={`/api/photos/${id}/image`} alt={alt} draggable={false} onError={() => setDead(true)} />;
 }
 
 function Carousel({
@@ -626,14 +622,12 @@ function ProfileEditor({
   typed,
   typedHint,
   reading,
-  moreFrames,
   onDraft,
   onSlot,
   onTyped,
   onTypedHint,
   onChoose,
   onFile,
-  onMore,
   onBack,
   onSave,
   busy,
@@ -646,21 +640,18 @@ function ProfileEditor({
   typed: string;
   typedHint: string;
   reading: boolean;
-  moreFrames: boolean;
   onDraft: (profile: Profile) => void;
   onSlot: (slot: number) => void;
   onTyped: (value: string) => void;
   onTypedHint: (value: string) => void;
   onChoose: (emoji: string) => void;
   onFile: (file: File | undefined) => void;
-  onMore: () => void;
   onBack: () => void;
   onSave: (event: FormEvent) => void;
   busy: boolean;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const nameRef = useRef<HTMLInputElement>(null);
-  const frames = moreFrames ? photos : photos.slice(0, 12);
   const ready = profileReady(draft);
 
   useEffect(() => {
@@ -745,8 +736,8 @@ function ProfileEditor({
         <p className="fine">Nothing shared yet. Develop a frame and send it, or use a photo from this device.</p>
       ) : (
         <>
-          <div className="pick-grid" role="group" aria-label="Frames for your profile photo">
-            {frames.map((photo) => {
+          <div className="photo-strip pick-grid" data-photo-strip="profile-frames" role="group" aria-label="Frames for your profile photo">
+            {photos.map((photo) => {
               const selected = draft.avatarPhotoId === photo.id && !draft.avatarDataUrl;
               const label = photo.caption.trim() || "Untitled frame";
               return (
@@ -764,16 +755,11 @@ function ProfileEditor({
                     })
                   }
                 >
-                  <img src={`/api/photos/${photo.id}/image`} alt="" />
+                  <img src={`/api/photos/${photo.id}/image`} alt="" draggable={false} />
                 </button>
               );
             })}
           </div>
-          {!moreFrames && photos.length > 12 ? (
-            <button className="ghost" type="button" onClick={onMore}>
-              More frames
-            </button>
-          ) : null}
         </>
       )}
 
@@ -874,13 +860,13 @@ function StripArranger({
       {ids.length === 0 ? (
         <p className="fine">Nothing on the strip yet.</p>
       ) : (
-        <ol className="order-list">
+        <ol className="photo-strip order-list" data-photo-strip="order" aria-label="The strip">
           {ids.map((id, position) => {
             const label = captionFor(id, photos);
             return (
               <li
                 key={id}
-                className={`order-row${over === position ? " is-over" : ""}`}
+                className={`photo-strip-card${over === position ? " is-over" : ""}`}
                 onDragOver={(event) => {
                   event.preventDefault();
                   setOver(position);
@@ -943,7 +929,7 @@ function StripArranger({
           <p>You haven't shared a frame yet.</p>
         </div>
       ) : (
-        <div className="pick-grid">
+        <div className="photo-strip pick-grid" data-photo-strip="add-frame" role="group" aria-label="Add a frame">
           {ownPhotos.map((photo) => {
             const selected = chosen.has(photo.id);
             const position = ids.indexOf(photo.id);
@@ -963,7 +949,7 @@ function StripArranger({
                 }
                 onClick={() => onToggle(photo.id)}
               >
-                <img src={`/api/photos/${photo.id}/image`} alt="" />
+                <img src={`/api/photos/${photo.id}/image`} alt="" draggable={false} />
                 {selected ? <span className="pick-badge">{position + 1}</span> : null}
               </button>
             );
@@ -1061,6 +1047,7 @@ export function GuestProfile({
       <Gallery
         id={openGallery}
         refresh={refresh}
+        place="profile"
         backLabel="Profile"
         onBack={() => setOpenGallery(null)}
         onChanged={() => {
