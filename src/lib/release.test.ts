@@ -23,7 +23,7 @@ test("this publish carries the same notes the camera can show", () => {
   assert.deepEqual(publishedReleaseFromJson(release), { version: APP_VERSION, notes: [...RELEASE_NOTES] });
   const notes = RELEASE_NOTES.join("\n");
   const lower = notes.toLowerCase();
-  assert.match(notes, /Tapping the empty profile photo adds a photo\./);
+  assert.match(notes, /A mark on Feed when someone else adds a photo\./);
   assert.equal(/iphone|safari|android|deploy|pull request|\blab\b|\bsanti\b|\bmaker\b/.test(lower), false);
   for (const line of RELEASE_NOTES) assert.ok(line.length > 0 && line.length <= 140);
   const install = sw.slice(sw.indexOf('addEventListener("install"'), sw.indexOf('addEventListener("message"'));

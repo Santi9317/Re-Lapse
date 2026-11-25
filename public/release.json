@@ -1,6 +1,6 @@
 {
-  "version": "1.57",
+  "version": "1.61",
   "notes": [
-    "Tapping the empty profile photo adds a photo."
+    "A mark on Feed when someone else adds a photo."
   ]
 }
