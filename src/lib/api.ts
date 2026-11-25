@@ -47,11 +47,11 @@ function clearReadableCameraCookie() {
   document.cookie = "relapse.shooter=; Path=/; Max-Age=0; SameSite=Lax";
 }
 
-function rememberCamera(token: string) {
+function rememberCamera(token: string, snapshot = true) {
   localStorage.setItem(TOKEN_KEY, token);
   dropLegacyProof();
   clearReadableCameraCookie();
-  void snapshotPhone();
+  if (snapshot) void snapshotPhone();
 }
 
 function dropLegacyProof() {
@@ -299,7 +299,38 @@ export async function requestRecovery(name: string, pin: string): Promise<{ stat
   return { status: data.status, name: typeof data.name === "string" ? data.name : "" };
 }
 
-export async function fetchRescue(): Promise<{ status: GateStatus; name: string } | null> {
+/**
+ * The accepted rescue already sealed this phone's camera cookie.
+ * Copy that camera into local storage. The token already stored here is sent
+ * along, so a missing cookie cannot mint a new camera.
+ */
+async function installRecoveredCamera(): Promise<void> {
+  const existing = shooterToken();
+  const requestHeaders: Record<string, string> = {};
+  if (existing) requestHeaders["x-shooter-token"] = existing;
+  const response = await fetchWithBooth("/api/camera", {
+    method: "POST",
+    cache: "no-store",
+    credentials: "same-origin",
+    headers: Object.keys(requestHeaders).length > 0 ? requestHeaders : undefined,
+  });
+  const data = (await response.json().catch(() => null)) as { token?: string; error?: string } | null;
+  if (!response.ok || !data?.token || !UUID.test(data.token)) {
+    throw new Error(data?.error || "The lab didn't answer.");
+  }
+  rememberCamera(data.token, false);
+  issuing = Promise.resolve(data.token);
+}
+
+/**
+ * Read the rescue this phone asked for.
+ * `replaceDevice` is the You menu. An accepted rescue has already sealed this
+ * phone's camera. The profile stored for the previous one is dropped, then the
+ * recovered profile is kept when it is ready. The gate leaves this off.
+ */
+export async function fetchRescue(options?: {
+  replaceDevice?: boolean;
+}): Promise<{ status: GateStatus; name: string } | null> {
   const response = await fetch("/api/gate/pin", { cache: "no-store", credentials: "same-origin" });
   const data = (await response.json().catch(() => null)) as {
     status?: string;
@@ -315,7 +346,9 @@ export async function fetchRescue(): Promise<{ status: GateStatus; name: string 
     throw new Error(data?.error || "The lab didn't answer.");
   }
   if (data.status === "accepted") {
-    await ensureCamera();
+    if (options?.replaceDevice) await installRecoveredCamera();
+    else await ensureCamera();
+    if (options?.replaceDevice) await clearStoredProfile();
     if (data.profile) {
       try {
         const saved = profileFromServer(data.profile);
