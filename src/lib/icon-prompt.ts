@@ -10,7 +10,7 @@
 export const APP_ICON_FILES = ["apple-touch-icon.png", "icon-192.png", "icon-512.png"] as const;
 
 export const ICON_DIGEST = "0e6210f1bd3191d086e7c4deb1bb920768940cbf227f6f962125f415635d7665";
-export const PREVIOUS_ICON_DIGEST = "42097b791bcab9389e7d97de7174e3e42c4e85f5ec406ca82f8ceb149b32ad48";
+export const PREVIOUS_ICON_DIGEST = "0e6210f1bd3191d086e7c4deb1bb920768940cbf227f6f962125f415635d7665";
 
 export const ICON_PROMPT_KICKER = "Home Screen";
 export const ICON_PROMPT_TITLE = "Save the shortcut to the Home Screen again so the new icon appears.";

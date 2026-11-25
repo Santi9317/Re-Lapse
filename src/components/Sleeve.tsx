@@ -5,11 +5,12 @@ import { fetchRecoveryPin } from "@/lib/api";
 import { HOW_TO } from "@/lib/howto";
 import { pickQuote, type Quote } from "@/lib/quotes";
 import { APP_VERSION } from "@/lib/release";
+import { AccountRescue } from "@/components/AccountRescue";
 import { groupedPin, RecoveryPinPanel } from "@/components/RecoveryPin";
 
 const LAST_KEY = "relapse.inspiration";
 
-type Panel = "menu" | "version" | "howto" | "inspiration" | "recovery";
+type Panel = "menu" | "version" | "howto" | "inspiration" | "recovery" | "account";
 
 function readLast(): string | null {
   try {
@@ -92,7 +93,9 @@ export function Sleeve() {
           ? "How To"
           : panel === "recovery"
             ? "Recovery PIN"
-            : "Inspiration";
+            : panel === "account"
+              ? "Recover an account"
+              : "Inspiration";
 
   return (
     <div className="sleeve" role="dialog" aria-modal="true" aria-label={title} data-sleeve-panel={panel}>
@@ -118,6 +121,10 @@ export function Sleeve() {
             <span className={recoveryPin ? "recovery-menu-pin" : undefined}>
               {recoveryPin ? groupedPin(recoveryPin) : recoverySet ? "A PIN is set." : "You don't have one yet."}
             </span>
+          </button>
+          <button type="button" data-sleeve-item="account" onClick={() => setPanel("account")}>
+            <strong>Recover an account</strong>
+            <span>Name and PIN. It replaces the profile on this phone.</span>
           </button>
         </div>
       ) : null}
@@ -154,6 +161,7 @@ export function Sleeve() {
           }}
         />
       ) : null}
+      {panel === "account" ? <AccountRescue /> : null}
       {panel === "inspiration" ? (
         <div className="sleeve-copy" data-inspiration>
           <h2 className="section">Inspiration</h2>
