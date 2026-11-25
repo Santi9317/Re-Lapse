@@ -1,4 +1,5 @@
-import { adoptBooth } from "@/server/booth";
+import { BOOTH_HANDOFF } from "@/lib/booth-handoff";
+import { prepareBooth } from "@/server/booth";
 import { json, readBooth, sealBooth, sealCamera, toErrorResponse } from "@/server/http";
 import { cameraRenewal } from "@/server/camera-renew";
 import { cameraProof, issueCamera, provenCamera } from "@/server/quota";
@@ -21,7 +22,9 @@ export async function POST(request: Request) {
     if (choice === "hold") {
       return sealBooth(json({ error: "This phone still has its camera." }, 401), request, booth);
     }
-    booth = await adoptBooth(booth);
+    const pass = await prepareBooth(booth);
+    if (pass.shared) return sealBooth(json({ error: BOOTH_HANDOFF }, 409), request, pass.id);
+    booth = pass.id;
     const issued = await issueCamera(null, null, booth);
     const response = sealCamera(json({ token: issued.token }), request, issued.token, issued.proof);
     return sealBooth(response, request, booth);

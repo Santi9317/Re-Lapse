@@ -88,10 +88,11 @@ export async function requestToJoin(name: string): Promise<{ status: GateStatus;
   const headers: Record<string, string> = { "content-type": "application/json" };
   const token = shooterToken();
   if (token) headers["x-shooter-token"] = token;
-  const response = await fetch("/api/gate", {
+  const response = await fetchWithBooth("/api/gate", {
     method: "POST",
     headers,
     cache: "no-store",
+    credentials: "same-origin",
     body: JSON.stringify({ name }),
   });
   const data = (await response.json().catch(() => null)) as {
@@ -124,6 +125,18 @@ export function shooterToken(): string {
 
 let issuing: Promise<string> | null = null;
 
+const BOOTH_HANDOFF = "Open the camera again.";
+
+async function fetchWithBooth(input: string, init: RequestInit): Promise<Response> {
+  let response = await fetch(input, init);
+  for (let extra = 0; extra < 2 && response.status === 409; extra += 1) {
+    const peek = (await response.clone().json().catch(() => null)) as { error?: string } | null;
+    if (peek?.error !== BOOTH_HANDOFF) break;
+    response = await fetch(input, init);
+  }
+  return response;
+}
+
 export function ensureCamera(): Promise<string> {
   if (!issuing) {
     issuing = requestCamera().catch((error: unknown) => {
@@ -139,7 +152,7 @@ async function requestCamera(): Promise<string> {
   const existing = shooterToken();
   const headers: Record<string, string> = {};
   if (existing) headers["x-shooter-token"] = existing;
-  const response = await fetch("/api/camera", {
+  const response = await fetchWithBooth("/api/camera", {
     method: "POST",
     cache: "no-store",
     credentials: "same-origin",
@@ -272,7 +285,7 @@ export async function saveRecoveryPin(pin: string): Promise<void> {
 }
 
 export async function requestRecovery(name: string, pin: string): Promise<{ status: GateStatus; name: string }> {
-  const response = await fetch("/api/gate/pin", {
+  const response = await fetchWithBooth("/api/gate/pin", {
     method: "POST",
     headers: { "content-type": "application/json" },
     cache: "no-store",

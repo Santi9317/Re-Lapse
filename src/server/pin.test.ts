@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { PIN_RESTORE_LIMIT, normalizePin, pinRestoreOpen, profilePinHash } from "./pin.ts";
+import { PIN_RESCUE_LIMIT, PIN_RESTORE_LIMIT, normalizePin, pinRestoreDecision, pinRestoreOpen, profilePinHash, rescueRoom } from "./pin.ts";
 
 test("a profile PIN is six digits", () => {
   assert.equal(normalizePin("048213"), "048213");
@@ -14,11 +14,23 @@ test("a profile PIN is six digits", () => {
   assert.equal(normalizePin(""), null);
 });
 
-test("PIN checks share one short run, and a new browser does not reset it", () => {
+test("a run of wrong PINs stays shut, and the right PIN still opens", () => {
   assert.equal(pinRestoreOpen(0), true);
   assert.equal(pinRestoreOpen(PIN_RESTORE_LIMIT - 1), true);
   assert.equal(pinRestoreOpen(PIN_RESTORE_LIMIT), false);
   assert.equal(pinRestoreOpen(Number.NaN), false);
+  assert.equal(pinRestoreDecision(false, 0), "wrong");
+  assert.equal(pinRestoreDecision(false, PIN_RESTORE_LIMIT - 1), "wrong");
+  assert.equal(pinRestoreDecision(false, PIN_RESTORE_LIMIT), "blocked");
+  assert.equal(pinRestoreDecision(true, PIN_RESTORE_LIMIT), "ok");
+  assert.equal(pinRestoreDecision(true, Number.NaN), "ok");
+});
+
+test("each phone has its own rescue window", () => {
+  assert.equal(rescueRoom(0), true);
+  assert.equal(rescueRoom(PIN_RESCUE_LIMIT - 1), true);
+  assert.equal(rescueRoom(PIN_RESCUE_LIMIT), false);
+  assert.equal(rescueRoom(Number.NaN), false);
 });
 
 test("the stored PIN is not the digits", () => {

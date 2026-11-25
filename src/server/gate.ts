@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { sql, withTransaction, type Sql } from "@/lib/db";
 import { HttpError } from "@/server/http";
-import { adoptBooth } from "@/server/booth";
+import { BOOTH_HANDOFF } from "@/lib/booth-handoff";
+import { prepareBooth } from "@/server/booth";
 import { gateCookie, gateGuessDecision, gateSecret, sameSecret } from "@/server/gate-key";
 import { JOIN_LIMITS, joinAllowed } from "@/server/join-line";
 import { decideRecoveryRequest } from "@/server/profile-pin";
@@ -107,7 +108,9 @@ export async function askToJoin(request: Request, name: string, booth: string): 
         booth: keptBooth(booth),
       };
     }
-    const boothId = await adoptBooth(booth);
+    const pass = await prepareBooth(booth);
+    if (pass.shared) throw new HttpError(409, BOOTH_HANDOFF, pass.id);
+    const boothId = pass.id;
     await withTransaction(async (q) => {
       await lockJoinLine(q);
       const again = await q<{ camera_token: string }>(
@@ -127,7 +130,9 @@ export async function askToJoin(request: Request, name: string, booth: string): 
     return { token: known, proof: await cameraProof(known), status: row.status, name: row.name, booth: boothId };
   }
 
-  const boothId = await adoptBooth(booth);
+  const pass = await prepareBooth(booth);
+  if (pass.shared) throw new HttpError(409, BOOTH_HANDOFF, pass.id);
+  const boothId = pass.id;
   const reserved = await withTransaction(async (q) => {
     await lockJoinLine(q);
     const pending = await q<{ camera_token: string }>(
