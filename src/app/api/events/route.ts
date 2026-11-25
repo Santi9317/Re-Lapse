@@ -24,6 +24,7 @@ export async function POST(request: Request) {
       wantsDevClock(request.headers.get("x-relapse-dev")),
       token,
       readProof(request),
+      body.startsAt,
     );
     return json(event, 201);
   } catch (error) {
