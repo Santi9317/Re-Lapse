@@ -1,5 +1,5 @@
 {
-  "version": "1.75",
+  "version": "1.76",
   "notes": [
     "Adding the camera walks through the Home Screen steps.",
     "The Home Screen shortcut stays unless the icon changes."
