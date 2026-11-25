@@ -1,8 +1,8 @@
 import type { Sql } from "@/lib/db";
 
 /**
- * Booths that have not been given their own phone share this one.
- * A new booth stores the same phone, so the count does not start over.
+ * The booth nobody has claimed yet. It is only the handoff.
+ * A claimed booth keeps its own id, so one phone cannot spend another's allowance.
  */
 export const SHARED_PHONE = "anonymous";
 

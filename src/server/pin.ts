@@ -1,13 +1,24 @@
 import { createHmac } from "node:crypto";
 
-/** Wrong PIN checks for one phone. A new booth on that phone keeps the count. */
+/** Wrong PIN checks for one phone. Another phone has its own count. */
 export const PIN_RESTORE_LIMIT = 8;
 
-/** Rescue requests for one phone. A new booth on that phone keeps the window. */
+/** Wrong PIN checks for every phone together, so new phones stay bounded. */
+export const PIN_RESTORE_LAB = 64;
+
+/** Rescue requests for one phone. Another phone has its own window. */
 export const PIN_RESCUE_LIMIT = 8;
+
+/** Rescue requests for every phone together, so new phones stay bounded. */
+export const PIN_RESCUE_LAB = 40;
 
 export function pinRestoreOpen(recentChecks: number): boolean {
   return Number.isFinite(recentChecks) && recentChecks >= 0 && recentChecks < PIN_RESTORE_LIMIT;
+}
+
+/** Whether the ceiling across every phone still allows another miss. */
+export function labPinOpen(recentChecks: number): boolean {
+  return Number.isFinite(recentChecks) && recentChecks >= 0 && recentChecks < PIN_RESTORE_LAB;
 }
 
 /**
@@ -23,6 +34,11 @@ export function pinRestoreDecision(matches: boolean, recentChecks: number): "ok"
 /** Whether this phone may file another rescue. Another phone is a different count. */
 export function rescueRoom(ownRecent: number): boolean {
   return Number.isFinite(ownRecent) && ownRecent >= 0 && ownRecent < PIN_RESCUE_LIMIT;
+}
+
+/** Whether any phone may file another rescue. A full ceiling blocks a new phone too. */
+export function rescueLabRoom(labRecent: number): boolean {
+  return Number.isFinite(labRecent) && labRecent >= 0 && labRecent < PIN_RESCUE_LAB;
 }
 
 /** A profile PIN is six digits, including leading zeros. Spaces are not part of it. */

@@ -9,8 +9,8 @@ import { isUuid, readCameraAuth } from "@/server/validate";
  * Each camera has its own photo, roll, event, profile, and invite window.
  * One camera cannot spend another's. A brand-new id is written to
  * camera_mints before any proof is returned. New ids are counted for the
- * phone that asked. A new booth on that phone does not open another window.
- * Another phone's window does not close this one.
+ * phone that asked. Another phone's window does not close this one.
+ * The whole lab also has a ceiling, so new phones cannot mint without a bound.
  * Unclaimed ids past a keep count are dropped. The proof lives
  * in the httpOnly cookie. Sending an id without that cookie does not reveal the proof and
  * does not authorize the camera. Asking again with the cookie does not
@@ -150,6 +150,11 @@ export async function issueCamera(
      where (select phone from budget) is not null
        and (
          select count(*)::int
+         from camera_mints
+         where created_at > now() - ($3::int * interval '1 millisecond')
+       ) < $5::int
+       and (
+         select count(*)::int
          from camera_mints m
          where m.created_at > now() - ($3::int * interval '1 millisecond')
            and exists (
@@ -158,7 +163,7 @@ export async function issueCamera(
            )
        ) < $4::int
      returning token`,
-    [token, boothId, MINT_WINDOW_MS, MINT_LIMITS.perPhone],
+    [token, boothId, MINT_WINDOW_MS, MINT_LIMITS.perPhone, MINT_LIMITS.labWindow],
   );
   const issued = minted[0]?.token;
   if (!issued) throw new HttpError(429, "This phone needs a minute. Try again shortly.");

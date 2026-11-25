@@ -1,12 +1,13 @@
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import { sql, withTransaction, type Sql } from "@/lib/db";
 import { budgetPhone } from "@/server/phone-budget";
-import { pinRestoreDecision, rescueRoom } from "@/server/pin";
+import { labPinOpen, pinRestoreDecision, rescueLabRoom, rescueRoom } from "@/server/pin";
 import { hashProfilePin } from "@/server/quota";
 import { isUuid } from "@/server/validate";
 
 const WINDOW_MS = 15 * 60_000;
 const RESCUE_WINDOW_MS = 10 * 60_000;
+const LAB_PIN = "pin-lab";
 
 function countOf(value: unknown): number {
   return typeof value === "number" ? value : Number(value ?? 0);
@@ -81,10 +82,9 @@ export type RescueAsk =
 /**
  * A matching name and PIN open a request. They do not open the camera.
  * The match is decided before a miss is counted, so another phone cannot hold
- * this one shut. Wrong guesses stay on the phone, and so does the rescue
- * window. A new booth on that phone keeps both, so dropping the cookie does
- * not start over. A booth that already has its own phone keeps that window.
- * Zero matches and several matches look the same.
+ * this one shut. Wrong guesses stay on this phone, and so does the rescue
+ * window. Another phone keeps its own counts. A ceiling across every phone
+ * still bounds new phones. Zero matches and several matches look the same.
  */
 export async function requestRecovery(booth: string, pin: string, name: string): Promise<RescueAsk> {
   if (!isUuid(booth)) return { ok: false, reason: "blocked" };
@@ -128,7 +128,15 @@ export async function requestRecovery(booth: string, pin: string, name: string):
            )`,
         [phone, RESCUE_WINDOW_MS],
       );
-      if (!rescueRoom(countOf(recent[0]?.n))) return { ok: false, reason: "blocked" };
+      const labRescues = await q<{ n: number }>(
+        `select count(*)::int as n
+         from recovery_requests
+         where created_at > now() - ($1::int * interval '1 millisecond')`,
+        [RESCUE_WINDOW_MS],
+      );
+      if (!rescueRoom(countOf(recent[0]?.n)) || !rescueLabRoom(countOf(labRescues[0]?.n))) {
+        return { ok: false, reason: "blocked" };
+      }
       const id = randomUUID();
       await q(
         `insert into recovery_requests (id, camera_token, booth, status) values ($1, $2, $3, 'pending')`,
@@ -136,9 +144,12 @@ export async function requestRecovery(booth: string, pin: string, name: string):
       );
       return { ok: true, id, name: String(row.username), status: "pending" };
     }
+    const lab = await lockPinClient(q, LAB_PIN, WINDOW_MS);
+    if (!labPinOpen(lab.recent)) return { ok: false, reason: "blocked" };
     const budget = await lockPinClient(q, phone, WINDOW_MS);
     if (pinRestoreDecision(false, budget.recent) === "blocked") return { ok: false, reason: "blocked" };
     await markPinClient(q, phone, budget);
+    await markPinClient(q, LAB_PIN, lab);
     return { ok: false, reason: "wrong" };
   });
 }

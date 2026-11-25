@@ -8,7 +8,7 @@ import { HttpError } from "@/server/http";
 import { JOIN_LIMITS } from "@/server/join-line";
 import { MINT_LIMITS } from "@/server/mint";
 import { SHARED_PHONE } from "@/server/phone-budget";
-import { PIN_RESCUE_LIMIT, PIN_RESTORE_LIMIT } from "@/server/pin";
+import { PIN_RESTORE_LIMIT } from "@/server/pin";
 import { requestRecovery } from "@/server/profile-pin";
 import { hashProfilePin, issueCamera } from "@/server/quota";
 import { sql } from "@/lib/db";
@@ -16,11 +16,12 @@ import { sql } from "@/lib/db";
 async function ownPhone(): Promise<string> {
   const open = await prepareBooth("");
   assert.equal(open.shared, true);
+  assert.equal(await phoneOf(open.id), SHARED_PHONE);
   const owned = await prepareBooth(open.id);
   assert.equal(owned.shared, false);
   assert.equal(owned.fresh, true);
   assert.notEqual(owned.id, open.id);
-  assert.equal(await phoneOf(owned.id), SHARED_PHONE);
+  assert.equal(await phoneOf(owned.id), owned.id);
   return owned.id;
 }
 
@@ -29,25 +30,9 @@ async function phoneOf(booth: string): Promise<string> {
   return String(rows[0]?.phone ?? "");
 }
 
-async function recentMints(phone: string): Promise<number> {
-  const rows = await sql<{ n: number }>(
-    `select count(*)::int as n
-     from camera_mints m
-     where m.created_at > now() - interval '10 minutes'
-       and exists (
-         select 1 from issued_booths b
-         where b.id = m.booth and b.phone = $1
-       )`,
-    [phone],
-  );
-  return Number(rows[0]?.n ?? 0);
-}
-
-/** A phone that already has its own id. A newly claimed booth does not get one. */
+/** A claimed booth. Its phone is its own id. */
 async function establishedPhone(): Promise<string> {
-  const id = await ownPhone();
-  await sql(`update issued_booths set phone = id where id = $1`, [id]);
-  return id;
+  return ownPhone();
 }
 
 function cameraRequest(token: string, proof: string, booth = ""): Request {
@@ -95,10 +80,9 @@ test("a new browser cannot mint booths or joins, and the right gate key still op
 
   const rotated = await ownPhone();
   const rotatedCam = await issueCamera(null, null, rotated);
-  await assert.rejects(
-    () => askToJoin(cameraRequest(rotatedCam.token, rotatedCam.proof, rotated), "Ada", rotated),
-    (error: unknown) => error instanceof HttpError && error.status === 429 && /minute/.test(error.message),
-  );
+  const rotatedJoin = await askToJoin(cameraRequest(rotatedCam.token, rotatedCam.proof, rotated), "Ada", rotated);
+  assert.equal(rotatedJoin.status, "pending");
+  assert.equal(rotatedJoin.token, rotatedCam.token);
 
   const quiet = await establishedPhone();
   const member = await issueCamera(null, null, quiet);
@@ -157,66 +141,52 @@ test("a new browser cannot mint booths or joins, and the right gate key still op
     [randomUUID(), owner],
   );
 
+  const guessing = await ownPhone();
   for (let i = 0; i < PIN_RESTORE_LIMIT; i += 1) {
-    const miss = await requestRecovery(await ownPhone(), "000000", "PinAda");
+    const miss = await requestRecovery(guessing, "000000", "PinAda");
     assert.equal(miss.ok, false);
     if (!miss.ok) assert.equal(miss.reason, "wrong");
   }
-  const anonShut = await requestRecovery(await ownPhone(), "111111", "PinAda");
-  assert.equal(anonShut.ok, false);
-  if (!anonShut.ok) assert.equal(anonShut.reason, "blocked");
-  const freshRight = await requestRecovery(await ownPhone(), "048213", "PinAda");
-  assert.equal(freshRight.ok, true);
-
-  const noisy = await establishedPhone();
-  for (let i = 0; i < PIN_RESTORE_LIMIT; i += 1) {
-    const miss = await requestRecovery(noisy, "222222", "PinAda");
-    assert.equal(miss.ok, false);
-    if (!miss.ok) assert.equal(miss.reason, "wrong");
-  }
-  const ownShut = await requestRecovery(noisy, "333333", "PinAda");
+  const ownShut = await requestRecovery(guessing, "111111", "PinAda");
   assert.equal(ownShut.ok, false);
   if (!ownShut.ok) assert.equal(ownShut.reason, "blocked");
-  const ownRight = await requestRecovery(noisy, "048213", "PinAda");
-  assert.equal(ownRight.ok, true);
-  const spun = await requestRecovery(await ownPhone(), "444444", "PinAda");
-  assert.equal(spun.ok, false);
-  if (!spun.ok) assert.equal(spun.reason, "blocked");
-  const neighbor = await requestRecovery(await establishedPhone(), "555555", "PinAda");
-  assert.equal(neighbor.ok, false);
-  if (!neighbor.ok) assert.equal(neighbor.reason, "wrong");
+  const neighborMiss = await requestRecovery(await ownPhone(), "222222", "PinAda");
+  assert.equal(neighborMiss.ok, false);
+  if (!neighborMiss.ok) assert.equal(neighborMiss.reason, "wrong");
+  const neighborRight = await requestRecovery(await ownPhone(), "048213", "PinAda");
+  assert.equal(neighborRight.ok, true);
 
-  for (let i = 0; i < PIN_RESCUE_LIMIT - 1; i += 1) {
-    const opened = await requestRecovery(await ownPhone(), "048213", "PinAda");
-    assert.equal(opened.ok, true);
-  }
-  const rescueShut = await requestRecovery(await ownPhone(), "048213", "PinAda");
-  assert.equal(rescueShut.ok, false);
-  if (!rescueShut.ok) assert.equal(rescueShut.reason, "blocked");
-  const keptShut = await requestRecovery(await ownPhone(), "048213", "PinAda");
-  assert.equal(keptShut.ok, false);
-  if (!keptShut.ok) assert.equal(keptShut.reason, "blocked");
-  const separate = await establishedPhone();
-  const keptRight = await requestRecovery(separate, "048213", "PinAda");
-  assert.equal(keptRight.ok, true);
+  const rescuer = await ownPhone();
+  const firstRescue = await requestRecovery(rescuer, "048213", "PinAda");
+  assert.equal(firstRescue.ok, true);
+  const sameRescue = await requestRecovery(rescuer, "048213", "PinAda");
+  assert.equal(sameRescue.ok, true);
+  const otherRescue = await requestRecovery(await ownPhone(), "048213", "PinAda");
+  assert.equal(otherRescue.ok, true);
 
-  const sharedBefore = await recentMints(SHARED_PHONE);
-  for (let i = sharedBefore; i < MINT_LIMITS.perPhone; i += 1) {
-    const booth = await ownPhone();
-    const cam = await issueCamera(null, null, booth);
+  const miner = await ownPhone();
+  for (let i = 0; i < MINT_LIMITS.perPhone; i += 1) {
+    const cam = await issueCamera(null, null, miner);
     assert.equal(cam.token.length > 0, true);
   }
-  const spunMint = await ownPhone();
   await assert.rejects(
-    () => issueCamera(null, null, spunMint),
+    () => issueCamera(null, null, miner),
     (error: unknown) => error instanceof HttpError && error.status === 429 && /minute/.test(error.message),
   );
-  const quietMint = await establishedPhone();
-  const keptMint = await issueCamera(null, null, quietMint);
-  assert.equal(keptMint.token.length > 0, true);
-  const stillShared = await ownPhone();
+  const otherMiner = await ownPhone();
+  const otherCam = await issueCamera(null, null, otherMiner);
+  assert.equal(otherCam.token.length > 0, true);
+
+  const counted = await sql<{ n: number }>(
+    `select count(*)::int as n from camera_mints where created_at > now() - interval '10 minutes'`,
+  );
+  const haveMints = Number(counted[0]?.n ?? 0);
+  for (let i = haveMints; i < MINT_LIMITS.labWindow; i += 1) {
+    await sql(`insert into camera_mints (token, created_at, booth) values ($1, now(), $2)`, [randomUUID(), miner]);
+  }
+  const labFull = await ownPhone();
   await assert.rejects(
-    () => issueCamera(null, null, stillShared),
+    () => issueCamera(null, null, labFull),
     (error: unknown) => error instanceof HttpError && error.status === 429 && /minute/.test(error.message),
   );
 });
