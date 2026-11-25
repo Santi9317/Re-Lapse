@@ -25,6 +25,7 @@ test("this publish carries the same notes the camera can show", () => {
     [...RELEASE_NOTES],
     [
       "The home screen asks once to show the icon count, and remembers the answer.",
+      "General, in the You menu, shows that choice and lets you change it.",
     ],
   );
   const notes = RELEASE_NOTES.join("\n");
