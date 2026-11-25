@@ -2,7 +2,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { devClockRequested, eventTimes, FEED_DAYS, personalReadyAt } from "@/lib/clock";
 import { sql, withTransaction } from "@/lib/db";
 import { CAROUSEL_LIMIT, isEmoji } from "@/lib/profile";
-import type { Album, AlbumDetail, Chemistry, EventDetail, EventRoll, EventStatus, FeedItem, FrameSticker, GalleryCard, LabItem, LabState, ProfilePatch, RollMember, SharedProfile } from "@/lib/types";
+import type { Album, AlbumDetail, Chemistry, EventDetail, EventRoll, EventStatus, FeedItem, FrameComment, FrameSticker, GalleryCard, LabItem, LabState, ProfilePatch, RollMember, SharedProfile } from "@/lib/types";
 import { HttpError } from "@/server/http";
 import { assertCreateAllowed, assertJoinAllowed, claimCamera, noteCreate } from "@/server/quota";
 import { cleanJpeg } from "@/server/validate";
@@ -108,7 +108,8 @@ async function runReclaim(preserveToken?: string): Promise<void> {
        and not exists (select 1 from photos ph where ph.shooter_token = p.shooter_token)
        and not exists (select 1 from albums a where a.owner_token = p.shooter_token)
        and not exists (select 1 from events e where e.owner_token = p.shooter_token)
-       and not exists (select 1 from stickers s where s.shooter_token = p.shooter_token)`,
+       and not exists (select 1 from stickers s where s.shooter_token = p.shooter_token)
+       and not exists (select 1 from frame_notes n where n.shooter_token = p.shooter_token)`,
   );
   await sql(`delete from create_log where created_at < now() - interval '2 hours'`);
   await sql(`delete from camera_mints where created_at < now() - interval '30 days'`);
@@ -150,6 +151,7 @@ async function runReclaim(preserveToken?: string): Promise<void> {
        and not exists (select 1 from events e where e.owner_token = c.token)
        and not exists (select 1 from profiles r where r.shooter_token = c.token)
        and not exists (select 1 from stickers s where s.shooter_token = c.token)
+       and not exists (select 1 from frame_notes n where n.shooter_token = c.token)
        and not exists (select 1 from join_requests j where j.camera_token = c.token)`,
   );
 }
@@ -393,6 +395,7 @@ function feedItem(row: Record<string, unknown>): FeedItem {
       : null,
     profileAvatar: flag(row.has_avatar),
     stickers: [],
+    comments: [],
     onFeed: flag(row.on_feed),
   };
 }
@@ -443,10 +446,15 @@ export async function listFeed(viewer: string): Promise<FeedItem[]> {
      limit 80`,
     [viewer],
   );
-  return attachStickers(rows.map(feedItem), viewer);
+  return decorateFeed(rows.map(feedItem), viewer);
 }
 
 const STICKER_CAP = 24;
+const NOTE_CAP = 24;
+
+async function decorateFeed(items: FeedItem[], viewer: string): Promise<FeedItem[]> {
+  return attachComments(await attachStickers(items, viewer), viewer);
+}
 
 async function attachStickers(items: FeedItem[], viewer: string): Promise<FeedItem[]> {
   if (items.length === 0) return items;
@@ -480,6 +488,38 @@ async function attachStickers(items: FeedItem[], viewer: string): Promise<FeedIt
   return items.map((item) => ({ ...item, stickers: grouped.get(item.id) ?? [] }));
 }
 
+async function attachComments(items: FeedItem[], viewer: string): Promise<FeedItem[]> {
+  if (items.length === 0) return items;
+  const ids = items.map((item) => item.id);
+  const marks = ids.map((_, index) => `$${index + 2}`).join(", ");
+  const rows = await sql(
+    `select
+       n.photo_id,
+       n.body,
+       pr.id as profile_id,
+       pr.username as profile_name,
+       (n.shooter_token = $1) as mine
+     from frame_notes n
+     join profiles pr on pr.shooter_token = n.shooter_token
+     where n.photo_id in (${marks})
+     order by n.created_at, n.shooter_token`,
+    [viewer, ...ids],
+  );
+  const grouped = new Map<string, FrameComment[]>();
+  for (const row of rows) {
+    const id = String(row.photo_id);
+    const list = grouped.get(id) ?? [];
+    list.push({
+      text: String(row.body),
+      profileId: String(row.profile_id),
+      profileName: String(row.profile_name ?? ""),
+      mine: flag(row.mine),
+    });
+    grouped.set(id, list);
+  }
+  return items.map((item) => ({ ...item, comments: grouped.get(item.id) ?? [] }));
+}
+
 async function stickersFor(photoId: string, viewer: string): Promise<FrameSticker[]> {
   const [item] = await attachStickers(
     [
@@ -500,6 +540,7 @@ async function stickersFor(photoId: string, viewer: string): Promise<FrameSticke
         profileEmojis: null,
         profileAvatar: false,
         stickers: [],
+        comments: [],
         onFeed: false,
       },
     ],
@@ -850,6 +891,71 @@ export async function setSticker(photoId: string, token: string, emoji: string):
   return stickersFor(photoId, token);
 }
 
+async function commentsFor(photoId: string, viewer: string): Promise<FrameComment[]> {
+  const [item] = await attachComments(
+    [
+      {
+        id: photoId,
+        caption: "",
+        createdAt: 0,
+        developedAt: null,
+        sortAt: 0,
+        addedAt: 0,
+        albumId: null,
+        albumName: null,
+        eventId: null,
+        eventName: null,
+        mine: false,
+        profileId: null,
+        profileName: null,
+        profileEmojis: null,
+        profileAvatar: false,
+        stickers: [],
+        comments: [],
+        onFeed: false,
+      },
+    ],
+    viewer,
+  );
+  return item?.comments ?? [];
+}
+
+/** One note per camera per frame. Writing again replaces that camera's note. */
+export async function setFrameNote(photoId: string, token: string, text: string): Promise<FrameComment[]> {
+  const profile = await readOwnProfile(token);
+  if (!profile) throw new HttpError(409, "Name yourself first.");
+  const frames = await sql<{ shooter_token: string; on_feed: boolean }>(
+    `select p.shooter_token, ${liveOnFeed} as on_feed
+     from photos p
+     left join events e on e.id = p.event_id
+     where p.id = $1`,
+    [photoId],
+  );
+  const frame = frames[0];
+  if (!frame) throw new HttpError(404, "That frame is gone.");
+  if (frame.shooter_token === token) throw new HttpError(403, "Write on a frame that isn't yours.");
+  if (!flag(frame.on_feed)) throw new HttpError(409, "That frame isn't on the feed.");
+  const existing = await sql<{ photo_id: string }>(
+    `select photo_id from frame_notes where photo_id = $1 and shooter_token = $2`,
+    [photoId, token],
+  );
+  if (!existing[0]) {
+    const counted = await sql<{ n: number }>(
+      `select count(*)::int as n from frame_notes where photo_id = $1`,
+      [photoId],
+    );
+    if (num(counted[0]?.n) >= NOTE_CAP) throw new HttpError(409, "The back of this frame is full.");
+  }
+  await sql(
+    `insert into frame_notes (photo_id, shooter_token, body)
+     values ($1, $2, $3)
+     on conflict (photo_id, shooter_token) do update
+       set body = excluded.body, updated_at = now()`,
+    [photoId, token, text],
+  );
+  return commentsFor(photoId, token);
+}
+
 export async function readImage(
   id: string,
   viewer: string | null,
@@ -1042,8 +1148,8 @@ export async function getAlbum(id: string, viewer: string): Promise<AlbumDetail 
     : [];
   return {
     album,
-    photos: await attachStickers(photos.map(feedItem), viewer),
-    library: await attachStickers(library.map(feedItem), viewer),
+    photos: await decorateFeed(photos.map(feedItem), viewer),
+    library: await decorateFeed(library.map(feedItem), viewer),
   };
 }
 
@@ -1289,7 +1395,7 @@ export async function getEvent(id: string, viewer: string): Promise<EventDetail 
      limit 80`,
     [viewer, id],
   );
-  return { ...event, members, photos: await attachStickers(photos.map(feedItem), viewer) };
+  return { ...event, members, photos: await decorateFeed(photos.map(feedItem), viewer) };
 }
 
 export async function joinEvent(code: string, token: string, proof: string | null): Promise<EventDetail> {

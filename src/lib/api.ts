@@ -8,7 +8,7 @@ import {
   storeCameraProfile,
   withCameraPortrait,
 } from "@/lib/profile";
-import type { Album, AlbumDetail, Chemistry, EventDetail, EventRoll, FeedItem, FrameSticker, GalleryCard, LabItem, ProfilePatch, SharedProfile } from "@/lib/types";
+import type { Album, AlbumDetail, Chemistry, EventDetail, EventRoll, FeedItem, FrameComment, FrameSticker, GalleryCard, LabItem, ProfilePatch, SharedProfile } from "@/lib/types";
 
 const DEV_KEY = "relapse.devtimers";
 const TOKEN_KEY = "relapse.shooter";
@@ -442,6 +442,14 @@ export async function setFrameSticker(id: string, emoji: string): Promise<{ stic
     method: "PUT",
     headers: await headers(true),
     body: JSON.stringify({ emoji }),
+  });
+}
+
+export async function setFrameNote(id: string, text: string): Promise<{ comments: FrameComment[] }> {
+  return request(`/api/photos/${id}/note`, {
+    method: "PUT",
+    headers: await headers(true),
+    body: JSON.stringify({ text }),
   });
 }
 

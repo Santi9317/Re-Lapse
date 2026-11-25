@@ -758,6 +758,102 @@ h1.word button {
   touch-action: manipulation;
 }
 .frame-stage { position: relative; }
+.frame-card { display: grid; }
+.frame-face { grid-area: 1 / 1; }
+.frame-front { position: relative; }
+.frame-stage.is-back .frame-front,
+.frame-stage:not(.is-back) .frame-back {
+  opacity: 0;
+  pointer-events: none;
+}
+.frame-back {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  aspect-ratio: 4 / 5;
+  overflow: hidden;
+  border-radius: 12px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.45), transparent 18%),
+    #f3e7d6;
+  color: #243056;
+}
+.frame-notes {
+  flex: 1;
+  overflow: auto;
+  margin: 0;
+  padding: 16px 16px 4px;
+  list-style: none;
+}
+.frame-note { margin: 0 0 12px; }
+.frame-note:nth-child(odd) { transform: rotate(-1deg); }
+.frame-note:nth-child(even) { transform: rotate(0.7deg); }
+.frame-note-text,
+.frame-note-name,
+.frame-note-empty,
+.frame-turn {
+  font-family: "Caveat", "Segoe Script", "Bradley Hand", cursive;
+  font-weight: 500;
+}
+.frame-note-text {
+  margin: 0;
+  font-size: 28px;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+.frame-note-name {
+  margin: 2px 0 0;
+  font-size: 20px;
+  color: rgba(36, 48, 86, 0.72);
+}
+.frame-note[data-mine="true"] .frame-note-text { color: #1a2748; }
+.frame-note-empty {
+  margin: auto;
+  padding: 0 18px;
+  text-align: center;
+  font-size: 30px;
+  line-height: 1.15;
+  color: rgba(36, 48, 86, 0.45);
+}
+.frame-turn {
+  flex: none;
+  align-self: center;
+  margin: 0 0 10px;
+  padding: 4px 10px;
+  font-size: 22px;
+  color: rgba(36, 48, 86, 0.55);
+}
+.comment-type {
+  position: fixed;
+  left: 12px;
+  bottom: 12px;
+  width: min(420px, calc(100% - 24px));
+  height: 44px;
+  margin: 0;
+  opacity: 0.01;
+  z-index: 6;
+  pointer-events: none;
+}
+.comment-type.is-open {
+  position: static;
+  display: block;
+  width: 100%;
+  height: auto;
+  margin-top: 8px;
+  padding: 10px 14px;
+  opacity: 1;
+  pointer-events: auto;
+  background: #120c22;
+  color: #f6f2ff;
+  font-family: "Caveat", "Segoe Script", "Bradley Hand", cursive;
+  font-size: 28px;
+  font-weight: 500;
+  line-height: 1.15;
+}
+.comment-type.is-open::placeholder {
+  color: rgba(246, 242, 255, 0.42);
+  font-family: "Caveat", "Segoe Script", "Bradley Hand", cursive;
+}
 .stickers {
   position: absolute;
   inset: 0;
@@ -848,6 +944,12 @@ button.sticker:active { transform: translate(-50%, -50%) rotate(var(--tilt)) sca
 }
 .quick-stickers button:disabled { opacity: 0.45; }
 .quick-stickers button:active { transform: scale(0.94); }
+.quick-stickers button.quick-plus {
+  font-family: var(--mono);
+  font-size: 28px;
+  font-weight: 600;
+  color: #1a1028;
+}
 .emoji-compose .fine { color: #7a3b22; }
 .emoji-compose .field { color: var(--ink); margin-top: 8px; }
 .emoji-compose .ghost,

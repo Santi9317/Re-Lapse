@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState, type RefObject } from "react";
-import { fetchOwnProfile, fetchPublicProfile, isProfileRemoved, saveOwnProfile, setFrameSticker } from "@/lib/api";
+import { fetchOwnProfile, fetchPublicProfile, isProfileRemoved, saveOwnProfile, setFrameNote, setFrameSticker } from "@/lib/api";
+import { FRAME_NOTE_LIMIT } from "@/lib/frame-note";
 import { ago, leavesIn } from "@/lib/format";
 import {
   EMOJI_CHOICES,
@@ -25,7 +26,7 @@ import {
   shareOrSave,
   warmPhoto,
 } from "@/lib/save";
-import type { FeedItem, FrameSticker, SharedProfile } from "@/lib/types";
+import type { FeedItem, FrameComment, FrameSticker, SharedProfile } from "@/lib/types";
 
 const STICKER_SLOTS: [number, number][] = [
   [10, 12],
@@ -241,25 +242,44 @@ function StickerPreview({
   );
 }
 
+function FrameNotes({ comments }: { comments: FrameComment[] }) {
+  if (comments.length === 0) {
+    return <p className="frame-note-empty">Nothing on the back yet.</p>;
+  }
+  return (
+    <ul className="frame-notes" aria-label="Notes on the back">
+      {comments.map((note) => (
+        <li key={note.profileId} className="frame-note" data-mine={note.mine ? "true" : "false"}>
+          <p className="frame-note-text">{note.text}</p>
+          <p className="frame-note-name">{note.profileName}</p>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function FrameFace({
   item,
   imageRef,
-  onOpen,
   onOpenProfile,
   onStickers,
+  onComments,
 }: {
   item: FeedItem;
   imageRef: RefObject<HTMLImageElement | null>;
-  onOpen?: () => void;
   onOpenProfile?: (id: string) => void;
   onStickers?: (id: string, stickers: FrameSticker[]) => void;
+  onComments?: (id: string, comments: FrameComment[]) => void;
 }) {
+  const commentRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const [composing, setComposing] = useState(false);
+  const [back, setBack] = useState(false);
   const [preview, setPreview] = useState<FrameSticker | null>(null);
   const [name, setName] = useState(() => loadProfile().username);
   const [needsName, setNeedsName] = useState(() => !profileReady(loadProfile()));
   const [held, setHeld] = useState("");
+  const [heldNote, setHeldNote] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [quick, setQuick] = useState<string[]>([]);
@@ -269,21 +289,25 @@ function FrameFace({
   const mineEmoji = item.stickers.find((sticker) => sticker.mine)?.emoji ?? "";
 
   function closeKeyboard() {
-    inputRef.current?.classList.remove("is-open");
+    commentRef.current?.classList.remove("is-open");
+    commentRef.current?.blur();
     inputRef.current?.blur();
     setComposing(false);
     setHeld("");
+    setHeldNote("");
     setBusy(false);
   }
 
   function openKeyboard() {
-    const input = inputRef.current;
+    const input = commentRef.current;
     if (!input) return;
     const next = pickQuickStickers(EMOJI_CHOICES, quickRef.current);
     quickRef.current = next;
     setQuick(next);
-    input.value = "";
+    input.value = item.comments.find((note) => note.mine)?.text ?? "";
     input.classList.add("is-open");
+    input.removeAttribute("aria-hidden");
+    setBack(false);
     void input.getBoundingClientRect();
     // Focus in this tap, before any await. A later focus does not open the phone keyboard.
     input.focus();
@@ -291,7 +315,17 @@ function FrameFace({
     setError("");
   }
 
-  const tap = useFrameTap(onOpen ?? null, reactable ? openKeyboard : null);
+  function openEmojiKeyboard() {
+    const input = inputRef.current;
+    if (!input) return;
+    input.value = "";
+    input.focus();
+  }
+
+  const tap = useFrameTap(() => {
+    setBack((value) => !value);
+    if (!back) closeKeyboard();
+  }, !back && reactable ? openKeyboard : null);
 
   useEffect(() => {
     if (!composing) return;
@@ -337,6 +371,12 @@ function FrameFace({
       await ensureStickerIdentity(name, needsName);
       const result = await setFrameSticker(item.id, emoji);
       onStickers?.(item.id, result.stickers);
+      const draft = commentRef.current?.value.trim() ?? "";
+      if (draft) {
+        setBusy(false);
+        setHeld("");
+        return;
+      }
       closeKeyboard();
     } catch (err) {
       if (isProfileRemoved(err)) {
@@ -348,27 +388,93 @@ function FrameFace({
     }
   }
 
+  async function sendNote(text?: string) {
+    const note = (text ?? commentRef.current?.value ?? "").trim();
+    if (!note) {
+      setError("Write a note.");
+      return;
+    }
+    if (busy) return;
+    if (needsName && !name.trim()) {
+      setHeldNote(note);
+      setError("Give yourself a short name.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      await ensureStickerIdentity(name, needsName);
+      const result = await setFrameNote(item.id, note);
+      onComments?.(item.id, result.comments);
+      closeKeyboard();
+      setBack(true);
+    } catch (err) {
+      if (isProfileRemoved(err)) {
+        setNeedsName(true);
+        setName("");
+      }
+      setError(err instanceof Error ? err.message : "That note didn't land.");
+      setBusy(false);
+    }
+  }
+
   const image = (
     <img ref={imageRef} src={`/api/photos/${item.id}/image`} alt={item.caption || "Developed frame"} />
   );
   const label = reactable
-    ? onOpen
-      ? "Open frame. Double tap for seven emojis, or type one."
-      : "Double tap for seven emojis, or type one."
-    : "Open frame";
+    ? "Turn the frame over. Double tap to leave a note or a sticker."
+    : "Turn the frame over.";
 
   return (
     <>
-      <div className="frame-stage">
-        {onOpen || reactable ? (
-          <button className="frame" type="button" onClick={tap} aria-label={label} data-frame={item.id}>
-            {image}
-          </button>
-        ) : (
-          image
-        )}
-        <StickerLayer item={item} onPreview={setPreview} />
+      <div className={`frame-stage${back ? " is-back" : ""}`} data-back={back ? "true" : "false"}>
+        <div className="frame-card">
+          <div className="frame-face frame-front" inert={back}>
+            <button className="frame" type="button" onClick={tap} aria-label={label} data-frame={item.id}>
+              {image}
+            </button>
+            <StickerLayer item={item} onPreview={setPreview} />
+          </div>
+          <div
+            className="frame-face frame-back"
+            data-frame-back={item.id}
+            inert={!back}
+            onClick={() => setBack(false)}
+          >
+            <FrameNotes comments={item.comments} />
+            <button
+              className="frame-turn"
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                setBack(false);
+              }}
+            >
+              Turn over
+            </button>
+          </div>
+        </div>
       </div>
+      {reactable ? (
+        <input
+          ref={commentRef}
+          className={`field comment-type${composing ? " is-open" : ""}`}
+          inputMode="text"
+          enterKeyHint="send"
+          autoComplete="off"
+          maxLength={FRAME_NOTE_LIMIT}
+          placeholder="Write on the back"
+          aria-label="Write on the back"
+          aria-hidden={composing ? undefined : true}
+          tabIndex={composing ? 0 : -1}
+          data-frame-note={item.id}
+          onKeyDown={(event) => {
+            if (event.key !== "Enter") return;
+            event.preventDefault();
+            void sendNote();
+          }}
+        />
+      ) : null}
       {reactable ? (
         <input
           ref={inputRef}
@@ -379,6 +485,7 @@ function FrameFace({
           autoCorrect="off"
           spellCheck={false}
           aria-label="Type an emoji"
+          tabIndex={-1}
           data-emoji-keyboard={item.id}
           onInput={(event) => {
             const input = event.currentTarget;
@@ -395,23 +502,31 @@ function FrameFace({
       ) : null}
       {composing ? (
         <div className="emoji-compose" data-emoji-compose={item.id}>
-          {quick.length > 0 ? (
-            <div className="quick-stickers" role="group" aria-label="Seven stickers" data-quick-stickers={item.id}>
-              {quick.map((emoji) => (
-                <button
-                  key={emoji}
-                  className="quick-sticker"
-                  type="button"
-                  data-quick-sticker={emoji}
-                  aria-label={`Stick ${emoji}`}
-                  disabled={busy}
-                  onClick={() => void place(emoji)}
-                >
-                  {emoji}
-                </button>
-              ))}
-            </div>
-          ) : null}
+          <div className="quick-stickers" role="group" aria-label="Seven stickers and your own" data-quick-stickers={item.id}>
+            {quick.map((emoji) => (
+              <button
+                key={emoji}
+                className="quick-sticker"
+                type="button"
+                data-quick-sticker={emoji}
+                aria-label={`Stick ${emoji}`}
+                disabled={busy}
+                onClick={() => void place(emoji)}
+              >
+                {emoji}
+              </button>
+            ))}
+            <button
+              className="quick-sticker quick-plus"
+              type="button"
+              data-emoji-plus={item.id}
+              aria-label="Type your own emoji"
+              disabled={busy}
+              onClick={openEmojiKeyboard}
+            >
+              <span aria-hidden="true">+</span>
+            </button>
+          </div>
           <p className="fine">
             {mineEmoji ? `Yours is ${mineEmoji}. Pick again to change it.` : "One sticker. It stays on the frame."}
           </p>
@@ -429,10 +544,15 @@ function FrameFace({
                 placeholder="What the frame should call you"
                 onChange={(event) => setName(event.target.value)}
               />
-              <p className="fine">So the sticker has a person. Change the marks later on You.</p>
+              <p className="fine">So the note has a person. Change the marks later on You.</p>
               {held ? (
                 <button className="primary" type="button" disabled={busy} onClick={() => void place(held)}>
                   Stick {held}
+                </button>
+              ) : null}
+              {heldNote ? (
+                <button className="primary" type="button" disabled={busy} onClick={() => void sendNote(heldNote)}>
+                  Leave the note
                 </button>
               ) : null}
             </>
@@ -579,17 +699,17 @@ function FrameActions({
 
 export function PrintView({
   item,
-  onOpen,
   onOpenProfile,
   onDelete,
   onStickers,
+  onComments,
   compact = false,
 }: {
   item: FeedItem;
-  onOpen?: (item: FeedItem) => void;
   onOpenProfile?: (id: string) => void;
   onDelete?: (id: string) => Promise<void> | void;
   onStickers?: (id: string, stickers: FrameSticker[]) => void;
+  onComments?: (id: string, comments: FrameComment[]) => void;
   compact?: boolean;
 }) {
   const imageRef = useRef<HTMLImageElement>(null);
@@ -618,9 +738,9 @@ export function PrintView({
       <FrameFace
         item={item}
         imageRef={imageRef}
-        onOpen={onOpen ? () => onOpen(item) : undefined}
         onOpenProfile={onOpenProfile}
         onStickers={onStickers}
+        onComments={onComments}
       />
       {!compact && item.caption ? <figcaption className="caption">{item.caption}</figcaption> : null}
       {!compact ? <ProfileLink item={item} onOpenProfile={onOpenProfile} /> : null}
@@ -636,12 +756,14 @@ export function Lightbox({
   onOpenProfile,
   onDelete,
   onStickers,
+  onComments,
 }: {
   item: FeedItem;
   onClose: () => void;
   onOpenProfile?: (id: string) => void;
   onDelete?: (id: string) => Promise<void> | void;
   onStickers?: (id: string, stickers: FrameSticker[]) => void;
+  onComments?: (id: string, comments: FrameComment[]) => void;
 }) {
   const imageRef = useRef<HTMLImageElement>(null);
   const where = place(item);
@@ -654,6 +776,7 @@ export function Lightbox({
           imageRef={imageRef}
           onOpenProfile={onOpenProfile}
           onStickers={onStickers}
+          onComments={onComments}
         />
         {item.caption ? <figcaption className="caption">{item.caption}</figcaption> : null}
         <ProfileLink item={item} onOpenProfile={onOpenProfile} />

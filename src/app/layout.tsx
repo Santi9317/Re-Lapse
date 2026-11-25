@@ -4,6 +4,7 @@ import { PortraitLock } from "@/components/PortraitLock";
 import { appShortcutIcons } from "@/lib/home-icons";
 import { APP_VERSION } from "@/lib/release";
 import "@fontsource/audiowide/latin-400.css";
+import "@fontsource/caveat/latin-500.css";
 import "@fontsource/chakra-petch/latin-400.css";
 import "@fontsource/chakra-petch/latin-500.css";
 import "@fontsource/chakra-petch/latin-600.css";

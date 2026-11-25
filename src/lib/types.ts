@@ -5,6 +5,13 @@ export type FrameSticker = {
   mine: boolean;
 };
 
+export type FrameComment = {
+  text: string;
+  profileId: string;
+  profileName: string;
+  mine: boolean;
+};
+
 export type FeedItem = {
   id: string;
   caption: string;
@@ -23,6 +30,7 @@ export type FeedItem = {
   profileEmojis: [string, string, string] | null;
   profileAvatar: boolean;
   stickers: FrameSticker[];
+  comments: FrameComment[];
   onFeed: boolean;
 };
 

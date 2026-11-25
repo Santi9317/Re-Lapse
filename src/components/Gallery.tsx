@@ -293,7 +293,7 @@ export function Gallery({
         <div className="thread">
           {view.photos.map((photo) => (
             <div className="gallery-frame" key={photo.id} data-gallery-photo={photo.id}>
-              <PrintView item={photo} onOpen={setOpen} onOpenProfile={onOpenProfile} />
+              <PrintView item={photo} onOpenProfile={onOpenProfile} />
             </div>
           ))}
         </div>
