@@ -6,9 +6,10 @@ import { HOW_TO } from "@/lib/howto";
 import { drawInspiration, type Quote } from "@/lib/quotes";
 import { APP_VERSION } from "@/lib/release";
 import { AccountRescue } from "@/components/AccountRescue";
+import { GeneralSettings } from "@/components/GeneralSettings";
 import { groupedPin, RecoveryPinPanel } from "@/components/RecoveryPin";
 
-type Panel = "menu" | "version" | "howto" | "inspiration" | "recovery" | "account";
+type Panel = "menu" | "version" | "general" | "howto" | "inspiration" | "recovery" | "account";
 
 export function Sleeve() {
   const [panel, setPanel] = useState<Panel | null>(null);
@@ -69,7 +70,9 @@ export function Sleeve() {
       ? "Menu"
       : panel === "version"
         ? "Version tracker"
-        : panel === "howto"
+        : panel === "general"
+          ? "General"
+          : panel === "howto"
           ? "How To"
           : panel === "recovery"
             ? "Recovery PIN"
@@ -87,6 +90,10 @@ export function Sleeve() {
           <button type="button" data-sleeve-item="version" onClick={() => setPanel("version")}>
             <strong>Version tracker</strong>
             <span>{APP_VERSION}</span>
+          </button>
+          <button type="button" data-sleeve-item="general" onClick={() => setPanel("general")}>
+            <strong>General</strong>
+            <span>Settings for this home screen app.</span>
           </button>
           <button type="button" data-sleeve-item="howto" onClick={() => setPanel("howto")}>
             <strong>How To</strong>
@@ -108,6 +115,7 @@ export function Sleeve() {
           </button>
         </div>
       ) : null}
+      {panel === "general" ? <GeneralSettings /> : null}
       {panel === "version" ? (
         <div className="sleeve-copy" data-version-tracker>
           <h2 className="section">Version tracker</h2>

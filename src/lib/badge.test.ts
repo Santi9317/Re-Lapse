@@ -8,9 +8,11 @@ import {
   applyAppBadge,
   armBadgePermission,
   badgePermissionPlan,
+  describeBadgeSetting,
   frameReadyToDevelop,
   gateBadgeCount,
   readBadgePermission,
+  rememberBadgeChoice,
   timecapsuleOpened,
   type AppBadgeHost,
 } from "./badge.ts";
@@ -202,6 +204,101 @@ test("a choice iOS already made is stored without asking again", () => {
   });
   assert.equal(listened, false);
   assert.equal(storage.getItem(GATE_BADGE_PERMISSION_KEY), "denied");
+});
+
+test("General shows the remembered choice and can ask only while iOS is still waiting", () => {
+  const installedApp = { ios: true, standalone: true };
+  assert.deepEqual(describeBadgeSetting({ ...installedApp, stored: null, permission: "default" }), {
+    choice: null,
+    label: "Not asked yet",
+    canAsk: true,
+    onApp: true,
+    sync: null,
+  });
+  assert.deepEqual(describeBadgeSetting({ ...installedApp, stored: "default", permission: "default" }), {
+    choice: "default",
+    label: "Not now",
+    canAsk: true,
+    onApp: true,
+    sync: null,
+  });
+  assert.deepEqual(describeBadgeSetting({ ...installedApp, stored: "granted", permission: "default" }), {
+    choice: "granted",
+    label: "Allowed",
+    canAsk: true,
+    onApp: true,
+    sync: null,
+  });
+  assert.deepEqual(describeBadgeSetting({ ...installedApp, stored: "denied", permission: "granted" }), {
+    choice: "granted",
+    label: "Allowed",
+    canAsk: false,
+    onApp: true,
+    sync: "granted",
+  });
+  assert.deepEqual(describeBadgeSetting({ ...installedApp, stored: "granted", permission: "granted" }), {
+    choice: "granted",
+    label: "Allowed",
+    canAsk: false,
+    onApp: true,
+    sync: null,
+  });
+  assert.deepEqual(describeBadgeSetting({ ios: false, standalone: false, stored: "denied", permission: "default" }), {
+    choice: "denied",
+    label: "Not allowed",
+    canAsk: false,
+    onApp: false,
+    sync: null,
+  });
+  assert.deepEqual(describeBadgeSetting({ ...installedApp, standalone: false, stored: null, permission: "default" }), {
+    choice: null,
+    label: "Not asked yet",
+    canAsk: false,
+    onApp: false,
+    sync: null,
+  });
+});
+
+test("changing the choice stores that answer, and one tap cannot ask twice", async () => {
+  const storage = memory();
+  let calls = 0;
+  let finish: (value: string) => void = () => {};
+  const first = rememberBadgeChoice(storage, CAMERA_BADGE_PERMISSION_KEY, () => {
+    calls += 1;
+    return new Promise((done) => {
+      finish = done;
+    });
+  });
+  const second = rememberBadgeChoice(storage, CAMERA_BADGE_PERMISSION_KEY, () => {
+    calls += 1;
+    return Promise.resolve("denied");
+  });
+  assert.equal(calls, 1);
+  finish("denied");
+  assert.equal(await first, "denied");
+  assert.equal(await second, "denied");
+  assert.equal(storage.getItem(CAMERA_BADGE_PERMISSION_KEY), "denied");
+  assert.equal(calls, 1);
+});
+
+test("the You menu opens General without folding it into a badge count", () => {
+  const sleeve = readFileSync(new URL("../components/Sleeve.tsx", import.meta.url), "utf8");
+  const general = readFileSync(new URL("../components/GeneralSettings.tsx", import.meta.url), "utf8");
+  assert.match(sleeve, /data-sleeve-item="general"/);
+  assert.match(sleeve, /<strong>General<\/strong>/);
+  assert.match(sleeve, /<GeneralSettings \/>/);
+  assert.match(general, /data-general-settings/);
+  assert.match(general, /data-general-setting="badge"/);
+  assert.match(general, /data-badge-choice/);
+  assert.match(general, /data-badge-change/);
+  assert.match(general, /rememberBadgeChoice\(localStorage, CAMERA_BADGE_PERMISSION_KEY\)/);
+  assert.equal(general.includes("requestPermission"), false);
+  assert.equal(general.includes("new Notification"), false);
+  assert.equal(general.includes("appBadgeCount"), false);
+  assert.equal(general.includes("gateBadgeCount"), false);
+  assert.equal(general.includes(GATE_BADGE_PERMISSION_KEY), false);
+  assert.equal(sleeve.includes("appBadgeCount"), false);
+  assert.equal(sleeve.includes("gateBadgeCount"), false);
 });
 
 test("the desk paints that count and does not add a banner", () => {

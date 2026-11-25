@@ -1839,6 +1839,14 @@ button.byline .byline-name { text-decoration: underline; text-underline-offset: 
   letter-spacing: 0.04em;
   line-height: 1.4;
 }
+.sleeve-list .general-setting {
+  text-align: left;
+  background: #140c24;
+  border: 1px solid rgba(180, 150, 255, 0.22);
+  border-radius: 18px;
+  padding: 14px 16px;
+}
+.sleeve-list .general-setting .primary { margin-top: 12px; }
 .sleeve-list .recovery-menu-pin {
   margin-top: 8px;
   color: var(--amber);
