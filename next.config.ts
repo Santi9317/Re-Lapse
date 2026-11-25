@@ -44,6 +44,10 @@ const nextConfig: NextConfig = {
         headers: [{ key: "Cache-Control", value: "no-cache" }],
       },
       {
+        source: "/release.json",
+        headers: [{ key: "Cache-Control", value: "no-store" }],
+      },
+      {
         source: "/:path*",
         headers: [
           { key: "X-Content-Type-Options", value: "nosniff" },

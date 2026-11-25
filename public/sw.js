@@ -1,3 +1,7 @@
+// Keep RELEASE_VERSION equal to APP_VERSION. A new string is how an installed
+// shortcut notices a publish: the next cold open can see a waiting worker.
+const RELEASE_VERSION = "1.56";
+self.releaseVersion = RELEASE_VERSION;
 const CACHE = "relapse-shell-v4";
 const SHELL = ["/", "/manifest.webmanifest", "/icons/icon-192.png", "/icons/icon-512.png"];
 
@@ -22,6 +26,11 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
   if (url.pathname.startsWith("/api/")) return;
+  // Notes for this publish. A stored copy would describe an older camera.
+  if (url.pathname === "/release.json") {
+    event.respondWith(fetch(request));
+    return;
+  }
   // A navigation has to reach the server so the phone cookie is refreshed.
   // Caching that response can swallow the Set-Cookie on the update reload.
   if (request.mode === "navigate") {

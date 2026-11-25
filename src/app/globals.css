@@ -1199,6 +1199,16 @@ button.sticker:active { transform: translate(-50%, -50%) rotate(var(--tilt)) sca
   margin-top: 8px;
   text-align: center;
 }
+.sheet-notes {
+  margin: 0 0 12px;
+  padding: 0 0 0 1.1em;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.4;
+  list-style: disc;
+}
+.sheet-notes li { margin: 0 0 6px; }
+.sheet-notes li:last-child { margin-bottom: 0; }
 .lab-steps {
   margin: 0 0 14px;
   padding: 0;

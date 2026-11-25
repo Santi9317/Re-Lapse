@@ -1,7 +1,7 @@
 {
   "name": "relapse",
   "private": true,
-  "version": "1.55",
+  "version": "1.56",
   "scripts": {
     "dev": "next dev --hostname 127.0.0.1 --port 3847",
     "build": "next build && node scripts/migrate.mjs",
