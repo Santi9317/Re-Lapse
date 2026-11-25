@@ -2,13 +2,16 @@
 
 import { useEffect, useRef, useState } from "react";
 import { adoptSavedProfile, devFlagStored, ensureCamera, fetchConfig, fetchFeed, fetchLab, joinEvent } from "@/lib/api";
+import { bannerOpensQuote } from "@/lib/banner-quote";
 import { noteFeedLook } from "@/lib/feed-mark";
 import { restorePhone } from "@/lib/identity";
+import { drawInspiration, type Quote } from "@/lib/quotes";
 import { shouldReloadOnPageSignal, shouldReloadOnTabChange, type MainTab } from "@/lib/refresh";
 import type { EventRoll, FeedItem } from "@/lib/types";
 import { Feed } from "@/components/Feed";
 import { Lab } from "@/components/Lab";
 import { GuestProfile, Profile } from "@/components/Profile";
+import { QuoteDialog } from "@/components/QuoteDialog";
 import { Rolls } from "@/components/Rolls";
 import { ShellPrompts } from "@/components/Shell";
 import { JoinGate } from "@/components/JoinGate";
@@ -73,6 +76,17 @@ function CameraDesk() {
   const [guestId, setGuestId] = useState<string | null>(null);
   const [focusEventId, setFocusEventId] = useState<string | null>(null);
   const [joinNotice, setJoinNotice] = useState("");
+  const [bannerQuote, setBannerQuote] = useState<Quote | null>(null);
+  const bannerRef = useRef<HTMLButtonElement>(null);
+
+  function openBannerQuote() {
+    setBannerQuote(drawInspiration(localStorage));
+  }
+
+  function closeBannerQuote() {
+    setBannerQuote(null);
+    bannerRef.current?.focus();
+  }
 
   function chooseTab(next: MainTab) {
     setGuestId(null);
@@ -108,6 +122,10 @@ function CameraDesk() {
       window.removeEventListener("pageshow", show);
     };
   }, []);
+
+  useEffect(() => {
+    if (!bannerOpensQuote(tab)) setBannerQuote(null);
+  }, [tab]);
 
   useEffect(() => {
     if (tokenReady === 0) return;
@@ -209,9 +227,13 @@ function CameraDesk() {
   return (
     <div className="desk">
       <div className={tab === "shoot" ? "phone" : "phone pin-tabs"}>
-        {tab !== "shoot" ? (
+        {bannerOpensQuote(tab) ? (
           <header className="top">
-            <h1 className="word">Re-Lapse ✨</h1>
+            <h1 className="word">
+              <button ref={bannerRef} type="button" onClick={openBannerQuote}>
+                Re-Lapse ✨
+              </button>
+            </h1>
             <p className="lede">{guestId ? "Their profile, from a frame they shared." : lede[tab]}</p>
           </header>
         ) : null}
@@ -284,6 +306,7 @@ function CameraDesk() {
             </button>
           ))}
         </nav>
+        {bannerQuote ? <QuoteDialog quote={bannerQuote} onClose={closeBannerQuote} /> : null}
         <ShellPrompts />
       </div>
     </div>

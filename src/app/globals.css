@@ -181,6 +181,20 @@ html.hold-cw .phone {
   letter-spacing: 0.04em;
   line-height: 1;
 }
+h1.word button {
+  display: inline;
+  letter-spacing: inherit;
+  line-height: inherit;
+  text-shadow: inherit;
+}
+.banner-quote.lab-sheet {
+  align-items: center;
+  overflow: auto;
+}
+.banner-quote .sheet-card {
+  max-height: min(78dvh, 640px);
+  overflow: auto;
+}
 
 .lede {
   margin-top: 8px;
