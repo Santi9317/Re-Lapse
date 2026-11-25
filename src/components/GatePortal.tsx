@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { GuestProfile } from "@/components/Profile";
-import { applyAppBadge, gateBadgeCount } from "@/lib/badge";
+import { GATE_BADGE_PERMISSION_KEY, applyAppBadge, gateBadgeCount, watchIosBadgePermission } from "@/lib/badge";
 import type { SharedProfile } from "@/lib/types";
 
 type Pending = { id: string; name: string; createdAt: number };
@@ -55,6 +55,8 @@ export function GatePortal() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [acting, setActing] = useState("");
+
+  useEffect(() => watchIosBadgePermission(GATE_BADGE_PERMISSION_KEY), []);
 
   const load = useCallback(async () => {
     const response = await fetch("/api/gate/admin/requests", {

@@ -5,7 +5,7 @@
  * Keep public/release.json in step with this list, and keep its version equal to APP_VERSION.
  */
 export const RELEASE_NOTES = [
-  "Each phone keeps its own allowance, so one phone cannot use up another's.",
+  "The home screen asks once to show the icon count, and remembers the answer.",
 ] as const;
 
 export type PublishedRelease = {

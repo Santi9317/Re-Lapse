@@ -2,7 +2,14 @@
 
 import { useEffect, useRef, useState } from "react";
 import { adoptSavedProfile, devFlagStored, ensureCamera, fetchConfig, fetchEvents, fetchFeed, fetchLab, joinEvent } from "@/lib/api";
-import { appBadgeCount, applyAppBadge, frameReadyToDevelop, timecapsuleOpened } from "@/lib/badge";
+import {
+  CAMERA_BADGE_PERMISSION_KEY,
+  appBadgeCount,
+  applyAppBadge,
+  frameReadyToDevelop,
+  timecapsuleOpened,
+  watchIosBadgePermission,
+} from "@/lib/badge";
 import { bannerOpensQuote } from "@/lib/banner-quote";
 import { noteFeedLook } from "@/lib/feed-mark";
 import { restorePhone } from "@/lib/identity";
@@ -40,6 +47,7 @@ export function App() {
       setBooted(true);
     });
   }, []);
+  useEffect(() => watchIosBadgePermission(CAMERA_BADGE_PERMISSION_KEY), []);
   if (!booted) {
     return (
       <div className="desk">

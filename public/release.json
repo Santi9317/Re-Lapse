@@ -1,7 +1,7 @@
 {
   "version": "1.81.1",
   "notes": [
-    "Each phone keeps its own allowance, so one phone cannot use up another's."
+    "The home screen asks once to show the icon count, and remembers the answer."
   ],
   "icon": "0e6210f1bd3191d086e7c4deb1bb920768940cbf227f6f962125f415635d7665",
   "previousIcon": "0e6210f1bd3191d086e7c4deb1bb920768940cbf227f6f962125f415635d7665"
