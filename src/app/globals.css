@@ -368,7 +368,7 @@ h1.word button {
 .flash {
   z-index: 4;
   background: #fff8ee;
-  animation: flash 90ms linear;
+  animation: flash 200ms linear forwards;
 }
 .screen-flash {
   position: fixed;
@@ -377,7 +377,10 @@ h1.word button {
   background: #fff;
   pointer-events: none;
 }
-@keyframes flash { from { opacity: 0.9; } to { opacity: 0; } }
+@keyframes flash {
+  0%, 40% { opacity: 1; }
+  100% { opacity: 0; }
+}
 
 .vf-top, .vf-bottom {
   position: absolute;
