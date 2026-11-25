@@ -457,7 +457,7 @@ function FrameFace({
 
 function ProfileLink({ item, onOpenProfile }: { item: FeedItem; onOpenProfile?: (id: string) => void }) {
   if (!item.profileId || !item.profileName || !item.profileEmojis) return null;
-  const marks = item.profileEmojis.join(" ");
+  const marks = item.profileEmojis.join("");
   const inner = (
     <>
       {item.profileAvatar ? <img className="byline-avatar" src={`/api/profiles/${item.profileId}/avatar`} alt="" /> : null}
