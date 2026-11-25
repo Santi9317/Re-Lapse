@@ -1,6 +1,6 @@
 {
-  "version": "1.57",
+  "version": "1.62",
   "notes": [
-    "Tapping the empty profile photo adds a photo."
+    "Choosing photos slides sideways, so the buttons below stay close."
   ]
 }
