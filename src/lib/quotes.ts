@@ -147,3 +147,28 @@ export function pickQuote(lastId: string | null, random: () => number = Math.ran
   if (!quote) throw new Error("The sleeve has no lines left.");
   return quote;
 }
+
+/** Shared with the sleeve, so the next line is a different one. */
+export const INSPIRATION_KEY = "relapse.inspiration";
+
+export type QuoteMemory = {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+};
+
+/** One existing line, chosen when the banner or the sleeve asks. */
+export function drawInspiration(storage: QuoteMemory, random: () => number = Math.random): Quote {
+  let lastId: string | null = null;
+  try {
+    lastId = storage.getItem(INSPIRATION_KEY);
+  } catch {
+    lastId = null;
+  }
+  const quote = pickQuote(lastId, random);
+  try {
+    storage.setItem(INSPIRATION_KEY, quote.id);
+  } catch {
+    /* the next open can repeat if this device refuses storage */
+  }
+  return quote;
+}

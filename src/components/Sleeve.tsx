@@ -3,30 +3,12 @@
 import { useEffect, useRef, useState } from "react";
 import { fetchRecoveryPin } from "@/lib/api";
 import { HOW_TO } from "@/lib/howto";
-import { pickQuote, type Quote } from "@/lib/quotes";
+import { drawInspiration, type Quote } from "@/lib/quotes";
 import { APP_VERSION } from "@/lib/release";
 import { AccountRescue } from "@/components/AccountRescue";
 import { groupedPin, RecoveryPinPanel } from "@/components/RecoveryPin";
 
-const LAST_KEY = "relapse.inspiration";
-
 type Panel = "menu" | "version" | "howto" | "inspiration" | "recovery" | "account";
-
-function readLast(): string | null {
-  try {
-    return localStorage.getItem(LAST_KEY);
-  } catch {
-    return null;
-  }
-}
-
-function writeLast(id: string) {
-  try {
-    localStorage.setItem(LAST_KEY, id);
-  } catch {
-    /* the next open can repeat if this device refuses storage */
-  }
-}
 
 export function Sleeve() {
   const [panel, setPanel] = useState<Panel | null>(null);
@@ -52,9 +34,7 @@ export function Sleeve() {
 
   useEffect(() => {
     if (panel !== "inspiration") return;
-    const next = pickQuote(readLast());
-    writeLast(next.id);
-    setQuote(next);
+    setQuote(drawInspiration(localStorage));
   }, [panel]);
 
   useEffect(() => {
