@@ -1,7 +1,8 @@
 {
-  "version": "1.80.1",
+  "version": "1.81.0",
   "notes": [
-    "The version counts a fix, a feature, or a breaking change."
+    "The home screen icon counts frames ready to develop, new feed photos, and opened timecapsules.",
+    "The gate icon counts cameras waiting to join and profiles asking to come back."
   ],
   "icon": "0e6210f1bd3191d086e7c4deb1bb920768940cbf227f6f962125f415635d7665",
   "previousIcon": "0e6210f1bd3191d086e7c4deb1bb920768940cbf227f6f962125f415635d7665"

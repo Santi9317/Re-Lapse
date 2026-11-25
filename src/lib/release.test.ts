@@ -24,12 +24,14 @@ test("this publish carries the same notes the camera can show", () => {
   assert.deepEqual(
     [...RELEASE_NOTES],
     [
-      "The version counts a fix, a feature, or a breaking change.",
+      "The home screen icon counts frames ready to develop, new feed photos, and opened timecapsules.",
+      "The gate icon counts cameras waiting to join and profiles asking to come back.",
     ],
   );
   const notes = RELEASE_NOTES.join("\n");
   const lower = notes.toLowerCase();
   for (const older of [
+    "The version counts a fix, a feature, or a breaking change.",
     "A new booth keeps the same allowance for new cameras.",
     "Tap Re-Lapse for a line of inspiration.",
     "Posted photos leave off the RE-LAPSE 400 line.",
