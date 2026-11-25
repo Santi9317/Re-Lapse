@@ -1,7 +1,8 @@
 /**
- * Version shown in the You menu. Bump it on every merged PR.
- * A small change adds 0.1 (1.36 then 1.37). A major change bumps the whole
- * number and resets the decimal (2.0). On 1.x the decimal is this PR's number.
+ * Version shown in the You menu. Bump it for every publish, by the change.
+ * A fix bumps the patch (1.80.1, then 1.80.2). A feature bumps the minor
+ * and resets the patch (1.81.0). A breaking change bumps the major and
+ * resets the rest (2.0.0).
  * Keep package.json "version" equal to this string.
  * Keep public/sw.js RELEASE_VERSION and public/release.json "version" equal to it,
  * and write only this publish's notes in src/lib/release-notes.ts and public/release.json.
@@ -9,7 +10,7 @@
  * public/release.json "icon" and "previousIcon" match src/lib/icon-prompt.ts.
  * The Home Screen prompt shows only when those digests differ.
  */
-export const APP_VERSION = "1.80";
+export const APP_VERSION = "1.80.1";
 
 export type Release = {
   version: string;

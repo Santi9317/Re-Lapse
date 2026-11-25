@@ -7,7 +7,7 @@ import { APP_VERSION } from "./release.ts";
 test("the menu version is the string package.json ships", () => {
   const pkg = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")) as { version?: string };
   assert.equal(pkg.version, APP_VERSION);
-  assert.match(APP_VERSION, /^\d+\.\d+$/);
+  assert.match(APP_VERSION, /^\d+\.\d+\.\d+$/);
 });
 
 test("this publish carries the same notes the camera can show", () => {
@@ -24,12 +24,13 @@ test("this publish carries the same notes the camera can show", () => {
   assert.deepEqual(
     [...RELEASE_NOTES],
     [
-      "A new booth keeps the same allowance for new cameras.",
+      "The version counts a fix, a feature, or a breaking change.",
     ],
   );
   const notes = RELEASE_NOTES.join("\n");
   const lower = notes.toLowerCase();
   for (const older of [
+    "A new booth keeps the same allowance for new cameras.",
     "Tap Re-Lapse for a line of inspiration.",
     "Posted photos leave off the RE-LAPSE 400 line.",
     "Adding the camera walks through the Home Screen steps.",
