@@ -90,9 +90,9 @@ async function trimEmpty(q: Sql, owned: string, open: string): Promise<void> {
  * An id we already issued is kept. An id that already has a camera, a join,
  * or a rescue is kept too. Anything else shares one open booth, so a missing
  * cookie does not take a new phone. Bringing that open booth back gives this
- * browser its own id. That id is filed on the shared phone and stays there,
- * so a later booth does not open a budget. A booth that already has its own
- * phone keeps it. `shared` means the cookie still has to be stored.
+ * browser its own id. That id is its own phone, so its allowance is not the
+ * next visitor's. The open booth stays the handoff until someone claims it.
+ * `shared` means the cookie still has to be stored.
  * `fresh` means this id was just handed out.
  */
 export async function prepareBooth(
@@ -110,7 +110,7 @@ export async function prepareBooth(
       const owned = randomUUID();
       const next = randomUUID();
       await q(
-        `insert into issued_booths (id, created_at, phone) values ($1, now(), $3), ($2, now(), $3)`,
+        `insert into issued_booths (id, created_at, phone) values ($1, now(), $1), ($2, now(), $3)`,
         [owned, next, SHARED_PHONE],
       );
       await q(`update booth_issue_lock set open_id = $1 where id = 1`, [next]);
