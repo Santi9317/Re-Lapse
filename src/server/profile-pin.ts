@@ -1,12 +1,13 @@
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import { sql, withTransaction, type Sql } from "@/lib/db";
-import { pinRestoreOpen } from "@/server/pin";
+import { pinRestoreDecision, rescueRoom } from "@/server/pin";
 import { hashProfilePin } from "@/server/quota";
 import { isUuid } from "@/server/validate";
 
 const WINDOW_MS = 15 * 60_000;
 const RESCUE_WINDOW_MS = 10 * 60_000;
-const RESCUE_PER_WINDOW = 8;
+const ANONYMOUS_PIN = "anonymous";
+const OPEN_RESCUE = "rescue-open";
 
 function countOf(value: unknown): number {
   return typeof value === "number" ? value : Number(value ?? 0);
@@ -23,29 +24,30 @@ function hashMatches(stored: string, given: string): boolean {
 
 type Budget = { recent: number; fresh: boolean };
 
-async function lockSharedBudget(q: Sql): Promise<Budget> {
+async function lockPinClient(q: Sql, id: string, windowMs: number): Promise<Budget> {
   await q(
-    `insert into pin_guess_slot (id, window_start, n) values (1, now(), 0) on conflict (id) do nothing`,
+    `insert into pin_client (id, window_start, n) values ($1, now(), 0) on conflict (id) do nothing`,
+    [id],
   );
   const slot = await q<{ n: number; fresh: boolean | string | number }>(
     `select n,
-            window_start <= now() - ($1::int * interval '1 millisecond') as fresh
-     from pin_guess_slot
-     where id = 1
+            window_start <= now() - ($2::int * interval '1 millisecond') as fresh
+     from pin_client
+     where id = $1
      for update`,
-    [WINDOW_MS],
+    [id, windowMs],
   );
   const fresh = guessFlag(slot[0]?.fresh);
   return { recent: fresh ? 0 : countOf(slot[0]?.n), fresh };
 }
 
-async function markSharedMiss(q: Sql, budget: Budget): Promise<void> {
+async function markPinClient(q: Sql, id: string, budget: Budget): Promise<void> {
   await q(
-    `update pin_guess_slot
-     set n = $1,
-         window_start = case when $2::boolean then now() else window_start end
-     where id = 1`,
-    [budget.fresh ? 1 : budget.recent + 1, budget.fresh],
+    `update pin_client
+     set n = $2,
+         window_start = case when $3::boolean then now() else window_start end
+     where id = $1`,
+    [id, budget.fresh ? 1 : budget.recent + 1, budget.fresh],
   );
 }
 
@@ -78,11 +80,20 @@ export type RescueAsk =
   | { ok: false; reason: "wrong" | "blocked" };
 
 /**
- * A matching name and PIN open a request for Santiago. They do not open the camera.
- * Misses share one budget, so a new browser does not start over.
- * Zero matches and several matches look the same.
+ * A matching name and PIN open a request. They do not open the camera.
+ * The match is decided before a miss is counted, so another phone cannot hold
+ * this one shut. Wrong guesses for a phone we already issued stay on that
+ * phone. A booth just handed out shares one count, so dropping the cookie
+ * does not start over. Each issued phone has its own rescue window. A booth
+ * just handed out shares one rescue window too. Zero matches and several
+ * matches look the same.
  */
-export async function requestRecovery(booth: string, pin: string, name: string): Promise<RescueAsk> {
+export async function requestRecovery(
+  booth: string,
+  pin: string,
+  name: string,
+  fresh = false,
+): Promise<RescueAsk> {
   if (!isUuid(booth)) return { ok: false, reason: "blocked" };
   const phone = booth.toLowerCase();
   const wanted = name.trim().toLowerCase();
@@ -100,15 +111,6 @@ export async function requestRecovery(booth: string, pin: string, name: string):
     if (waiting[0]?.id) {
       return { ok: true, id: String(waiting[0].id), name: String(waiting[0].username), status: "pending" };
     }
-    const budget = await lockSharedBudget(q);
-    if (!pinRestoreOpen(budget.recent)) return { ok: false, reason: "blocked" };
-    const recent = await q<{ n: number }>(
-      `select count(*)::int as n
-       from recovery_requests
-       where created_at > now() - ($1::int * interval '1 millisecond')`,
-      [RESCUE_WINDOW_MS],
-    );
-    if (countOf(recent[0]?.n) >= RESCUE_PER_WINDOW) return { ok: false, reason: "blocked" };
     const found = await q<{ token: string; username: string; pin_hash: string | null }>(
       `select c.token, p.username, c.pin_hash
        from cameras c
@@ -119,16 +121,39 @@ export async function requestRecovery(booth: string, pin: string, name: string):
     const row = found.length === 1 ? found[0] : undefined;
     const token = row?.token && isUuid(String(row.token)) ? String(row.token).toLowerCase() : "";
     const matches = token.length > 0 && hashMatches(String(row?.pin_hash ?? ""), hash);
-    if (!matches || !row) {
-      await markSharedMiss(q, budget);
-      return { ok: false, reason: "wrong" };
+    if (matches && row) {
+      if (fresh) {
+        const shared = await lockPinClient(q, OPEN_RESCUE, RESCUE_WINDOW_MS);
+        if (!rescueRoom(shared.recent)) return { ok: false, reason: "blocked" };
+        const id = randomUUID();
+        await q(
+          `insert into recovery_requests (id, camera_token, booth, status) values ($1, $2, $3, 'pending')`,
+          [id, token, phone],
+        );
+        await markPinClient(q, OPEN_RESCUE, shared);
+        return { ok: true, id, name: String(row.username), status: "pending" };
+      }
+      await lockPinClient(q, phone, RESCUE_WINDOW_MS);
+      const recent = await q<{ n: number }>(
+        `select count(*)::int as n
+         from recovery_requests
+         where booth = $1
+           and created_at > now() - ($2::int * interval '1 millisecond')`,
+        [phone, RESCUE_WINDOW_MS],
+      );
+      if (!rescueRoom(countOf(recent[0]?.n))) return { ok: false, reason: "blocked" };
+      const id = randomUUID();
+      await q(
+        `insert into recovery_requests (id, camera_token, booth, status) values ($1, $2, $3, 'pending')`,
+        [id, token, phone],
+      );
+      return { ok: true, id, name: String(row.username), status: "pending" };
     }
-    const id = randomUUID();
-    await q(
-      `insert into recovery_requests (id, camera_token, booth, status) values ($1, $2, $3, 'pending')`,
-      [id, token, phone],
-    );
-    return { ok: true, id, name: String(row.username), status: "pending" };
+    const slot = fresh ? ANONYMOUS_PIN : phone;
+    const budget = await lockPinClient(q, slot, WINDOW_MS);
+    if (pinRestoreDecision(false, budget.recent) === "blocked") return { ok: false, reason: "blocked" };
+    await markPinClient(q, slot, budget);
+    return { ok: false, reason: "wrong" };
   });
 }
 
