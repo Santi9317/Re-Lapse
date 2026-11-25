@@ -1,9 +1,9 @@
 import { createHmac } from "node:crypto";
 
-/** Wrong PIN checks for one phone. A browser we have not issued shares one count. */
+/** Wrong PIN checks for one phone. A new booth on that phone keeps the count. */
 export const PIN_RESTORE_LIMIT = 8;
 
-/** Rescue requests for one phone. A browser we have not issued shares one window. */
+/** Rescue requests for one phone. A new booth on that phone keeps the window. */
 export const PIN_RESCUE_LIMIT = 8;
 
 export function pinRestoreOpen(recentChecks: number): boolean {

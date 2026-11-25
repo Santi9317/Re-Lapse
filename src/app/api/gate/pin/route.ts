@@ -59,7 +59,7 @@ export async function POST(request: Request) {
     const pass = await prepareBooth(booth);
     if (pass.shared) return sealBooth(json({ error: BOOTH_HANDOFF }, 409), request, pass.id);
     booth = pass.id;
-    const result = await requestRecovery(booth, pin, name, pass.fresh);
+    const result = await requestRecovery(booth, pin, name);
     if (!result.ok) {
       await delay(GATE_GUESS_DELAY_MS);
       const blocked = result.reason === "blocked";

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { withTransaction, type Sql } from "@/lib/db";
 import { boothKind } from "@/server/booth-line";
+import { SHARED_PHONE } from "@/server/phone-budget";
 import { isUuid } from "@/server/validate";
 
 export { boothKind };
@@ -28,7 +29,7 @@ async function ensureOpen(q: Sql): Promise<string> {
   const current = await readOpen(q);
   if (current) return current;
   const id = randomUUID();
-  await q(`insert into issued_booths (id, created_at) values ($1, now())`, [id]);
+  await q(`insert into issued_booths (id, created_at, phone) values ($1, now(), $2)`, [id, SHARED_PHONE]);
   await q(`update booth_issue_lock set open_id = $1 where id = 1`, [id]);
   return id;
 }
@@ -47,8 +48,8 @@ async function isPrivate(q: Sql, id: string): Promise<boolean> {
   );
   if (!used[0]) return false;
   await q(
-    `insert into issued_booths (id, created_at)
-     values ($1, now() - interval '1 day')
+    `insert into issued_booths (id, created_at, phone)
+     values ($1, now() - interval '1 day', $1)
      on conflict (id) do nothing`,
     [id],
   );
@@ -89,8 +90,10 @@ async function trimEmpty(q: Sql, owned: string, open: string): Promise<void> {
  * An id we already issued is kept. An id that already has a camera, a join,
  * or a rescue is kept too. Anything else shares one open booth, so a missing
  * cookie does not take a new phone. Bringing that open booth back gives this
- * browser its own id. `shared` means the cookie still has to be stored.
- * `fresh` means this id was just handed out and must not start its own budget.
+ * browser its own id. That id is filed on the shared phone and stays there,
+ * so a later booth does not open a budget. A booth that already has its own
+ * phone keeps it. `shared` means the cookie still has to be stored.
+ * `fresh` means this id was just handed out.
  */
 export async function prepareBooth(
   presented: string,
@@ -107,8 +110,8 @@ export async function prepareBooth(
       const owned = randomUUID();
       const next = randomUUID();
       await q(
-        `insert into issued_booths (id, created_at) values ($1, now()), ($2, now())`,
-        [owned, next],
+        `insert into issued_booths (id, created_at, phone) values ($1, now(), $3), ($2, now(), $3)`,
+        [owned, next, SHARED_PHONE],
       );
       await q(`update booth_issue_lock set open_id = $1 where id = 1`, [next]);
       await q(

@@ -6,6 +6,7 @@ import { askToJoin, takeGateGuess } from "@/server/gate";
 import { GATE_GUESS_LIMIT } from "@/server/gate-key";
 import { HttpError } from "@/server/http";
 import { JOIN_LIMITS } from "@/server/join-line";
+import { SHARED_PHONE } from "@/server/phone-budget";
 import { PIN_RESCUE_LIMIT, PIN_RESTORE_LIMIT } from "@/server/pin";
 import { requestRecovery } from "@/server/profile-pin";
 import { hashProfilePin, issueCamera } from "@/server/quota";
@@ -18,7 +19,20 @@ async function ownPhone(): Promise<string> {
   assert.equal(owned.shared, false);
   assert.equal(owned.fresh, true);
   assert.notEqual(owned.id, open.id);
+  assert.equal(await phoneOf(owned.id), SHARED_PHONE);
   return owned.id;
+}
+
+async function phoneOf(booth: string): Promise<string> {
+  const rows = await sql<{ phone: string }>(`select phone from issued_booths where id = $1`, [booth]);
+  return String(rows[0]?.phone ?? "");
+}
+
+/** A phone that already has its own id. A newly claimed booth does not get one. */
+async function establishedPhone(): Promise<string> {
+  const id = await ownPhone();
+  await sql(`update issued_booths set phone = id where id = $1`, [id]);
+  return id;
 }
 
 function cameraRequest(token: string, proof: string, booth = ""): Request {
@@ -64,7 +78,14 @@ test("a new browser cannot mint booths or joins, and the right gate key still op
     (error: unknown) => error instanceof HttpError && error.status === 429 && /minute/.test(error.message),
   );
 
-  const quiet = await ownPhone();
+  const rotated = await ownPhone();
+  const rotatedCam = await issueCamera(null, null, rotated);
+  await assert.rejects(
+    () => askToJoin(cameraRequest(rotatedCam.token, rotatedCam.proof, rotated), "Ada", rotated),
+    (error: unknown) => error instanceof HttpError && error.status === 429 && /minute/.test(error.message),
+  );
+
+  const quiet = await establishedPhone();
   const member = await issueCamera(null, null, quiet);
   const joined = await askToJoin(cameraRequest(member.token, member.proof, quiet), "Bea", quiet);
   assert.equal(joined.status, "pending");
@@ -122,38 +143,45 @@ test("a new browser cannot mint booths or joins, and the right gate key still op
   );
 
   for (let i = 0; i < PIN_RESTORE_LIMIT; i += 1) {
-    const miss = await requestRecovery(await ownPhone(), "000000", "PinAda", true);
+    const miss = await requestRecovery(await ownPhone(), "000000", "PinAda");
     assert.equal(miss.ok, false);
     if (!miss.ok) assert.equal(miss.reason, "wrong");
   }
-  const anonShut = await requestRecovery(await ownPhone(), "111111", "PinAda", true);
+  const anonShut = await requestRecovery(await ownPhone(), "111111", "PinAda");
   assert.equal(anonShut.ok, false);
   if (!anonShut.ok) assert.equal(anonShut.reason, "blocked");
-  const freshRight = await requestRecovery(await ownPhone(), "048213", "PinAda", true);
+  const freshRight = await requestRecovery(await ownPhone(), "048213", "PinAda");
   assert.equal(freshRight.ok, true);
 
-  const noisy = await ownPhone();
+  const noisy = await establishedPhone();
   for (let i = 0; i < PIN_RESTORE_LIMIT; i += 1) {
-    const miss = await requestRecovery(noisy, "222222", "PinAda", false);
+    const miss = await requestRecovery(noisy, "222222", "PinAda");
     assert.equal(miss.ok, false);
     if (!miss.ok) assert.equal(miss.reason, "wrong");
   }
-  const ownShut = await requestRecovery(noisy, "333333", "PinAda", false);
+  const ownShut = await requestRecovery(noisy, "333333", "PinAda");
   assert.equal(ownShut.ok, false);
   if (!ownShut.ok) assert.equal(ownShut.reason, "blocked");
-  const ownRight = await requestRecovery(noisy, "048213", "PinAda", false);
+  const ownRight = await requestRecovery(noisy, "048213", "PinAda");
   assert.equal(ownRight.ok, true);
-  const neighbor = await requestRecovery(await ownPhone(), "444444", "PinAda", false);
+  const spun = await requestRecovery(await ownPhone(), "444444", "PinAda");
+  assert.equal(spun.ok, false);
+  if (!spun.ok) assert.equal(spun.reason, "blocked");
+  const neighbor = await requestRecovery(await establishedPhone(), "555555", "PinAda");
   assert.equal(neighbor.ok, false);
   if (!neighbor.ok) assert.equal(neighbor.reason, "wrong");
 
   for (let i = 0; i < PIN_RESCUE_LIMIT - 1; i += 1) {
-    const opened = await requestRecovery(await ownPhone(), "048213", "PinAda", true);
+    const opened = await requestRecovery(await ownPhone(), "048213", "PinAda");
     assert.equal(opened.ok, true);
   }
-  const rescueShut = await requestRecovery(await ownPhone(), "048213", "PinAda", true);
+  const rescueShut = await requestRecovery(await ownPhone(), "048213", "PinAda");
   assert.equal(rescueShut.ok, false);
   if (!rescueShut.ok) assert.equal(rescueShut.reason, "blocked");
-  const keptRight = await requestRecovery(await ownPhone(), "048213", "PinAda", false);
+  const keptShut = await requestRecovery(await ownPhone(), "048213", "PinAda");
+  assert.equal(keptShut.ok, false);
+  if (!keptShut.ok) assert.equal(keptShut.reason, "blocked");
+  const separate = await establishedPhone();
+  const keptRight = await requestRecovery(separate, "048213", "PinAda");
   assert.equal(keptRight.ok, true);
 });

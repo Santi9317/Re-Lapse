@@ -1,6 +1,7 @@
 /**
- * New join requests share one line. Dropping the booth cookie does not open
- * another budget. Each phone also has a smaller allowance inside that line.
+ * New join requests share one line. Each phone has a smaller allowance inside
+ * that line. A new booth on that phone uses the same allowance. Dropping the
+ * cookie does not open another.
  */
 export const JOIN_LIMITS = {
   perPhone: 4,
