@@ -4,6 +4,7 @@
  * Keep public/release.json in step with this list, and keep its version equal to APP_VERSION.
  */
 export const RELEASE_NOTES = [
+  "Feed names sit a little larger, with the emojis tucked together, and download and delete match the other buttons.",
   "The date stamp switch now matches the rest of the camera.",
 ] as const;
 
