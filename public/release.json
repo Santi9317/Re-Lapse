@@ -1,7 +1,8 @@
 {
-  "version": "1.83.4",
+  "version": "1.83.5",
   "notes": [
-    "The shutter flash lasts a little longer, so you can see that the photo was taken."
+    "The line of cameras waiting to join stays short, so a new browser cannot fill it.",
+    "A name on the feed is not enough to guess that profile's PIN."
   ],
   "icon": "0e6210f1bd3191d086e7c4deb1bb920768940cbf227f6f962125f415635d7665",
   "previousIcon": "0e6210f1bd3191d086e7c4deb1bb920768940cbf227f6f962125f415635d7665"

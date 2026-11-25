@@ -1,12 +1,12 @@
 /**
- * New join requests share one line. Each phone has a smaller allowance inside
- * that line. A new booth on that phone uses the same allowance. Dropping the
- * cookie does not open another.
+ * New join requests share one short line, so a new browser cannot fill it.
+ * Each phone has a smaller allowance inside that line. A new booth on that
+ * phone uses the same allowance. Dropping the cookie does not open another.
  */
 export const JOIN_LIMITS = {
   perPhone: 4,
-  pendingMax: 80,
-  newPerWindow: 30,
+  pendingMax: 12,
+  newPerWindow: 8,
   windowMs: 10 * 60_000,
   listLimit: 80,
 } as const;

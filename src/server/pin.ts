@@ -3,8 +3,11 @@ import { createHmac } from "node:crypto";
 /** Wrong PIN checks for one phone. Another phone has its own count. */
 export const PIN_RESTORE_LIMIT = 8;
 
-/** Wrong PIN checks for every phone together, so new phones stay bounded. */
-export const PIN_RESTORE_LAB = 64;
+/** Wrong guesses aimed at one profile name, counted across every phone. */
+export const PIN_NAME_LIMIT = 5;
+
+/** Wrong PIN checks for every phone and every name together. */
+export const PIN_RESTORE_LAB = 12;
 
 /** Rescue requests for one phone. Another phone has its own window. */
 export const PIN_RESCUE_LIMIT = 8;
@@ -19,6 +22,17 @@ export function pinRestoreOpen(recentChecks: number): boolean {
 /** Whether the ceiling across every phone still allows another miss. */
 export function labPinOpen(recentChecks: number): boolean {
   return Number.isFinite(recentChecks) && recentChecks >= 0 && recentChecks < PIN_RESTORE_LAB;
+}
+
+/** The id that counts wrong guesses for one profile name. The PIN is not in it. */
+export function pinNameKey(name: string): string {
+  const wanted = name.trim().toLowerCase().replace(/\s+/g, " ").slice(0, 24);
+  return `pin-name:${wanted}`;
+}
+
+/** Whether this profile name still allows another wrong guess from any phone. */
+export function namePinOpen(recentChecks: number): boolean {
+  return Number.isFinite(recentChecks) && recentChecks >= 0 && recentChecks < PIN_NAME_LIMIT;
 }
 
 /**

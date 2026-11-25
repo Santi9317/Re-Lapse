@@ -5,7 +5,8 @@
  * Keep public/release.json in step with this list, and keep its version equal to APP_VERSION.
  */
 export const RELEASE_NOTES = [
-  "The shutter flash lasts a little longer, so you can see that the photo was taken.",
+  "The line of cameras waiting to join stays short, so a new browser cannot fill it.",
+  "A name on the feed is not enough to guess that profile's PIN.",
 ] as const;
 
 export type PublishedRelease = {

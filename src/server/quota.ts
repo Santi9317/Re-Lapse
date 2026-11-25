@@ -10,7 +10,7 @@ import { isUuid, readCameraAuth } from "@/server/validate";
  * One camera cannot spend another's. A brand-new id is written to
  * camera_mints before any proof is returned. New ids are counted for the
  * phone that asked. Another phone's window does not close this one.
- * The whole lab also has a ceiling, so new phones cannot mint without a bound.
+ * The whole lab also has a short ceiling, so new phones cannot mint a pile of cameras.
  * Unclaimed ids past a keep count are dropped. The proof lives
  * in the httpOnly cookie. Sending an id without that cookie does not reveal the proof and
  * does not authorize the camera. Asking again with the cookie does not
