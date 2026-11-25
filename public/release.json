@@ -1,6 +1,6 @@
 {
-  "version": "1.57",
+  "version": "1.59",
   "notes": [
-    "Tapping the empty profile photo adds a photo."
+    "The date stamp switch now matches the rest of the camera."
   ]
 }
