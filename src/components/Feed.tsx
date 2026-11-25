@@ -46,11 +46,6 @@ export function Feed({
     };
   }, [revision, refresh]);
 
-  function onCaption(id: string, caption: string) {
-    generation.current += 1;
-    setPhotos((current) => current.map((photo) => (photo.id === id ? { ...photo, caption } : photo)));
-  }
-
   function onStickers(id: string, stickers: FrameSticker[]) {
     generation.current += 1;
     setPhotos((current) => current.map((photo) => (photo.id === id ? { ...photo, stickers } : photo)));
@@ -94,7 +89,6 @@ export function Feed({
               onDelete={onDelete}
               onStickers={onStickers}
               onComments={onComments}
-              onCaption={onCaption}
             />
           ))}
         </div>

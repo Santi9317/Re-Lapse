@@ -112,15 +112,6 @@ export function Gallery({
     setTick((value) => value + 1);
   }
 
-  function onCaption(id: string, caption: string) {
-    setDetail((current) => {
-      if (!current) return current;
-      const paint = (photo: FeedItem) => (photo.id === id ? { ...photo, caption } : photo);
-      return { ...current, photos: current.photos.map(paint), library: current.library.map(paint) };
-    });
-    setOpen((current) => (current && current.id === id ? { ...current, caption } : current));
-  }
-
   async function rename() {
     const name = title.trim();
     if (!detail || !name || name === detail.album.name || busy) return;
@@ -302,7 +293,7 @@ export function Gallery({
         <div className="thread">
           {view.photos.map((photo) => (
             <div className="gallery-frame" key={photo.id} data-gallery-photo={photo.id}>
-              <PrintView item={photo} onOpenProfile={onOpenProfile} onCaption={onCaption} />
+              <PrintView item={photo} onOpenProfile={onOpenProfile} />
             </div>
           ))}
         </div>
@@ -364,7 +355,6 @@ export function Gallery({
           onClose={() => setOpen(null)}
           onOpenProfile={onOpenProfile}
           onDelete={canEdit ? onDelete : undefined}
-          onCaption={onCaption}
         />
       ) : null}
     </div>

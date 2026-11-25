@@ -791,8 +791,20 @@ export async function developPhoto(
 }
 
 export async function setCaption(id: string, token: string, caption: string): Promise<{ caption: string }> {
-  const frames = await sql<{ shooter_token: string; on_feed: boolean }>(
-    `select p.shooter_token, ${liveOnFeed} as on_feed
+  const frames = await sql<{ shooter_token: string; on_feed: boolean; sent: boolean; preparable: boolean }>(
+    `select
+       p.shooter_token,
+       ${liveOnFeed} as on_feed,
+       (p.published_at is not null) as sent,
+       (
+         (p.event_id is null and p.developed_at is not null and p.published_at is null)
+         or (
+           p.event_id is not null
+           and coalesce(e.invite_only, false)
+           and e.reveal_at <= now()
+           and p.published_at is null
+         )
+       ) as preparable
      from photos p
      left join events e on e.id = p.event_id
      where p.id = $1`,
@@ -801,7 +813,8 @@ export async function setCaption(id: string, token: string, caption: string): Pr
   const frame = frames[0];
   if (!frame) throw new HttpError(404, "That frame is gone.");
   if (frame.shooter_token !== token) throw new HttpError(403, "Only the person who shot it can caption it.");
-  if (!flag(frame.on_feed)) throw new HttpError(409, "That frame isn't on the feed.");
+  if (flag(frame.on_feed) || flag(frame.sent)) throw new HttpError(409, "That caption is locked.");
+  if (!flag(frame.preparable)) throw new HttpError(409, "That frame isn't ready for a caption.");
   const rows = await sql<{ caption: string }>(
     `update photos set caption = $3 where id = $1 and shooter_token = $2 returning caption`,
     [id, token, caption],

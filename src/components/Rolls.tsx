@@ -11,7 +11,9 @@ import {
   inviteToEvent,
   joinEvent,
   publishEventFeed,
+  updateCaption,
 } from "@/lib/api";
+import { CaptionField } from "@/components/CaptionField";
 import { Gallery, GalleryCardButton } from "@/components/Gallery";
 import { PhotoStrip, StripShot } from "@/components/PhotoStrip";
 import { clockLabel, frames, longRemain } from "@/lib/format";
@@ -103,6 +105,7 @@ export function Rolls({
   const [tick, setTick] = useState(0);
   const removed = useRef(new Set<string>());
   const pickDirty = useRef(false);
+  const captionDrafts = useRef(new Map<string, string>());
 
   useEffect(() => {
     const id = window.setInterval(() => setNow(Date.now()), 1000);
@@ -262,8 +265,10 @@ export function Rolls({
     pickDirty.current = true;
     setPicked((current) => {
       const next = new Set(current);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      if (next.has(id)) {
+        next.delete(id);
+        captionDrafts.current.delete(id);
+      } else next.add(id);
       return next;
     });
   }
@@ -274,6 +279,16 @@ export function Rolls({
     setBusy(true);
     setError("");
     try {
+      for (const photo of eventDetail.photos) {
+        if (!picked.has(photo.id) || !photo.mine || photo.onFeed) continue;
+        const draft = captionDrafts.current.get(photo.id);
+        if (draft === undefined) continue;
+        const next = draft.trim();
+        if (next === photo.caption.trim()) continue;
+        const saved = await updateCaption(photo.id, next);
+        captionDrafts.current.set(photo.id, saved.caption);
+        onCaption(photo.id, saved.caption);
+      }
       const event = await publishEventFeed(eventDetail.id, ids);
       pickDirty.current = false;
       setEventDetail({
@@ -457,7 +472,18 @@ export function Rolls({
                         label={caption ? `Open ${caption}` : "Open frame"}
                         onOpen={() => setOpen(photo)}
                       />
-                      {caption ? <span className="photo-strip-caption">{caption}</span> : null}
+                      {picked.has(photo.id) && photo.mine && !photo.onFeed ? (
+                        <CaptionField
+                          id={photo.id}
+                          caption={photo.caption}
+                          disabled={busy}
+                          onDraft={(photoId, value) => {
+                            captionDrafts.current.set(photoId, value);
+                          }}
+                        />
+                      ) : caption ? (
+                        <span className="photo-strip-caption">{caption}</span>
+                      ) : null}
                       <label className="check">
                         <input
                           type="checkbox"
