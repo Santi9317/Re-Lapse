@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState, type RefObject } from "react";
-import { fetchOwnProfile, fetchPublicProfile, isProfileRemoved, saveOwnProfile, setFrameNote, setFrameSticker, updateCaption } from "@/lib/api";
+import { fetchOwnProfile, fetchPublicProfile, isProfileRemoved, saveOwnProfile, setFrameNote, setFrameSticker } from "@/lib/api";
+import { CaptionField } from "@/components/CaptionField";
 import { FRAME_NOTE_LIMIT } from "@/lib/frame-note";
 import { ago, leavesIn } from "@/lib/format";
 import {
@@ -697,75 +698,18 @@ function FrameActions({
   );
 }
 
-function CaptionOption({
-  item,
-  onCaption,
-}: {
-  item: FeedItem;
-  onCaption?: (id: string, caption: string) => void;
-}) {
-  const [value, setValue] = useState(item.caption);
-  const [note, setNote] = useState("");
-  const focused = useRef(false);
-  const saved = useRef(item.caption);
-
-  useEffect(() => {
-    saved.current = item.caption;
-    if (!focused.current) setValue(item.caption);
-  }, [item.id, item.caption]);
-
-  async function commit(nextValue: string) {
-    const next = nextValue.trim();
-    if (next === saved.current.trim()) return;
-    setNote("");
-    try {
-      const result = await updateCaption(item.id, next);
-      saved.current = result.caption;
-      setValue(result.caption);
-      onCaption?.(item.id, result.caption);
-    } catch (err) {
-      setNote(err instanceof Error ? err.message : "That caption didn't stick.");
-    }
-  }
-
-  return (
-    <>
-      <input
-        className="field"
-        maxLength={80}
-        placeholder="Caption, if you want one"
-        value={value}
-        aria-label="Caption"
-        data-caption={item.id}
-        onChange={(event) => setValue(event.target.value)}
-        onFocus={() => {
-          focused.current = true;
-        }}
-        onBlur={(event) => {
-          focused.current = false;
-          void commit(event.target.value);
-        }}
-        onKeyDown={(event) => {
-          if (event.key === "Enter") {
-            event.preventDefault();
-            event.currentTarget.blur();
-          }
-        }}
-      />
-      <div className="count">{value.trim().length}/80</div>
-      {note ? <p className="error">{note}</p> : null}
-    </>
-  );
-}
-
 function PhotoCaption({
   item,
   onCaption,
+  editable = false,
 }: {
   item: FeedItem;
   onCaption?: (id: string, caption: string) => void;
+  editable?: boolean;
 }) {
-  if (item.mine && item.onFeed) return <CaptionOption item={item} onCaption={onCaption} />;
+  if (editable && item.mine && !item.onFeed && item.eventId) {
+    return <CaptionField id={item.id} caption={item.caption} onCaption={onCaption} />;
+  }
   if (!item.caption) return null;
   return <figcaption className="caption">{item.caption}</figcaption>;
 }
@@ -817,7 +761,7 @@ export function PrintView({
         onStickers={onStickers}
         onComments={onComments}
       />
-      {!compact ? <PhotoCaption item={item} onCaption={onCaption} /> : null}
+      {!compact ? <PhotoCaption item={item} onCaption={onCaption} editable /> : null}
       {!compact ? <ProfileLink item={item} onOpenProfile={onOpenProfile} /> : null}
       <p className="meta">{meta}</p>
       <FrameActions item={item} getImage={() => imageRef.current} onDelete={onDelete} />

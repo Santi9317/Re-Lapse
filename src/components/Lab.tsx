@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { blobToBase64, chooseChemistry, developPhoto, deletePhoto, fetchLab, fetchLatent, fetchPrivateImage, publishPhoto } from "@/lib/api";
+import { blobToBase64, chooseChemistry, developPhoto, deletePhoto, fetchLab, fetchLatent, fetchPrivateImage, publishPhoto, updateCaption } from "@/lib/api";
+import { CaptionField } from "@/components/CaptionField";
 import { developStampDate, readDateStamp, writeDateStamp } from "@/lib/date-stamp";
 import { countdown, disposableDate, longRemain } from "@/lib/format";
 import { renderDisposable } from "@/lib/filter";
@@ -42,11 +43,13 @@ export function Lab({
   const [savingId, setSavingId] = useState<string | null>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [stamp, setStamp] = useState(true);
+  const [preparing, setPreparing] = useState<Set<string>>(() => new Set());
   const stampRef = useRef(true);
   const developedIds = useRef(new Set<string>());
   const pendingBath = useRef(new Map<string, Chemistry>());
   const grading = useRef(new Set<string>());
   const finished = useRef(new Set<string>());
+  const captionDrafts = useRef(new Map<string, string>());
 
   useEffect(() => {
     const saved = readDateStamp();
@@ -167,11 +170,27 @@ export function Lab({
   }
 
   async function publish(id: string) {
+    if (!preparing.has(id)) {
+      setPreparing((current) => {
+        const next = new Set(current);
+        next.add(id);
+        return next;
+      });
+      return;
+    }
     setBusy(id);
     setError("");
     try {
+      const item = items.find((row) => row.id === id);
+      const draft = (captionDrafts.current.get(id) ?? item?.caption ?? "").trim();
+      if (item && draft !== item.caption.trim()) {
+        const saved = await updateCaption(id, draft);
+        captionDrafts.current.set(id, saved.caption);
+        setItems((current) => current.map((row) => (row.id === id ? { ...row, caption: saved.caption } : row)));
+      }
       await publishPhoto(id);
-      setItems((current) => current.filter((item) => item.id !== id));
+      captionDrafts.current.delete(id);
+      setItems((current) => current.filter((row) => row.id !== id));
       onPublished();
     } catch (err) {
       setError(err instanceof Error ? err.message : "That frame isn't ready to share.");
@@ -267,6 +286,16 @@ export function Lab({
                 ) : state === "developed" ? (
                   <>
                     <div className="kicker">Developed 🌈</div>
+                    {preparing.has(item.id) ? (
+                      <CaptionField
+                        id={item.id}
+                        caption={item.caption}
+                        disabled={busy === item.id}
+                        onDraft={(photoId, value) => {
+                          captionDrafts.current.set(photoId, value);
+                        }}
+                      />
+                    ) : null}
                     <button
                       className="primary"
                       type="button"
@@ -274,9 +303,13 @@ export function Lab({
                       disabled={busy === item.id}
                       onClick={() => void publish(item.id)}
                     >
-                      {busy === item.id ? "Sending…" : "Send to the feed 🚀"}
+                      {busy === item.id ? "Sending…" : preparing.has(item.id) ? "Put it on the feed 🚀" : "Send to the feed 🚀"}
                     </button>
-                    <p>Your eyes only, unless you lapse it onto the feed.</p>
+                    <p>
+                      {preparing.has(item.id)
+                        ? "Add a caption now, or leave it blank. Once this photo is on the feed, that line stays."
+                        : "Your eyes only, unless you lapse it onto the feed."}
+                    </p>
                   </>
                 ) : state === "ready" ? (
                   <>
