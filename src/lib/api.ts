@@ -305,14 +305,10 @@ export async function requestRecovery(name: string, pin: string): Promise<{ stat
  * along, so a missing cookie cannot mint a new camera.
  */
 async function installRecoveredCamera(): Promise<void> {
-  const existing = shooterToken();
-  const requestHeaders: Record<string, string> = {};
-  if (existing) requestHeaders["x-shooter-token"] = existing;
   const response = await fetchWithBooth("/api/camera", {
     method: "POST",
     cache: "no-store",
     credentials: "same-origin",
-    headers: Object.keys(requestHeaders).length > 0 ? requestHeaders : undefined,
   });
   const data = (await response.json().catch(() => null)) as { token?: string; error?: string } | null;
   if (!response.ok || !data?.token || !UUID.test(data.token)) {
@@ -362,6 +358,7 @@ export async function fetchRescue(options?: {
 }
 
 export async function fetchPublicProfile(id: string): Promise<SharedProfile> {
+  if (!UUID.test(id)) throw new Error("That profile is gone.");
   return withGalleries(await request<SharedProfile>(`/api/profiles/${id}`, { headers: await headers(false) }));
 }
 

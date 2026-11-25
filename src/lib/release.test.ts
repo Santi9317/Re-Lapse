@@ -23,6 +23,7 @@ test("this publish carries the same notes the camera can show", () => {
   assert.deepEqual(publishedReleaseFromJson(release), { version: APP_VERSION, notes: [...RELEASE_NOTES] });
   const notes = RELEASE_NOTES.join("\n");
   const lower = notes.toLowerCase();
+  assert.match(notes, /The Home Screen shortcut prompt works again after an update\./);
   assert.match(notes, /Gallery cards stack the cover, the name, and the frame count\./);
   assert.match(notes, /Recover an account from the You menu\./);
   assert.match(notes, /Frames come back in Disposable 400, with warmer skin, softer contrast, and a fine grain\./);

@@ -161,7 +161,7 @@ test("icon digests follow the camera shortcut files, and later publishes keep th
   const head = git(["rev-parse", "HEAD"]);
   const main = git(["rev-parse", "origin/main"]);
   if (baseText === null || head === null || main === null) return;
-  const base = JSON.parse(baseText) as { icon?: unknown; version?: unknown };
+  const base = JSON.parse(baseText) as { icon?: unknown; previousIcon?: unknown; version?: unknown };
   if (typeof base.icon !== "string" || base.icon.length === 0) {
     assert.equal(PREVIOUS_ICON_DIGEST, PRE_WINK);
     assert.notEqual(ICON_DIGEST, PREVIOUS_ICON_DIGEST);
@@ -170,6 +170,20 @@ test("icon digests follow the camera shortcut files, and later publishes keep th
   if (head === main) return;
   // Same version as main is still that publish, including an icon change it already recorded.
   if (release.version && release.version === base.version) return;
+  if (
+    ICON_DIGEST === base.icon &&
+    typeof base.previousIcon === "string" &&
+    base.previousIcon.length > 0 &&
+    base.previousIcon !== base.icon
+  ) {
+    assert.equal(PREVIOUS_ICON_DIGEST, base.previousIcon);
+    assert.equal(iconFilesChanged(ICON_DIGEST, PREVIOUS_ICON_DIGEST), true);
+    return;
+  }
+  if (ICON_DIGEST === base.icon && base.previousIcon === base.icon && PREVIOUS_ICON_DIGEST !== base.icon) {
+    assert.equal(iconFilesChanged(ICON_DIGEST, PREVIOUS_ICON_DIGEST), true);
+    return;
+  }
   assert.equal(PREVIOUS_ICON_DIGEST, base.icon);
   assert.equal(iconFilesChanged(ICON_DIGEST, PREVIOUS_ICON_DIGEST), ICON_DIGEST !== base.icon);
 });

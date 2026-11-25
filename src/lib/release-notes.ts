@@ -4,6 +4,7 @@
  * Keep public/release.json in step with this list, and keep its version equal to APP_VERSION.
  */
 export const RELEASE_NOTES = [
+  "The Home Screen shortcut prompt works again after an update.",
   "Gallery cards stack the cover, the name, and the frame count.",
   "Recover an account from the You menu.",
   "Frames come back in Disposable 400, with warmer skin, softer contrast, and a fine grain.",

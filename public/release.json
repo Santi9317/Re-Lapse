@@ -1,6 +1,7 @@
 {
-  "version": "1.70",
+  "version": "1.71",
   "notes": [
+    "The Home Screen shortcut prompt works again after an update.",
     "Gallery cards stack the cover, the name, and the frame count.",
     "Recover an account from the You menu.",
     "Frames come back in Disposable 400, with warmer skin, softer contrast, and a fine grain.",
@@ -17,5 +18,5 @@
     "New photos and other changes show up when you switch tabs."
   ],
   "icon": "0e6210f1bd3191d086e7c4deb1bb920768940cbf227f6f962125f415635d7665",
-  "previousIcon": "0e6210f1bd3191d086e7c4deb1bb920768940cbf227f6f962125f415635d7665"
+  "previousIcon": "42097b791bcab9389e7d97de7174e3e42c4e85f5ec406ca82f8ceb149b32ad48"
 }
