@@ -5,7 +5,15 @@ import { deletePhoto, fetchFeed } from "@/lib/api";
 import type { FeedItem, FrameSticker } from "@/lib/types";
 import { Lightbox, PrintView } from "@/components/Print";
 
-export function Feed({ revision, onOpenProfile }: { revision: number; onOpenProfile: (id: string) => void }) {
+export function Feed({
+  revision,
+  refresh = 0,
+  onOpenProfile,
+}: {
+  revision: number;
+  refresh?: number;
+  onOpenProfile: (id: string) => void;
+}) {
   const [photos, setPhotos] = useState<FeedItem[]>([]);
   const [error, setError] = useState("");
   const [open, setOpen] = useState<FeedItem | null>(null);
@@ -36,7 +44,7 @@ export function Feed({ revision, onOpenProfile }: { revision: number; onOpenProf
       stop = true;
       window.clearInterval(id);
     };
-  }, [revision]);
+  }, [revision, refresh]);
 
   function onStickers(id: string, stickers: FrameSticker[]) {
     generation.current += 1;

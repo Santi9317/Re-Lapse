@@ -52,12 +52,14 @@ export function GalleryStrip({
 
 export function Gallery({
   id,
+  refresh = 0,
   onBack,
   backLabel = "Keepsakes",
   onOpenProfile,
   onChanged,
 }: {
   id: string;
+  refresh?: number;
   onBack: () => void;
   backLabel?: string;
   onOpenProfile?: (id: string) => void;
@@ -87,7 +89,7 @@ export function Gallery({
     return () => {
       stop = true;
     };
-  }, [id, tick]);
+  }, [id, tick, refresh]);
 
   function reload() {
     onChanged?.();
