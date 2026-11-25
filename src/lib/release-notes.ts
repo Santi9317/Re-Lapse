@@ -5,7 +5,7 @@
  * Keep public/release.json in step with this list, and keep its version equal to APP_VERSION.
  */
 export const RELEASE_NOTES = [
-  "Tap Daylight or Night again to clear it. With neither picked, Develop uses the usual bath.",
+  "The shutter flash lasts a little longer, so you can see that the photo was taken.",
 ] as const;
 
 export type PublishedRelease = {
