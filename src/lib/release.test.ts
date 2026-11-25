@@ -1,8 +1,24 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { notesControlForUpdate, publishedReleaseFromJson, RELEASE_NOTES } from "./release-notes.ts";
+import { fileURLToPath } from "node:url";
+import { notesControlForUpdate, notesPromptOnEntry, publishedReleaseFromJson, RELEASE_NOTES } from "./release-notes.ts";
 import { APP_VERSION } from "./release.ts";
+
+const ROOT = fileURLToPath(new URL("../..", import.meta.url));
+
+function git(args: string[]): string | null {
+  try {
+    return execFileSync("git", args, {
+      cwd: ROOT,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  } catch {
+    return null;
+  }
+}
 
 test("the menu version is the string package.json ships", () => {
   const pkg = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")) as { version?: string };
@@ -19,6 +35,10 @@ test("this publish carries the same notes the camera can show", () => {
   const workerVersion = /const RELEASE_VERSION = "([^"]+)"/.exec(sw)?.[1];
   assert.equal(release.version, APP_VERSION);
   assert.equal(workerVersion, APP_VERSION);
+  assert.equal(Array.isArray(release.notes), true);
+  assert.ok(release.notes && release.notes.length > 0);
+  assert.ok(RELEASE_NOTES.length > 0);
+  for (const line of RELEASE_NOTES) assert.equal(line, line.trim());
   assert.deepEqual(release.notes, [...RELEASE_NOTES]);
   assert.deepEqual(publishedReleaseFromJson(release), { version: APP_VERSION, notes: [...RELEASE_NOTES] });
   assert.deepEqual(
@@ -102,4 +122,82 @@ test("what's new shows once for the publish that wrote it", () => {
   );
   assert.equal(publishedReleaseFromJson({ version: "", notes: ["Hi"] }), null);
   assert.equal(publishedReleaseFromJson({ version: "9.1", notes: ["  ", 4] }), null);
+  assert.equal(publishedReleaseFromJson({ version: "9.1" }), null);
+  assert.equal(publishedReleaseFromJson({ version: "9.1", notes: [] })?.notes.length, 0);
+});
+
+test("a version bump offers what's new on entry without a waiting update", () => {
+  const unseen = notesControlForUpdate({
+    published: { version: APP_VERSION, notes: [...RELEASE_NOTES] },
+    bundledVersion: APP_VERSION,
+    bundledNotes: [...RELEASE_NOTES],
+    seen: null,
+  });
+  assert.ok(unseen);
+  assert.ok(unseen.notes.length > 0);
+  // Opening the app with no service worker waiting still offers the control.
+  assert.equal(notesPromptOnEntry({ offer: unseen, updateOpen: false, updateSettled: true, blocked: false }), true);
+  const fromBundle = notesControlForUpdate({
+    published: null,
+    bundledVersion: APP_VERSION,
+    bundledNotes: [...RELEASE_NOTES],
+    seen: null,
+  });
+  assert.ok(fromBundle);
+  assert.equal(notesPromptOnEntry({ offer: fromBundle, updateOpen: false, updateSettled: true, blocked: false }), true);
+  // Empty or missing notes stay hidden, so the file check above has to fail the run.
+  assert.equal(
+    notesControlForUpdate({
+      published: { version: APP_VERSION, notes: [] },
+      bundledVersion: APP_VERSION,
+      bundledNotes: [...RELEASE_NOTES],
+      seen: null,
+    }),
+    null,
+  );
+  assert.equal(
+    notesPromptOnEntry({ offer: { notes: [] }, updateOpen: false, updateSettled: true, blocked: false }),
+    false,
+  );
+  assert.equal(notesPromptOnEntry({ offer: null, updateOpen: false, updateSettled: true, blocked: false }), false);
+  assert.equal(notesPromptOnEntry({ offer: unseen, updateOpen: true, updateSettled: true, blocked: false }), false);
+  assert.equal(notesPromptOnEntry({ offer: unseen, updateOpen: false, updateSettled: false, blocked: false }), false);
+  assert.equal(notesPromptOnEntry({ offer: unseen, updateOpen: false, updateSettled: true, blocked: true }), false);
+
+  const shell = readFileSync(new URL("../components/Shell.tsx", import.meta.url), "utf8");
+  assert.equal(shell.includes("if (!updateOpen || !releaseReady"), false);
+  assert.match(shell, /notesPromptOnEntry\(\{/);
+  assert.match(shell, /\{notesVisible && notesOffer \? \([\s\S]*?data-shell="notes"/);
+  const updateAt = shell.indexOf('data-shell="update"');
+  const notesAt = shell.indexOf('data-shell="notes"');
+  const homeAt = shell.indexOf('data-shell="home"');
+  assert.ok(updateAt >= 0 && notesAt > updateAt && homeAt > notesAt);
+  const updateSheet = shell.slice(updateAt, notesAt);
+  const notesSheet = shell.slice(notesAt, homeAt);
+  assert.match(updateSheet, /data-release-notes-control/);
+  assert.match(updateSheet, /See what's new/);
+  assert.match(notesSheet, /data-release-notes-control/);
+  assert.match(notesSheet, /See what's new/);
+  assert.equal(updateSheet.includes('data-shell="notes"'), false);
+
+  const baseSource = git(["show", "origin/main:src/lib/release.ts"]);
+  const baseReleaseText = git(["show", "origin/main:public/release.json"]);
+  if (baseSource === null || baseReleaseText === null) return;
+  const baseVersion = /export const APP_VERSION = "([^"]+)"/.exec(baseSource)?.[1];
+  if (!baseVersion || baseVersion === APP_VERSION) return;
+  const baseRelease = JSON.parse(baseReleaseText) as { notes?: unknown };
+  const release = JSON.parse(readFileSync(new URL("../../public/release.json", import.meta.url), "utf8")) as {
+    notes?: unknown;
+  };
+  assert.ok(Array.isArray(release.notes) && release.notes.length > 0);
+  assert.notDeepEqual(release.notes, baseRelease.notes);
+  const bumped = notesControlForUpdate({
+    published: { version: APP_VERSION, notes: [...RELEASE_NOTES] },
+    bundledVersion: baseVersion,
+    bundledNotes: [],
+    seen: baseVersion,
+  });
+  assert.ok(bumped);
+  assert.deepEqual([...bumped.notes], [...RELEASE_NOTES]);
+  assert.equal(notesPromptOnEntry({ offer: bumped, updateOpen: false, updateSettled: true, blocked: false }), true);
 });
