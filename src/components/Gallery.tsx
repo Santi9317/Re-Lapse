@@ -54,6 +54,7 @@ export function GalleryStrip({
 
 export function Gallery({
   id,
+  refresh = 0,
   place,
   onBack,
   backLabel = "Keepsakes",
@@ -61,6 +62,7 @@ export function Gallery({
   onChanged,
 }: {
   id: string;
+  refresh?: number;
   place: GalleryPlace;
   onBack: () => void;
   backLabel?: string;
@@ -101,7 +103,7 @@ export function Gallery({
     return () => {
       stop = true;
     };
-  }, [id, tick]);
+  }, [id, tick, refresh]);
 
   function reload() {
     onChanged?.();

@@ -6,7 +6,7 @@
  * Keep public/sw.js RELEASE_VERSION and public/release.json "version" equal to it,
  * and write this publish's notes in src/lib/release-notes.ts and public/release.json.
  */
-export const APP_VERSION = "1.62";
+export const APP_VERSION = "1.63";
 
 export type Release = {
   version: string;

@@ -68,6 +68,7 @@ function inviteLink(code: string): string {
 
 export function Rolls({
   revision,
+  refresh = 0,
   focusEventId,
   joinNotice,
   onArm,
@@ -76,6 +77,7 @@ export function Rolls({
   onFocusConsumed,
 }: {
   revision: number;
+  refresh?: number;
   focusEventId?: string | null;
   joinNotice?: string;
   onArm: (event: EventRoll) => void;
@@ -126,23 +128,30 @@ export function Rolls({
       stop = true;
       window.clearInterval(id);
     };
-  }, [revision, tick]);
+  }, [revision, refresh, tick]);
 
   const watchedEvent = eventDetail?.id ?? null;
   useEffect(() => {
     if (!watchedEvent) return;
-    const id = window.setInterval(() => {
+    let stop = false;
+    const pull = () => {
       void fetchEvent(watchedEvent)
         .then((detail) => {
+          if (stop) return;
           setEventDetail({
             ...detail,
             photos: detail.photos.filter((photo) => !removed.current.has(photo.id)),
           });
         })
         .catch(() => undefined);
-    }, 3000);
-    return () => window.clearInterval(id);
-  }, [watchedEvent]);
+    };
+    pull();
+    const id = window.setInterval(pull, 3000);
+    return () => {
+      stop = true;
+      window.clearInterval(id);
+    };
+  }, [watchedEvent, revision, refresh]);
 
   const detailKey = eventDetail?.id ?? "";
   useEffect(() => {
@@ -328,6 +337,7 @@ export function Rolls({
     return (
       <Gallery
         id={galleryId}
+        refresh={refresh + revision}
         place="keepsakes"
         onBack={() => {
           setGalleryId(null);

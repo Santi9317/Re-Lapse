@@ -15,10 +15,12 @@ function cardState(item: LabItem, now: number): LabState {
 
 export function Lab({
   revision,
+  refresh = 0,
   onPublished,
   onDeleted,
 }: {
   revision: number;
+  refresh?: number;
   onPublished: () => void;
   onDeleted?: () => void;
 }) {
@@ -57,7 +59,7 @@ export function Lab({
       window.clearInterval(poll);
       window.clearInterval(tick);
     };
-  }, [revision]);
+  }, [revision, refresh]);
 
   async function develop(id: string) {
     setBusy(id);

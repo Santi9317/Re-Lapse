@@ -7,10 +7,12 @@ import { Lightbox, PrintView } from "@/components/Print";
 
 export function Feed({
   revision,
+  refresh = 0,
   onOpenProfile,
   onSeen,
 }: {
   revision: number;
+  refresh?: number;
   onOpenProfile: (id: string) => void;
   onSeen?: (photos: FeedItem[]) => void;
 }) {
@@ -47,7 +49,7 @@ export function Feed({
       stop = true;
       window.clearInterval(id);
     };
-  }, [revision]);
+  }, [revision, refresh]);
 
   function onStickers(id: string, stickers: FrameSticker[]) {
     generation.current += 1;

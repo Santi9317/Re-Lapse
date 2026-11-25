@@ -38,7 +38,7 @@ function captionFor(id: string, photos: FeedItem[]): string {
   return caption || "Frame";
 }
 
-export function Profile({ revision }: { revision: number }) {
+export function Profile({ revision, refresh = 0 }: { revision: number; refresh?: number }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [draft, setDraft] = useState<Profile>(emptyProfile);
   const [mode, setMode] = useState<Mode | null>(null);
@@ -56,28 +56,39 @@ export function Profile({ revision }: { revision: number }) {
   const [openGallery, setOpenGallery] = useState<string | null>(null);
   const mounted = useRef(true);
   const write = useRef(0);
+  const modeRef = useRef<Mode | null>(null);
+  modeRef.current = mode;
 
   useEffect(() => {
     mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
     let stop = false;
     async function load() {
+      const seenWrite = write.current;
+      const holdEditor = () => modeRef.current === "edit" || modeRef.current === "arrange";
       try {
         const local = loadProfile();
         const remote = await fetchOwnProfile();
-        if (stop) return;
+        if (stop || seenWrite !== write.current) return;
         setGalleries(remote?.galleries ?? []);
         let saved = remote ? withCameraPortrait(profileFromServer(remote), local) : emptyProfile();
         if (!remote && profileReady(local)) {
           const created = await saveOwnProfile(profilePatch(local, null));
-          if (stop) return;
+          if (stop || seenWrite !== write.current) return;
           setGalleries(created.galleries ?? []);
           saved = withCameraPortrait(profileFromServer(created), local);
           saveProfile(saved);
         } else if (remote) {
           storeCameraProfile(saved);
         }
-        const pending = loadDraft();
         setProfile(saved);
+        if (holdEditor()) return;
+        const pending = loadDraft();
         if (pending && !profilesEqual(pending, saved)) {
           setDraft(draftWithSavedPortrait(pending, saved));
           setMode("edit");
@@ -87,21 +98,21 @@ export function Profile({ revision }: { revision: number }) {
           setMode(profileReady(saved) ? "page" : "edit");
         }
       } catch (err) {
-        if (stop) return;
+        if (stop || seenWrite !== write.current) return;
         const local = loadProfile();
-        const pending = loadDraft();
         setProfile(local);
+        setFormError(err instanceof Error ? err.message : "The lab didn't answer.");
+        if (holdEditor()) return;
+        const pending = loadDraft();
         setDraft(pending && !profilesEqual(pending, local) ? draftWithSavedPortrait(pending, local) : local);
         setMode(profileReady(local) ? "page" : "edit");
-        setFormError(err instanceof Error ? err.message : "The lab didn't answer.");
       }
     }
     void load();
     return () => {
       stop = true;
-      mounted.current = false;
     };
-  }, []);
+  }, [revision, refresh]);
 
   useEffect(() => {
     if (mode !== "edit") return;
@@ -126,7 +137,7 @@ export function Profile({ revision }: { revision: number }) {
       stop = true;
       window.clearInterval(id);
     };
-  }, [revision]);
+  }, [revision, refresh]);
 
   useEffect(() => {
     if (!openId) return;
@@ -254,6 +265,7 @@ export function Profile({ revision }: { revision: number }) {
       <div className="profile-screen" data-screen="profile">
         <Gallery
           id={openGallery}
+          refresh={refresh + revision}
           place="profile"
           backLabel="Profile"
           onBack={() => setOpenGallery(null)}
@@ -978,10 +990,12 @@ function FrameDialog({
 export function GuestProfile({
   id,
   onBack,
+  refresh = 0,
   load = fetchPublicProfile,
 }: {
   id: string;
   onBack: () => void;
+  refresh?: number;
   load?: (id: string) => Promise<SharedProfile>;
 }) {
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -990,14 +1004,19 @@ export function GuestProfile({
   const [index, setIndex] = useState(0);
   const [openId, setOpenId] = useState<string | null>(null);
   const [openGallery, setOpenGallery] = useState<string | null>(null);
+  const seenId = useRef<string | null>(null);
 
   useEffect(() => {
     let stop = false;
-    setProfile(null);
-    setGalleries([]);
-    setOpenGallery(null);
-    setError("");
-    setIndex(0);
+    const switched = seenId.current !== id;
+    seenId.current = id;
+    if (switched) {
+      setProfile(null);
+      setGalleries([]);
+      setOpenGallery(null);
+      setError("");
+      setIndex(0);
+    }
     load(id)
       .then((row) => {
         if (stop) return;
@@ -1010,7 +1029,7 @@ export function GuestProfile({
     return () => {
       stop = true;
     };
-  }, [id, load]);
+  }, [id, load, refresh]);
 
   useEffect(() => {
     if (!openId) return;
@@ -1027,6 +1046,7 @@ export function GuestProfile({
     return (
       <Gallery
         id={openGallery}
+        refresh={refresh}
         place="profile"
         backLabel="Profile"
         onBack={() => setOpenGallery(null)}
