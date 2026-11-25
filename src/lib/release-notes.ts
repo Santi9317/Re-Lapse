@@ -4,6 +4,9 @@
  * Keep public/release.json in step with this list, and keep its version equal to APP_VERSION.
  */
 export const RELEASE_NOTES = [
+  "Frames come back in Disposable 400, with warmer skin, softer contrast, and a fine grain.",
+  "Daylight and Night are other baths. Pick one before the clock runs out, or when the frame is ready. A frame takes one bath.",
+  "The date stamp, when you leave it on, prints in the corners with the time of the shot.",
   "Save the shortcut to the Home Screen again so the new icon appears.",
   "Your home screen icon changes to the wink.",
   "The gate icon stays the shutter.",

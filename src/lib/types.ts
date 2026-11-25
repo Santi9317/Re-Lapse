@@ -57,6 +57,8 @@ export type ProfileWrite = {
 
 export type LabState = "developing" | "ready" | "developed" | "sealed";
 
+export type Chemistry = "default" | "daylight" | "night";
+
 export type LabItem = {
   id: string;
   caption: string;
@@ -66,6 +68,10 @@ export type LabItem = {
   eventId: string | null;
   eventName: string | null;
   revealAt: number | null;
+  chemistry: Chemistry | null;
+  graded: boolean;
+  dateStamp: boolean;
+  capturedAt: number | null;
 };
 
 export type Album = {

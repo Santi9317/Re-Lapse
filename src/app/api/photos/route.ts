@@ -1,7 +1,7 @@
 import { json, asRecord, readJson, toErrorResponse, PHOTO_BODY_BYTES } from "@/server/http";
 import { requireMember } from "@/server/gate";
 import { createPhoto, wantsDevClock } from "@/server/store";
-import { cleanCaption, optionalUuid, readProof } from "@/server/validate";
+import { cleanCaption, cleanCapturedAt, optionalUuid, readProof } from "@/server/validate";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,6 +17,8 @@ export async function POST(request: Request) {
       imageBase64: body.imageBase64,
       eventId: optionalUuid(body.eventId),
       dev: wantsDevClock(request.headers.get("x-relapse-dev")),
+      dateStamp: body.dateStamp === true,
+      capturedAt: cleanCapturedAt(body.capturedAt),
     });
     return json(photo, 201);
   } catch (error) {

@@ -5,7 +5,7 @@ import { blobToBase64, sendPhoto } from "@/lib/api";
 import { cameraWake, isHardwareShutter, openCamera, peekCamera, type CameraWake } from "@/lib/camera";
 import { shouldFlipOnDoubleTap } from "@/lib/tap";
 import { isIosDevice, setTorch, wait } from "@/lib/flash";
-import { renderDisposable } from "@/lib/filter";
+import { renderDisposable, renderLatent } from "@/lib/filter";
 import { disposableDate } from "@/lib/format";
 import { exposureLine, lapseQuip } from "@/lib/quips";
 import type { EventRoll } from "@/lib/types";
@@ -85,6 +85,7 @@ export function Shoot({
   const streamRef = useRef<MediaStream | null>(null);
   const bitmapRef = useRef<ImageBitmap | null>(null);
   const blobRef = useRef<Blob | null>(null);
+  const capturedAtRef = useRef<number | null>(null);
   const cameraInput = useRef<HTMLInputElement>(null);
   const rollInput = useRef<HTMLInputElement>(null);
   const [facing, setFacing] = useState<"environment" | "user">("environment");
@@ -354,7 +355,15 @@ export function Shoot({
     setRendering(true);
     setError("");
     try {
-      blobRef.current = await renderDisposable(bitmap, { dateStamp });
+      const captured = capturedAtRef.current ?? Date.now();
+      const openEvent = armed != null && Date.now() < armed.endsAt;
+      blobRef.current = openEvent
+        ? await renderDisposable(bitmap, {
+            dateStamp,
+            date: dateStamp ? new Date(captured) : undefined,
+            chemistry: "default",
+          })
+        : await renderLatent(bitmap);
     } catch (err) {
       if (!blobRef.current) revealLens();
       setError(err instanceof Error ? err.message : "The frame didn't take.");
@@ -366,6 +375,7 @@ export function Shoot({
   async function takeBitmap(bitmap: ImageBitmap) {
     bitmapRef.current?.close();
     bitmapRef.current = bitmap;
+    capturedAtRef.current = Date.now();
     await paint(bitmap, stamp);
   }
 
@@ -456,6 +466,7 @@ export function Shoot({
     bitmapRef.current?.close();
     bitmapRef.current = null;
     blobRef.current = null;
+    capturedAtRef.current = null;
     revealLens();
     setCaption("");
     setError("");
@@ -485,6 +496,8 @@ export function Shoot({
         imageBase64: await blobToBase64(blob),
         caption: caption.trim(),
         eventId: armed && !eventClosed ? armed.id : null,
+        dateStamp: stamp,
+        capturedAt: capturedAtRef.current,
       });
       const next = frames + 1;
       localStorage.setItem("relapse.frames", String(next));

@@ -1,7 +1,8 @@
-import { json, toErrorResponse } from "@/server/http";
+import { asRecord, json, PHOTO_BODY_BYTES, readJson, toErrorResponse } from "@/server/http";
 import { requireMember } from "@/server/gate";
 import { developPhoto } from "@/server/store";
-import { requireUuid } from "@/server/validate";
+import { cleanChemistry, requireUuid } from "@/server/validate";
+import type { Chemistry } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,7 +14,18 @@ export async function POST(request: Request, ctx: Ctx) {
     const { id } = await ctx.params;
     const photoId = requireUuid(id, "That frame is gone.");
     const token = await requireMember(request);
-    const result = await developPhoto(photoId, token);
+    const type = request.headers.get("content-type") ?? "";
+    let print: { imageBase64: string; chemistry: Chemistry } | null = null;
+    if (type.includes("application/json")) {
+      const body = asRecord(await readJson(request, PHOTO_BODY_BYTES));
+      if (typeof body.imageBase64 === "string" && body.imageBase64.length > 0) {
+        print = {
+          imageBase64: body.imageBase64,
+          chemistry: cleanChemistry(body.chemistry) ?? "default",
+        };
+      }
+    }
+    const result = await developPhoto(photoId, token, print);
     return json(result);
   } catch (error) {
     return toErrorResponse(error);
