@@ -1,6 +1,6 @@
 // Keep RELEASE_VERSION equal to APP_VERSION. A new string is how an installed
 // shortcut notices a publish: the next cold open can see a waiting worker.
-const RELEASE_VERSION = "1.82.0";
+const RELEASE_VERSION = "1.83.0";
 self.releaseVersion = RELEASE_VERSION;
 const CACHE = "relapse-shell-v4";
 // The picture a shortcut already saved stays put until its URL changes.

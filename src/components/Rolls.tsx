@@ -249,6 +249,15 @@ export function Rolls({
     }
   }
 
+  function onCaption(id: string, caption: string) {
+    setEventDetail((current) =>
+      current
+        ? { ...current, photos: current.photos.map((photo) => (photo.id === id ? { ...photo, caption } : photo)) }
+        : current,
+    );
+    setOpen((current) => (current && current.id === id ? { ...current, caption } : current));
+  }
+
   function togglePick(id: string) {
     pickDirty.current = true;
     setPicked((current) => {
@@ -478,6 +487,7 @@ export function Rolls({
                       item={photo}
                       onOpenProfile={onOpenProfile}
                       onDelete={onDelete}
+                      onCaption={onCaption}
                     />
                   </div>
                 ))}
@@ -499,7 +509,13 @@ export function Rolls({
         ) : null}
         {error ? <p className="error">{error}</p> : null}
         {open ? (
-          <Lightbox item={open} onClose={() => setOpen(null)} onOpenProfile={onOpenProfile} onDelete={onDelete} />
+          <Lightbox
+            item={open}
+            onClose={() => setOpen(null)}
+            onOpenProfile={onOpenProfile}
+            onDelete={onDelete}
+            onCaption={onCaption}
+          />
         ) : null}
       </div>
     );

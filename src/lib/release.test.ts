@@ -24,13 +24,16 @@ test("this publish carries the same notes the camera can show", () => {
   assert.deepEqual(
     [...RELEASE_NOTES],
     [
-      "Tap a frame to read notes written on the back.",
-      "Type a note under the photo, and tap the plus to pick any emoji.",
+      "The date stamp switch sits with your prints. A developed frame gets the date only when it is on.",
+      "A caption shows up on a photo after you send it to the feed.",
+      "The shutter sends the frame on, and the next shot is ready right away.",
     ],
   );
   const notes = RELEASE_NOTES.join("\n");
   const lower = notes.toLowerCase();
   for (const older of [
+    "Tap a frame to read notes written on the back.",
+    "Type a note under the photo, and tap the plus to pick any emoji.",
     "The home screen asks once to show the icon count, and remembers the answer.",
     "General, in the You menu, shows that choice and lets you change it.",
     "Each phone keeps its own allowance, so one phone cannot use up another's.",

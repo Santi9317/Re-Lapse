@@ -790,6 +790,27 @@ export async function developPhoto(
   return { developedAt: num(done.developed_ms) };
 }
 
+export async function setCaption(id: string, token: string, caption: string): Promise<{ caption: string }> {
+  const frames = await sql<{ shooter_token: string; on_feed: boolean }>(
+    `select p.shooter_token, ${liveOnFeed} as on_feed
+     from photos p
+     left join events e on e.id = p.event_id
+     where p.id = $1`,
+    [id],
+  );
+  const frame = frames[0];
+  if (!frame) throw new HttpError(404, "That frame is gone.");
+  if (frame.shooter_token !== token) throw new HttpError(403, "Only the person who shot it can caption it.");
+  if (!flag(frame.on_feed)) throw new HttpError(409, "That frame isn't on the feed.");
+  const rows = await sql<{ caption: string }>(
+    `update photos set caption = $3 where id = $1 and shooter_token = $2 returning caption`,
+    [id, token, caption],
+  );
+  const row = rows[0];
+  if (!row) throw new HttpError(404, "That frame is gone.");
+  return { caption: row.caption };
+}
+
 export async function publishPhoto(id: string, token: string): Promise<{ publishedAt: number }> {
   const rows = await sql<{ published_ms: number }>(
     `update photos

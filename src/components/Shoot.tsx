@@ -3,11 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 import { blobToBase64, sendPhoto } from "@/lib/api";
 import { cameraWake, isHardwareShutter, openCamera, peekCamera, type CameraWake } from "@/lib/camera";
+import { readDateStamp } from "@/lib/date-stamp";
 import { shouldFlipOnDoubleTap } from "@/lib/tap";
 import { isIosDevice, setTorch, wait } from "@/lib/flash";
 import { renderDisposable, renderLatent } from "@/lib/filter";
-import { disposableDate } from "@/lib/format";
-import { exposureLine, lapseQuip } from "@/lib/quips";
 import type { EventRoll } from "@/lib/types";
 import {
   captureFrame,
@@ -34,24 +33,6 @@ function FlashMark({ on }: { on: boolean }) {
   );
 }
 
-const LAST_EXPOSURE_KEY = "relapse.exposure";
-
-function readLastExposure(): string | null {
-  try {
-    return localStorage.getItem(LAST_EXPOSURE_KEY);
-  } catch {
-    return null;
-  }
-}
-
-function writeLastExposure(line: string) {
-  try {
-    localStorage.setItem(LAST_EXPOSURE_KEY, line);
-  } catch {
-    /* the next shot can repeat if this device refuses storage */
-  }
-}
-
 function clickSound() {
   const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
   if (!Ctx) return;
@@ -71,38 +52,34 @@ function clickSound() {
 export function Shoot({
   active,
   armed,
-  devTimers,
   onDisarm,
   onSent,
 }: {
   active: boolean;
   armed: EventRoll | null;
-  devTimers: boolean;
   onDisarm: () => void;
   onSent: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const bitmapRef = useRef<ImageBitmap | null>(null);
-  const blobRef = useRef<Blob | null>(null);
-  const capturedAtRef = useRef<number | null>(null);
   const cameraInput = useRef<HTMLInputElement>(null);
   const rollInput = useRef<HTMLInputElement>(null);
   const [facing, setFacing] = useState<"environment" | "user">("environment");
   const [mode, setMode] = useState<"opening" | "live" | "fallback">("opening");
-  const [sealed, setSealed] = useState(false);
-  const [stamp, setStamp] = useState(true);
-  const [caption, setCaption] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [rendering, setRendering] = useState(false);
   const [error, setError] = useState("");
   const [burst, setBurst] = useState(false);
   const [screenFlash, setScreenFlash] = useState(false);
   const [ios, setIos] = useState(false);
   const [lamp, setLamp] = useState(false);
   const [frames, setFrames] = useState(0);
-  const [sealLine, setSealLine] = useState("");
   const [now, setNow] = useState(() => Date.now());
+  const snapping = useRef(false);
+  const framesRef = useRef(0);
+  const onSentRef = useRef(onSent);
+  const armedRef = useRef(armed);
+  framesRef.current = frames;
+  onSentRef.current = onSent;
+  armedRef.current = armed;
   const [zoom, setZoom] = useState(1);
   const [optical, setOptical] = useState(false);
   // A fast camera switch can leave mode on "live", so this tells the preview to attach the new stream.
@@ -131,8 +108,6 @@ export function Shoot({
   facingRef.current = facing;
   const modeRef = useRef(mode);
   modeRef.current = mode;
-  const sealedRef = useRef(sealed);
-  sealedRef.current = sealed;
 
   const wakeRef = useRef<(event: CameraWake) => void>(() => {});
   const openedShoot = useRef(false);
@@ -224,7 +199,7 @@ export function Shoot({
     let session: { distance: number; zoom: number; moved: boolean } | null = null;
     let lastTap: { x: number; y: number; at: number } | null = null;
     let pinchGesture = false;
-    const live = () => modeRef.current === "live" && !sealedRef.current;
+    const live = () => modeRef.current === "live";
 
     const onStart = (event: TouchEvent) => {
       if (event.touches.length >= 2) pinchGesture = true;
@@ -308,17 +283,11 @@ export function Shoot({
   useEffect(() => {
     const video = videoRef.current;
     const stream = streamRef.current;
-    if (!video || !stream || sealed) return;
+    if (!video || !stream) return;
     video.style.visibility = "";
     video.srcObject = stream;
     void video.play().catch(() => undefined);
-  }, [mode, sealed, opened]);
-
-  useEffect(() => {
-    return () => {
-      bitmapRef.current?.close();
-    };
-  }, []);
+  }, [mode, opened]);
 
   useEffect(() => {
     if (!armed) return;
@@ -326,77 +295,73 @@ export function Shoot({
     return () => window.clearInterval(id);
   }, [armed]);
 
-  function conceal() {
-    const line = exposureLine(readLastExposure());
-    writeLastExposure(line);
-    setSealLine(line);
-    setSealed(true);
-    const video = videoRef.current;
-    if (!video) return;
-    video.pause();
-    video.style.visibility = "hidden";
-  }
-
-  function revealLens() {
-    setSealed(false);
-    const video = videoRef.current;
-    if (!video) return;
-    video.style.visibility = "";
-    void video.play().catch(() => undefined);
-  }
-
   function yieldFrame(): Promise<void> {
     return new Promise((resolve) => {
       requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
     });
   }
 
-  async function paint(bitmap: ImageBitmap, dateStamp: boolean) {
-    setRendering(true);
-    setError("");
+  function noteFrame() {
+    const next = framesRef.current + 1;
+    framesRef.current = next;
     try {
-      const captured = capturedAtRef.current ?? Date.now();
-      const openEvent = armed != null && Date.now() < armed.endsAt;
-      blobRef.current = openEvent
+      localStorage.setItem("relapse.frames", String(next));
+    } catch {
+      /* the counter can catch up on the next shot */
+    }
+    setFrames(next);
+  }
+
+  // The shutter hands this frame to the lab and leaves the finder live for the next shot.
+  async function handoff(bitmap: ImageBitmap, capturedAt: number) {
+    try {
+      const roll = armedRef.current;
+      const openEvent = roll != null && capturedAt < roll.endsAt;
+      const stamp = openEvent && readDateStamp();
+      const blob = openEvent
         ? await renderDisposable(bitmap, {
-            dateStamp,
-            date: dateStamp ? new Date(captured) : undefined,
+            dateStamp: stamp,
+            date: stamp ? new Date(capturedAt) : undefined,
             chemistry: "default",
           })
         : await renderLatent(bitmap);
+      await sendPhoto({
+        imageBase64: await blobToBase64(blob),
+        caption: "",
+        eventId: openEvent && roll ? roll.id : null,
+        dateStamp: stamp,
+        capturedAt,
+      });
+      noteFrame();
+      onSentRef.current();
     } catch (err) {
-      if (!blobRef.current) revealLens();
-      setError(err instanceof Error ? err.message : "The frame didn't take.");
+      setError(err instanceof Error ? err.message : "The lab didn't take the frame.");
     } finally {
-      setRendering(false);
+      bitmap.close();
     }
   }
 
-  async function takeBitmap(bitmap: ImageBitmap) {
-    bitmapRef.current?.close();
-    bitmapRef.current = bitmap;
-    capturedAtRef.current = Date.now();
-    await paint(bitmap, stamp);
-  }
-
   async function snap() {
-    if (sealed || rendering) return;
+    if (snapping.current) return;
     if (mode !== "live" || !videoRef.current || videoRef.current.videoWidth === 0) {
       cameraInput.current?.click();
       return;
     }
+    snapping.current = true;
+    setError("");
     const video = videoRef.current;
     const track = streamRef.current?.getVideoTracks()[0] ?? null;
     const rear = lamp && facing === "environment";
     const front = lamp && facing === "user";
-    const lit = rear ? await setTorch(track, true) : false;
-    if (lit) await wait(180);
-    if (front) {
-      setScreenFlash(true);
-      await yieldFrame();
-      await wait(320);
-    }
+    let lit = false;
     try {
+      lit = rear ? await setTorch(track, true) : false;
+      if (lit) await wait(180);
+      if (front) {
+        setScreenFlash(true);
+        await yieldFrame();
+        await wait(320);
+      }
       clickSound();
       navigator.vibrate?.(15);
       if (!front) {
@@ -415,25 +380,34 @@ export function Shoot({
       if (scale <= 1) ctx.drawImage(video, 0, 0);
       else ctx.drawImage(video, frame.sx, frame.sy, frame.sw, frame.sh, 0, 0, still.width, still.height);
       if (front) setScreenFlash(false);
-      conceal();
-      await yieldFrame();
-      await takeBitmap(await createImageBitmap(still));
+      const capturedAt = Date.now();
+      const bitmap = await createImageBitmap(still);
+      window.setTimeout(() => {
+        void handoff(bitmap, capturedAt);
+      }, 0);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "The frame didn't take.");
     } finally {
+      snapping.current = false;
       if (lit) await setTorch(track, false);
       if (front) setScreenFlash(false);
     }
   }
 
   async function takeFile(file: File | undefined) {
-    if (!file || sealed || rendering) return;
+    if (!file || snapping.current) return;
     setError("");
-    conceal();
-    await yieldFrame();
+    snapping.current = true;
     try {
-      await takeBitmap(await createImageBitmap(file));
+      const capturedAt = Date.now();
+      const bitmap = await createImageBitmap(file);
+      window.setTimeout(() => {
+        void handoff(bitmap, capturedAt);
+      }, 0);
     } catch {
-      revealLens();
       setError("That frame didn't open. Try a JPEG or PNG.");
+    } finally {
+      snapping.current = false;
     }
   }
 
@@ -454,7 +428,7 @@ export function Shoot({
   }, [active]);
 
   function flipCamera() {
-    if (modeRef.current !== "live" || sealedRef.current) return;
+    if (modeRef.current !== "live") return;
     const now = Date.now();
     if (now - lastFlip.current < 450) return;
     lastFlip.current = now;
@@ -462,54 +436,9 @@ export function Shoot({
   }
   flipRef.current = flipCamera;
 
-  function retake() {
-    bitmapRef.current?.close();
-    bitmapRef.current = null;
-    blobRef.current = null;
-    capturedAtRef.current = null;
-    revealLens();
-    setCaption("");
-    setError("");
-  }
-
-  async function toggleStamp() {
-    const next = !stamp;
-    setStamp(next);
-    if (bitmapRef.current) await paint(bitmapRef.current, next);
-  }
-
   const eventClosed = armed != null && now >= armed.endsAt;
   const preview = previewScale(optical, zoom);
   const lensStyle = lensTransform(facing === "user", preview);
-
-  async function send() {
-    const blob = blobRef.current;
-    if (!blob || busy) return;
-    if (armed && eventClosed) {
-      setError("This timecapsule just closed.");
-      return;
-    }
-    setBusy(true);
-    setError("");
-    try {
-      await sendPhoto({
-        imageBase64: await blobToBase64(blob),
-        caption: caption.trim(),
-        eventId: armed && !eventClosed ? armed.id : null,
-        dateStamp: stamp,
-        capturedAt: capturedAtRef.current,
-      });
-      const next = frames + 1;
-      localStorage.setItem("relapse.frames", String(next));
-      setFrames(next);
-      retake();
-      onSent();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "The lab didn't take the frame.");
-    } finally {
-      setBusy(false);
-    }
-  }
 
   return (
     <div className="shoot" data-screen="shoot">
@@ -539,7 +468,7 @@ export function Shoot({
         {mode === "live" ? (
           <video
             ref={videoRef}
-            className={["lens", facing === "user" ? "mirror" : "", sealed ? "concealed" : ""].filter(Boolean).join(" ")}
+            className={["lens", facing === "user" ? "mirror" : ""].filter(Boolean).join(" ")}
             data-facing={facing}
             style={lensStyle ? { transform: lensStyle } : undefined}
             playsInline
@@ -562,7 +491,7 @@ export function Shoot({
         <div className="grain" />
         {burst ? <div className="flash" /> : null}
         {screenFlash ? <div className="screen-flash" /> : null}
-        {mode === "live" && !sealed && !zoomIsRest(zoom) ? <div className="zoom-readout">{formatZoom(zoom)}</div> : null}
+        {mode === "live" && !zoomIsRest(zoom) ? <div className="zoom-readout">{formatZoom(zoom)}</div> : null}
         <div className="vf-top">
           <div>
             <div className="brand">Re-Lapse ✨</div>
@@ -570,7 +499,7 @@ export function Shoot({
           </div>
           <div className="counter">400 · {String(frames).padStart(2, "0")}</div>
         </div>
-        {ios && mode === "live" && !sealed ? (
+        {ios && mode === "live" ? (
           <button
             className="lamp"
             type="button"
@@ -596,7 +525,6 @@ export function Shoot({
               type="button"
               data-shutter
               aria-label="Shutter"
-              disabled={rendering}
               onClick={() => void snap()}
             />
           </div>
@@ -631,64 +559,7 @@ export function Shoot({
           event.target.value = "";
         }}
       />
-      {sealed ? (
-        <div className="review" data-review="sealed">
-          <div className="sealed-frame" aria-hidden="true">
-            <span>{sealLine}</span>
-          </div>
-          <p className="hint">
-            {armed && !eventClosed
-              ? `Sealed with ${armed.name}. The timecapsule comes back a day after it closes, and then the frames for the feed get picked. 🔒`
-              : devTimers
-                ? `Short lab clock is on. ${lapseQuip(String(frames))}`
-                : `${lapseQuip(String(frames))} Give it 5 to 30 minutes, then develop.`}
-          </p>
-          <label className="stamp-toggle" data-date-stamp={stamp ? "on" : "off"}>
-            <input
-              type="checkbox"
-              role="switch"
-              checked={stamp}
-              aria-checked={stamp}
-              disabled={busy || rendering}
-              onChange={() => void toggleStamp()}
-            />
-            <span className="stamp-imprint" aria-hidden="true">
-              {disposableDate(new Date())}
-            </span>
-            <span className="stamp-copy">
-              Date stamp
-              <span aria-hidden="true">{stamp ? "On" : "Off"}</span>
-            </span>
-            <span className="stamp-track" aria-hidden="true">
-              <span />
-            </span>
-          </label>
-          <input
-            className="field"
-            maxLength={80}
-            placeholder="Caption, if you want one"
-            value={caption}
-            onChange={(event) => setCaption(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                void send();
-              }
-            }}
-          />
-          <div className="count">{caption.trim().length}/80</div>
-          {error ? <p className="error">{error}</p> : null}
-          <div className="stack">
-            <button className="primary" type="button" data-send disabled={busy || rendering} onClick={() => void send()}>
-              {busy ? "Sending…" : armed && !eventClosed ? "Send with the timecapsule 🎞️" : "Send to the lab 🧪"}
-            </button>
-            <button className="ghost" type="button" onClick={retake} disabled={busy}>
-              Retake
-            </button>
-          </div>
-        </div>
-      ) : null}
-      {error && !sealed ? <p className="error" style={{ position: "absolute", left: 16, right: 16, bottom: 8 }}>{error}</p> : null}
+      {error ? <p className="error" style={{ position: "absolute", left: 16, right: 16, bottom: 8 }}>{error}</p> : null}
     </div>
   );
 }

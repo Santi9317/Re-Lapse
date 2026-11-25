@@ -1,8 +1,9 @@
 {
-  "version": "1.82.0",
+  "version": "1.83.0",
   "notes": [
-    "Tap a frame to read notes written on the back.",
-    "Type a note under the photo, and tap the plus to pick any emoji."
+    "The date stamp switch sits with your prints. A developed frame gets the date only when it is on.",
+    "A caption shows up on a photo after you send it to the feed.",
+    "The shutter sends the frame on, and the next shot is ready right away."
   ],
   "icon": "0e6210f1bd3191d086e7c4deb1bb920768940cbf227f6f962125f415635d7665",
   "previousIcon": "0e6210f1bd3191d086e7c4deb1bb920768940cbf227f6f962125f415635d7665"

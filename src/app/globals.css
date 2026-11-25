@@ -572,6 +572,9 @@ h1.word button {
   text-transform: uppercase;
   color: var(--amber);
 }
+.scroll > .stamp-toggle {
+  margin-bottom: 14px;
+}
 .stamp-toggle {
   position: relative;
   display: flex;
@@ -971,6 +974,14 @@ button.sticker:active { transform: translate(-50%, -50%) rotate(var(--tilt)) sca
   line-height: 1.35;
   margin: 10px 4px 2px;
 }
+.print .field {
+  margin: 10px 0 0;
+  color: var(--paper-ink);
+  background: rgba(255, 253, 248, 0.9);
+  border-color: rgba(92, 70, 56, 0.35);
+}
+.print .field::placeholder { color: #8a6d58; }
+.print .count { color: #8a6d58; margin: 4px 4px 0; }
 .meta {
   margin: 4px 4px 0;
   font-size: 11px;
