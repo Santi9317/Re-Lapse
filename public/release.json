@@ -1,6 +1,6 @@
 {
-  "version": "1.56",
+  "version": "1.57",
   "notes": [
-    "An update can now show what's new the first time you open it."
+    "Tapping the empty profile photo adds a photo."
   ]
 }

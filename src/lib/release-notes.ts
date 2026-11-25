@@ -4,7 +4,7 @@
  * Keep public/release.json in step with this list, and keep its version equal to APP_VERSION.
  */
 export const RELEASE_NOTES = [
-  "An update can now show what's new the first time you open it.",
+  "Tapping the empty profile photo adds a photo.",
 ] as const;
 
 export type PublishedRelease = {
