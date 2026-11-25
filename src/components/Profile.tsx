@@ -257,6 +257,7 @@ export function Profile({ revision }: { revision: number }) {
       <div className="profile-screen" data-screen="profile">
         <Gallery
           id={openGallery}
+          place="profile"
           backLabel="Profile"
           onBack={() => setOpenGallery(null)}
           onChanged={() => {
@@ -1041,6 +1042,7 @@ export function GuestProfile({
     return (
       <Gallery
         id={openGallery}
+        place="profile"
         backLabel="Profile"
         onBack={() => setOpenGallery(null)}
         onChanged={() => {
