@@ -6,6 +6,7 @@
 export const RELEASE_NOTES = [
   "A gallery on a profile shows only the photos in it.",
   "Feed names sit a little larger, with the emojis tucked together, and download and delete match the other buttons.",
+  "The date stamp switch now matches the rest of the camera.",
 ] as const;
 
 export type PublishedRelease = {
