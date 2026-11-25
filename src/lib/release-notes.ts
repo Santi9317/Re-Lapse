@@ -5,8 +5,7 @@
  * Keep public/release.json in step with this list, and keep its version equal to APP_VERSION.
  */
 export const RELEASE_NOTES = [
-  "Adding the camera walks through the Home Screen steps.",
-  "The Home Screen shortcut stays unless the icon changes.",
+  "Posted photos leave off the RE-LAPSE 400 line.",
 ] as const;
 
 export type PublishedRelease = {
