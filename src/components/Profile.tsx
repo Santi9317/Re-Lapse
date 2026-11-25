@@ -12,6 +12,7 @@ import {
   clearDraft,
   draftWithSavedPortrait,
   emptyProfile,
+  hasPortrait,
   loadDraft,
   loadProfile,
   moveCarouselId,
@@ -211,7 +212,16 @@ export function Profile({ revision }: { revision: number }) {
     try {
       const avatarDataUrl = await portraitFromFile(file);
       if (!mounted.current) return;
-      setDraft((current) => ({ ...current, avatarDataUrl, avatarPhotoId: null, avatarUrl: null }));
+      if (mode === "page" && profile) {
+        setDraft({ ...profile, avatarDataUrl, avatarPhotoId: null, avatarUrl: null });
+        setActiveSlot(0);
+        setTyped("");
+        setTypedHint("");
+        setMoreFrames(false);
+        setMode("edit");
+      } else {
+        setDraft((current) => ({ ...current, avatarDataUrl, avatarPhotoId: null, avatarUrl: null }));
+      }
     } catch (err) {
       if (mounted.current) setFormError(err instanceof Error ? err.message : "This photo can't be read.");
     } finally {
@@ -282,6 +292,8 @@ export function Profile({ revision }: { revision: number }) {
           index={index}
           onIndex={setIndex}
           onEdit={beginEdit}
+          onFile={(file) => void onPortraitFile(file)}
+          reading={reading}
           onArrange={() => {
             setFormError("");
             setMode("arrange");
@@ -340,6 +352,8 @@ function ProfilePage({
   index,
   onIndex,
   onEdit,
+  onFile,
+  reading,
   onArrange,
   onOpen,
   galleries,
@@ -351,14 +365,37 @@ function ProfilePage({
   index: number;
   onIndex: (index: number) => void;
   onEdit: () => void;
+  onFile: (file: File | undefined) => void;
+  reading: boolean;
   onArrange: () => void;
   onOpen: (id: string) => void;
   galleries: GalleryCard[];
   onOpenGallery: (id: string) => void;
 }) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const canAdd = !hasPortrait(profile);
   return (
     <>
-      <IdentityCard profile={profile} onEditPhoto={onEdit} />
+      <IdentityCard
+        profile={profile}
+        onEditPhoto={onEdit}
+        onAddPhoto={canAdd ? () => fileRef.current?.click() : undefined}
+        addBusy={reading}
+      />
+      {canAdd ? (
+        <input
+          ref={fileRef}
+          className="file"
+          type="file"
+          accept="image/*"
+          aria-label="Choose a profile photo from this device"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            event.target.value = "";
+            onFile(file);
+          }}
+        />
+      ) : null}
       <button className="ghost profile-edit" type="button" onClick={onEdit}>
         Edit profile
       </button>
@@ -385,26 +422,51 @@ function ProfilePage({
   );
 }
 
-function IdentityCard({ profile, onEditPhoto }: { profile: Profile; onEditPhoto?: () => void }) {
+function IdentityCard({
+  profile,
+  onEditPhoto,
+  onAddPhoto,
+  addBusy = false,
+  decorativeCaption = false,
+}: {
+  profile: Profile;
+  onEditPhoto?: () => void;
+  onAddPhoto?: () => void;
+  addBusy?: boolean;
+  decorativeCaption?: boolean;
+}) {
   const portrait = <Portrait profile={profile} />;
+  const adding = !hasPortrait(profile) && Boolean(onAddPhoto);
+  const onPhoto = adding ? onAddPhoto : onEditPhoto;
   return (
     <figure className="print identity">
-      {onEditPhoto ? (
-        <button className="frame" type="button" onClick={onEditPhoto} aria-label="Edit profile photo">
+      {onPhoto ? (
+        <button
+          className="frame"
+          type="button"
+          onClick={onPhoto}
+          disabled={adding && addBusy}
+          aria-label={adding ? "Add a photo" : "Edit profile photo"}
+          data-portrait-action={adding ? "add" : "edit"}
+        >
           {portrait}
         </button>
+      ) : decorativeCaption ? (
+        <div aria-hidden="true">{portrait}</div>
       ) : (
         portrait
       )}
-      <h2 className={`caption${profile.username ? "" : " is-placeholder"}`} data-profile-name={profile.username}>
-        {profile.username || "Your name"}
-      </h2>
-      <p className="marks">
-        {profile.emojis.map((emoji, slot) => (
-          <span key={slot}>{emoji || "·"}</span>
-        ))}
-      </p>
-      <p className="stock-line">RE-LAPSE 400</p>
+      <div aria-hidden={decorativeCaption ? true : undefined}>
+        <h2 className={`caption${profile.username ? "" : " is-placeholder"}`} data-profile-name={profile.username}>
+          {profile.username || "Your name"}
+        </h2>
+        <p className="marks">
+          {profile.emojis.map((emoji, slot) => (
+            <span key={slot}>{emoji || "·"}</span>
+          ))}
+        </p>
+        <p className="stock-line">RE-LAPSE 400</p>
+      </div>
     </figure>
   );
 }
@@ -602,9 +664,12 @@ function ProfileEditor({
       ) : (
         <p className="fine">Anyone on the feed can open this. A name, a photo, and three emojis that describe you.</p>
       )}
-      <div aria-hidden="true">
-        <IdentityCard profile={draft} />
-      </div>
+      <IdentityCard
+        profile={draft}
+        onAddPhoto={() => fileRef.current?.click()}
+        addBusy={reading}
+        decorativeCaption
+      />
       <label className="kicker" htmlFor="profile-name">
         Name
       </label>
