@@ -1,6 +1,7 @@
 {
-  "version": "1.65",
+  "version": "1.67",
   "notes": [
+    "Save the shortcut to the Home Screen again so the new icon appears.",
     "Your home screen icon changes to the wink.",
     "The gate icon stays the shutter.",
     "A mark on Feed when someone else adds a photo.",
@@ -9,5 +10,7 @@
     "The date stamp switch now matches the rest of the camera.",
     "Choosing photos slides sideways, so the buttons below stay close.",
     "New photos and other changes show up when you switch tabs."
-  ]
+  ],
+  "icon": "0e6210f1bd3191d086e7c4deb1bb920768940cbf227f6f962125f415635d7665",
+  "previousIcon": "42097b791bcab9389e7d97de7174e3e42c4e85f5ec406ca82f8ceb149b32ad48"
 }

@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import {
   HOME_CHOICE_KEY,
+  ICON_PROMPT_PENDING_KEY,
+  ICON_SEEN_KEY,
   LEGACY_HIDE_INSTALL_KEY,
   NOTES_SEEN_KEY,
   UPDATE_ACCEPT_KEY,
@@ -24,6 +26,16 @@ import {
   type PublishedRelease,
 } from "@/lib/release-notes";
 import { APP_VERSION } from "@/lib/release";
+import {
+  ICON_PROMPT_DISMISS,
+  ICON_PROMPT_KICKER,
+  ICON_PROMPT_STEPS,
+  ICON_PROMPT_TITLE,
+  bundledIconRelease,
+  iconPromptPlan,
+  iconReleaseFromJson,
+  type IconRelease,
+} from "@/lib/icon-prompt";
 import { snapshotPhone } from "@/lib/identity";
 
 type InstallPrompt = Event & { prompt: () => Promise<void> };
@@ -48,12 +60,17 @@ export function ShellPrompts() {
   const [steps, setSteps] = useState<"ios" | "desk" | null>(null);
   const [releaseReady, setReleaseReady] = useState(false);
   const [published, setPublished] = useState<PublishedRelease | null>(null);
+  const [iconRelease, setIconRelease] = useState<IconRelease | null>(null);
+  const [updateSettled, setUpdateSettled] = useState(false);
+  const [iconOpen, setIconOpen] = useState(false);
   const [notesLines, setNotesLines] = useState<readonly string[] | null>(null);
   const [notesVersion, setNotesVersion] = useState<string | null>(null);
   const [notesOpen, setNotesOpen] = useState(false);
   const registration = useRef<ServiceWorkerRegistration | null>(null);
   const installPrompt = useRef<InstallPrompt | null>(null);
   const primary = useRef<HTMLButtonElement>(null);
+  const sawWaitingUpdate = useRef(false);
+  const justUpdated = useRef(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -64,6 +81,7 @@ export function ShellPrompts() {
       .then((body: unknown) => {
         if (dropped) return;
         setPublished(publishedReleaseFromJson(body));
+        setIconRelease(iconReleaseFromJson(body));
         setReleaseReady(true);
       })
       .catch(() => {
@@ -96,6 +114,7 @@ export function ShellPrompts() {
   }, [notesVersion]);
 
   useEffect(() => {
+    justUpdated.current = readStorage(sessionStorage, UPDATE_RELOAD_KEY) === "1";
     const safari = isSafariUa(navigator.userAgent);
     const stored = readStorage(localStorage, HOME_CHOICE_KEY);
     const legacyHidden = readStorage(localStorage, LEGACY_HIDE_INSTALL_KEY) === "1";
@@ -130,6 +149,7 @@ export function ShellPrompts() {
         hasWaiting: Boolean(reg.waiting),
         accepted: readStorage(sessionStorage, UPDATE_ACCEPT_KEY) === "1",
       });
+      if (decision === "show" || decision === "finish") sawWaitingUpdate.current = true;
       if (decision === "finish" && reg.waiting) {
         reg.waiting.postMessage({ type: "SKIP_WAITING" });
         return;
@@ -164,16 +184,24 @@ export function ShellPrompts() {
           void reg
             .update()
             .then(() => {
-              if (!dropped) offer(reg);
+              if (dropped) return;
+              offer(reg);
+              setUpdateSettled(true);
             })
-            .catch(() => undefined);
+            .catch(() => {
+              if (!dropped) setUpdateSettled(true);
+            });
           const onVis = () => {
             if (document.visibilityState === "visible") void reg.update().catch(() => undefined);
           };
           document.addEventListener("visibilitychange", onVis);
           removeVis = () => document.removeEventListener("visibilitychange", onVis);
         })
-        .catch(() => undefined);
+        .catch(() => {
+          if (!dropped) setUpdateSettled(true);
+        });
+    } else {
+      setUpdateSettled(true);
     }
 
     return () => {
@@ -185,8 +213,34 @@ export function ShellPrompts() {
   }, []);
 
   useEffect(() => {
-    if (updateOpen || homeAsk || steps) primary.current?.focus();
-  }, [updateOpen, homeAsk, steps]);
+    if (!updateSettled || !releaseReady) return;
+    const release = iconRelease ?? bundledIconRelease(APP_VERSION);
+    const seen = readStorage(localStorage, ICON_SEEN_KEY);
+    const pending = readStorage(localStorage, ICON_PROMPT_PENDING_KEY);
+    const plan = iconPromptPlan({
+      release,
+      seen,
+      pending,
+      updateWaiting: sawWaitingUpdate.current,
+      justUpdated: justUpdated.current,
+      blocked: updateOpen || homeAsk || steps !== null,
+    });
+    if (plan.pending !== pending) {
+      if (plan.pending) writeStorage(localStorage, ICON_PROMPT_PENDING_KEY, plan.pending);
+      else clearStorage(localStorage, ICON_PROMPT_PENDING_KEY);
+    }
+    if (!plan.show) return;
+    setIconOpen(true);
+    const markSeen = window.setTimeout(() => {
+      writeStorage(localStorage, ICON_SEEN_KEY, release.version);
+      clearStorage(localStorage, ICON_PROMPT_PENDING_KEY);
+    }, 0);
+    return () => window.clearTimeout(markSeen);
+  }, [updateSettled, releaseReady, iconRelease, updateOpen, homeAsk, steps]);
+
+  useEffect(() => {
+    if (updateOpen || homeAsk || steps || iconOpen) primary.current?.focus();
+  }, [updateOpen, homeAsk, steps, iconOpen]);
 
   function developUpdate() {
     const waiting = registration.current?.waiting;
@@ -216,6 +270,7 @@ export function ShellPrompts() {
 
   const askVisible = homeAsk && !updateOpen;
   const stepsVisible = steps !== null && !updateOpen;
+  const iconVisible = iconOpen && !updateOpen && !homeAsk && steps === null;
 
   return (
     <>
@@ -285,6 +340,25 @@ export function ShellPrompts() {
             </ol>
             <button ref={primary} className="primary" type="button" onClick={() => setSteps(null)}>
               Got it
+            </button>
+          </div>
+        </div>
+      ) : null}
+      {iconVisible ? (
+        <div className="lab-sheet" role="dialog" aria-modal="true" aria-labelledby="icon-title" data-shell="icon">
+          <div className="sheet-card">
+            <p className="kicker">{ICON_PROMPT_KICKER}</p>
+            <h2 id="icon-title">{ICON_PROMPT_TITLE}</h2>
+            <ol className="lab-steps" id="icon-steps">
+              {ICON_PROMPT_STEPS.map((step, index) => (
+                <li key={step}>
+                  <span>{String(index + 1).padStart(2, "0")}</span>
+                  <span>{step}</span>
+                </li>
+              ))}
+            </ol>
+            <button ref={primary} className="primary" type="button" onClick={() => setIconOpen(false)}>
+              {ICON_PROMPT_DISMISS}
             </button>
           </div>
         </div>

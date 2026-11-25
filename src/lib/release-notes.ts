@@ -4,6 +4,7 @@
  * Keep public/release.json in step with this list, and keep its version equal to APP_VERSION.
  */
 export const RELEASE_NOTES = [
+  "Save the shortcut to the Home Screen again so the new icon appears.",
   "Your home screen icon changes to the wink.",
   "The gate icon stays the shutter.",
   "A mark on Feed when someone else adds a photo.",
