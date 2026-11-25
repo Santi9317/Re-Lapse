@@ -4,23 +4,7 @@
  * Keep public/release.json in step with this list, and keep its version equal to APP_VERSION.
  */
 export const RELEASE_NOTES = [
-  "Daylight and Night are under Additional chemistry.",
-  "Wednesday's date stamp reads as a W.",
-  "The Home Screen shortcut prompt works again after an update.",
-  "Gallery cards stack the cover, the name, and the frame count.",
-  "Recover an account from the You menu.",
-  "Frames come back in Disposable 400, with warmer skin, softer contrast, and a fine grain.",
-  "Daylight and Night are other baths. Pick one before the clock runs out, or when the frame is ready. A frame takes one bath.",
-  "The date stamp, when you leave it on, prints in the corners with the time of the shot.",
-  "Save the shortcut to the Home Screen again so the new icon appears.",
-  "Your home screen icon changes to the wink.",
-  "The gate icon stays the shutter.",
-  "A mark on Feed when someone else adds a photo.",
-  "A gallery on a profile shows only the photos in it.",
-  "Feed names sit a little larger, with the emojis tucked together, and download and delete match the other buttons.",
-  "The date stamp switch now matches the rest of the camera.",
-  "Choosing photos slides sideways, so the buttons below stay close.",
-  "New photos and other changes show up when you switch tabs.",
+  "The header says tinker with the bath.",
 ] as const;
 
 export type PublishedRelease = {
