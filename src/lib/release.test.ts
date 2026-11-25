@@ -27,6 +27,7 @@ test("this publish carries the same notes the camera can show", () => {
   assert.match(notes, /A gallery on a profile shows only the photos in it\./);
   assert.match(notes, /Feed names sit a little larger, with the emojis tucked together, and download and delete match the other buttons\./);
   assert.match(notes, /The date stamp switch now matches the rest of the camera\./);
+  assert.match(notes, /Choosing photos slides sideways, so the buttons below stay close\./);
   assert.equal(/iphone|safari|android|deploy|pull request|\blab\b|\bsanti\b|\bmaker\b/.test(lower), false);
   for (const line of RELEASE_NOTES) assert.ok(line.length > 0 && line.length <= 140);
   const install = sw.slice(sw.indexOf('addEventListener("install"'), sw.indexOf('addEventListener("message"'));
