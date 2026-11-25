@@ -476,7 +476,6 @@ export function Rolls({
                     ) : null}
                     <PrintView
                       item={photo}
-                      onOpen={setOpen}
                       onOpenProfile={onOpenProfile}
                       onDelete={onDelete}
                     />

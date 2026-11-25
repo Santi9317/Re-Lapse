@@ -2,8 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { deletePhoto, fetchFeed } from "@/lib/api";
-import type { FeedItem, FrameSticker } from "@/lib/types";
-import { Lightbox, PrintView } from "@/components/Print";
+import type { FeedItem, FrameComment, FrameSticker } from "@/lib/types";
+import { PrintView } from "@/components/Print";
 
 export function Feed({
   revision,
@@ -18,7 +18,6 @@ export function Feed({
 }) {
   const [photos, setPhotos] = useState<FeedItem[]>([]);
   const [error, setError] = useState("");
-  const [open, setOpen] = useState<FeedItem | null>(null);
   const removed = useRef(new Set<string>());
   const generation = useRef(0);
   const onSeenRef = useRef(onSeen);
@@ -33,10 +32,6 @@ export function Feed({
         if (stop || ticket !== generation.current) return;
         const next = feed.photos.filter((photo) => !removed.current.has(photo.id));
         setPhotos(next);
-        setOpen((current) => {
-          if (!current || removed.current.has(current.id)) return null;
-          return next.find((photo) => photo.id === current.id) ?? null;
-        });
         setError("");
         onSeenRef.current?.(next);
       } catch (err) {
@@ -54,21 +49,22 @@ export function Feed({
   function onStickers(id: string, stickers: FrameSticker[]) {
     generation.current += 1;
     setPhotos((current) => current.map((photo) => (photo.id === id ? { ...photo, stickers } : photo)));
-    setOpen((current) => (current && current.id === id ? { ...current, stickers } : current));
+  }
+
+  function onComments(id: string, comments: FrameComment[]) {
+    generation.current += 1;
+    setPhotos((current) => current.map((photo) => (photo.id === id ? { ...photo, comments } : photo)));
   }
 
   async function onDelete(id: string) {
     const previous = photos;
-    const opened = open;
     removed.current.add(id);
     setPhotos((current) => current.filter((photo) => photo.id !== id));
-    if (open?.id === id) setOpen(null);
     try {
       await deletePhoto(id);
     } catch (err) {
       removed.current.delete(id);
       setPhotos(previous);
-      setOpen(opened);
       const message = err instanceof Error ? err.message : "That frame stayed put.";
       setError(message);
       throw err;
@@ -89,23 +85,14 @@ export function Feed({
             <PrintView
               key={photo.id}
               item={photo}
-              onOpen={setOpen}
               onOpenProfile={onOpenProfile}
               onDelete={onDelete}
               onStickers={onStickers}
+              onComments={onComments}
             />
           ))}
         </div>
       )}
-      {open ? (
-        <Lightbox
-          item={open}
-          onClose={() => setOpen(null)}
-          onOpenProfile={onOpenProfile}
-          onDelete={onDelete}
-          onStickers={onStickers}
-        />
-      ) : null}
     </div>
   );
 }

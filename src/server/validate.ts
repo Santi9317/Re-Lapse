@@ -1,3 +1,4 @@
+import { FRAME_NOTE_LIMIT } from "@/lib/frame-note";
 import { CAROUSEL_LIMIT, isEmoji } from "@/lib/profile";
 import type { Chemistry, ProfilePatch } from "@/lib/types";
 import { cameraAuthFromCookie } from "@/server/camera-auth";
@@ -40,6 +41,15 @@ export function cleanName(value: unknown): string {
 export function cleanStickerEmoji(value: unknown): string {
   if (typeof value !== "string" || !isEmoji(value)) throw new HttpError(400, "Pick an emoji.");
   return value;
+}
+
+export function cleanFrameNote(value: unknown): string {
+  const raw = typeof value === "string" ? value.replace(/[\r\n]+/g, " ") : value;
+  const note = scrub(raw, FRAME_NOTE_LIMIT, false);
+  if (!note || !note.replace(/[\u200b-\u200d\ufeff]/g, "").trim()) {
+    throw new HttpError(400, "Write a short note.");
+  }
+  return note;
 }
 
 export function cleanChemistry(value: unknown): Chemistry | null {

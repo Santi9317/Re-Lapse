@@ -1,8 +1,8 @@
 {
-  "version": "1.81.2",
+  "version": "1.82.0",
   "notes": [
-    "The home screen asks once to show the icon count, and remembers the answer.",
-    "General, in the You menu, shows that choice and lets you change it."
+    "Tap a frame to read notes written on the back.",
+    "Type a note under the photo, and tap the plus to pick any emoji."
   ],
   "icon": "0e6210f1bd3191d086e7c4deb1bb920768940cbf227f6f962125f415635d7665",
   "previousIcon": "0e6210f1bd3191d086e7c4deb1bb920768940cbf227f6f962125f415635d7665"
