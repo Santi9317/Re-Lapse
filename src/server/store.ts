@@ -380,6 +380,7 @@ function feedItem(row: Record<string, unknown>): FeedItem {
     createdAt: num(row.created_ms),
     developedAt: row.developed_ms == null ? null : num(row.developed_ms),
     sortAt: num(row.sort_ms),
+    addedAt: num(row.added_ms),
     albumId: text(row.album_id),
     albumName: text(row.album_name),
     eventId: text(row.event_id),
@@ -403,6 +404,11 @@ const feedSelect = `
     (extract(epoch from p.created_at) * 1000) as created_ms,
     (extract(epoch from p.developed_at) * 1000) as developed_ms,
     (extract(epoch from case when p.event_id is null then p.published_at else e.reveal_at end) * 1000) as sort_ms,
+    (extract(epoch from case
+      when p.event_id is null then p.published_at
+      when coalesce(e.invite_only, false) then p.published_at
+      else e.reveal_at
+    end) * 1000) as added_ms,
     p.album_id,
     a.name as album_name,
     p.event_id,
@@ -483,6 +489,7 @@ async function stickersFor(photoId: string, viewer: string): Promise<FrameSticke
         createdAt: 0,
         developedAt: null,
         sortAt: 0,
+        addedAt: 0,
         albumId: null,
         albumName: null,
         eventId: null,
