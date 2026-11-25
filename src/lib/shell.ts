@@ -3,6 +3,8 @@ export const LEGACY_HIDE_INSTALL_KEY = "relapse.hideInstall";
 export const UPDATE_ACCEPT_KEY = "relapse.updateAccepted";
 export const UPDATE_RELOAD_KEY = "relapse.updateDidReload";
 export const NOTES_SEEN_KEY = "relapse.notesSeen";
+export const ICON_PROMPT_PENDING_KEY = "relapse.iconPrompt";
+export const ICON_SEEN_KEY = "relapse.iconSeen";
 
 const NOT_SAFARI =
   /Chrome|Chromium|CriOS|FxiOS|EdgiOS|Edg\/|EdgA|OPR|OPiOS|SamsungBrowser|Android|DuckDuckGo|FBAN|FBAV|Instagram|GSA\//i;

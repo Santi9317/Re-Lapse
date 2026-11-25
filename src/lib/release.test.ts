@@ -26,6 +26,7 @@ test("this publish carries the same notes the camera can show", () => {
   assert.match(notes, /Frames come back in Disposable 400, with warmer skin, softer contrast, and a fine grain\./);
   assert.match(notes, /Daylight and Night are other baths\. Pick one before the clock runs out, or when the frame is ready\. A frame takes one bath\./);
   assert.match(notes, /The date stamp, when you leave it on, prints in the corners with the time of the shot\./);
+  assert.match(notes, /Save the shortcut to the Home Screen again so the new icon appears\./);
   assert.match(notes, /Your home screen icon changes to the wink\./);
   assert.match(notes, /The gate icon stays the shutter\./);
   assert.match(notes, /A mark on Feed when someone else adds a photo\./);
