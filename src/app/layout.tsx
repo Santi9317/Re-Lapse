@@ -1,12 +1,16 @@
 import type { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
 import { PortraitLock } from "@/components/PortraitLock";
+import { appShortcutIcons } from "@/lib/home-icons";
+import { APP_VERSION } from "@/lib/release";
 import "@fontsource/audiowide/latin-400.css";
 import "@fontsource/chakra-petch/latin-400.css";
 import "@fontsource/chakra-petch/latin-500.css";
 import "@fontsource/chakra-petch/latin-600.css";
 import "@fontsource/ibm-plex-mono/latin-600.css";
 import "./globals.css";
+
+const shortcutIcons = appShortcutIcons(APP_VERSION);
 
 export const metadata: Metadata = {
   title: "Re-Lapse",
@@ -23,9 +27,9 @@ export const metadata: Metadata = {
   icons: {
     icon: [
       { url: "/favicon.ico", sizes: "32x32", type: "image/x-icon" },
-      { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: shortcutIcons.any192, sizes: "192x192", type: "image/png" },
     ],
-    apple: [{ url: "/icons/apple-touch-icon.png", sizes: "180x180" }],
+    apple: [{ url: shortcutIcons.apple, sizes: "180x180" }],
   },
 };
 

@@ -3,7 +3,24 @@
 const RELEASE_VERSION = "1.57";
 self.releaseVersion = RELEASE_VERSION;
 const CACHE = "relapse-shell-v4";
-const SHELL = ["/", "/manifest.webmanifest", "/icons/icon-192.png", "/icons/icon-512.png"];
+// The picture a shortcut already saved stays put until its URL changes.
+// These paths are fetched while this worker installs, then requested on the
+// open that applies the update. Install does not call skipWaiting.
+const SHORTCUT_ICONS = [
+  "apple-touch-icon.png",
+  "icon-192.png",
+  "icon-512.png",
+  "gate-apple-touch-icon.png",
+  "gate-192.png",
+  "gate-512.png",
+];
+const SHELL = [
+  "/",
+  "/manifest.webmanifest",
+  "/gate.webmanifest",
+  ...SHORTCUT_ICONS.map((file) => `/icons/shortcut/${RELEASE_VERSION}/${file}`),
+  ...SHORTCUT_ICONS.map((file) => `/icons/${file}`),
+];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL)));
@@ -20,6 +37,18 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(self.clients.claim());
 });
 
+function fresh(request) {
+  return fetch(request.url, { cache: "reload", credentials: "same-origin" })
+    .then((response) => {
+      if (response.ok && response.type === "basic") {
+        const copy = response.clone();
+        caches.open(CACHE).then((cache) => cache.put(request, copy)).catch(() => {});
+      }
+      return response;
+    })
+    .catch(() => caches.match(request).then((hit) => hit || new Response(null, { status: 504 })));
+}
+
 self.addEventListener("fetch", (event) => {
   const request = event.request;
   if (request.method !== "GET") return;
@@ -35,6 +64,16 @@ self.addEventListener("fetch", (event) => {
   // Caching that response can swallow the Set-Cookie on the update reload.
   if (request.mode === "navigate") {
     event.respondWith(fetch(request).catch(() => caches.match(request).then((hit) => hit || caches.match("/"))));
+    return;
+  }
+  // Icon and manifest bytes follow this publish, not an older HTTP cache entry.
+  if (
+    url.pathname === "/manifest.webmanifest" ||
+    url.pathname === "/gate.webmanifest" ||
+    url.pathname.startsWith("/icons/shortcut/") ||
+    /^\/icons\/[^/]+\.png$/.test(url.pathname)
+  ) {
+    event.respondWith(fresh(request));
     return;
   }
   const local = url.hostname === "localhost" || url.hostname === "127.0.0.1";

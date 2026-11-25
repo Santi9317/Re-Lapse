@@ -48,6 +48,25 @@ const nextConfig: NextConfig = {
         headers: [{ key: "Cache-Control", value: "no-store" }],
       },
       {
+        source: "/manifest.webmanifest",
+        headers: [{ key: "Cache-Control", value: "no-cache" }],
+      },
+      {
+        source: "/gate.webmanifest",
+        headers: [{ key: "Cache-Control", value: "no-cache" }],
+      },
+      ...[
+        "/icons/apple-touch-icon.png",
+        "/icons/icon-192.png",
+        "/icons/icon-512.png",
+        "/icons/gate-apple-touch-icon.png",
+        "/icons/gate-192.png",
+        "/icons/gate-512.png",
+      ].map((source) => ({
+        source,
+        headers: [{ key: "Cache-Control", value: "no-cache" }],
+      })),
+      {
         source: "/:path*",
         headers: [
           { key: "X-Content-Type-Options", value: "nosniff" },

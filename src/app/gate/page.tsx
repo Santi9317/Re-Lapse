@@ -1,5 +1,9 @@
 import type { Metadata } from "next";
 import { GatePortal } from "@/components/GatePortal";
+import { gateShortcutIcons } from "@/lib/home-icons";
+import { APP_VERSION } from "@/lib/release";
+
+const shortcutIcons = gateShortcutIcons(APP_VERSION);
 
 export const metadata: Metadata = {
   title: "Gate · Re-Lapse",
@@ -11,8 +15,8 @@ export const metadata: Metadata = {
     title: "Gate",
   },
   icons: {
-    icon: [{ url: "/icons/gate-192.png", sizes: "192x192", type: "image/png" }],
-    apple: [{ url: "/icons/gate-apple-touch-icon.png", sizes: "180x180" }],
+    icon: [{ url: shortcutIcons.any192, sizes: "192x192", type: "image/png" }],
+    apple: [{ url: shortcutIcons.apple, sizes: "180x180" }],
   },
 };
 

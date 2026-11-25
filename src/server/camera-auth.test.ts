@@ -15,6 +15,7 @@ test("a document load refreshes the phone cookie and an API call does not", () =
   assert.equal(shouldRefreshPhoneCookie("GET", "/gate"), true);
   assert.equal(shouldRefreshPhoneCookie("POST", "/"), false);
   assert.equal(shouldRefreshPhoneCookie("GET", "/api/camera"), false);
+  assert.equal(shouldRefreshPhoneCookie("GET", "/icons/shortcut/1.57/apple-touch-icon.png"), false);
   assert.equal(boothFromCookie(`relapse_booth=${TOKEN}`), TOKEN);
   assert.equal(boothFromCookie("relapse_booth=nope"), null);
 });
