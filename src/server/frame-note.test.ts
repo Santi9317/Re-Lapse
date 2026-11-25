@@ -71,6 +71,17 @@ test("a note stays on that frame, and another phone can still write", async () =
 
   const signed = second.find((note) => note.text === "still here");
   assert.ok(signed);
+  const hiddenId = randomUUID();
+  await sql(
+    `insert into frame_notes (id, photo_id, shooter_token, body) values ($1, $2, $3, 'hidden line')`,
+    [hiddenId, privatePhoto, ada],
+  );
+  await assert.rejects(
+    () => removeFrameNote(privatePhoto, ada, hiddenId),
+    (err: unknown) => err instanceof HttpError && err.status === 409,
+  );
+  const hidden = await sql(`select id from frame_notes where id = $1`, [hiddenId]);
+  assert.equal(hidden.length, 1);
   await assert.rejects(
     () => removeFrameNote(beaPhoto, bea, signed.id),
     (err: unknown) => err instanceof HttpError && err.status === 404,

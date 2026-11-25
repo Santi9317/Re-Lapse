@@ -991,8 +991,18 @@ export async function setFrameNote(photoId: string, token: string, text: string)
   return commentsFor(photoId, token);
 }
 
-/** The writer can take their own line back. Anyone else's line stays. */
+/** The writer can take their own line back while the frame is on the feed. Anyone else's line stays. */
 export async function removeFrameNote(photoId: string, token: string, noteId: string): Promise<FrameComment[]> {
+  const frames = await sql<{ on_feed: boolean }>(
+    `select ${liveOnFeed} as on_feed
+     from photos p
+     left join events e on e.id = p.event_id
+     where p.id = $1`,
+    [photoId],
+  );
+  const frame = frames[0];
+  if (!frame) throw new HttpError(404, "That frame is gone.");
+  if (!flag(frame.on_feed)) throw new HttpError(409, "That frame isn't on the feed.");
   const removed = await sql<{ id: string }>(
     `delete from frame_notes
      where id = $1 and photo_id = $2 and shooter_token = $3
