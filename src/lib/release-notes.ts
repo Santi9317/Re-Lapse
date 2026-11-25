@@ -5,7 +5,7 @@
  * Keep public/release.json in step with this list, and keep its version equal to APP_VERSION.
  */
 export const RELEASE_NOTES = [
-  "Write a caption while a photo is on its way to the feed. Once it is up, that line stays as it is.",
+  "Download and Delete sit as small text under a photo.",
 ] as const;
 
 export type PublishedRelease = {
