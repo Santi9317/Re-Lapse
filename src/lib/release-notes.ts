@@ -5,7 +5,7 @@
  * Keep public/release.json in step with this list, and keep its version equal to APP_VERSION.
  */
 export const RELEASE_NOTES = [
-  "Posted photos leave off the RE-LAPSE 400 line.",
+  "Tap Re-Lapse for a line of inspiration.",
 ] as const;
 
 export type PublishedRelease = {
