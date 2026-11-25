@@ -1,6 +1,7 @@
 {
-  "version": "1.58",
+  "version": "1.59",
   "notes": [
-    "Feed names sit a little larger, with the emojis tucked together, and download and delete match the other buttons."
+    "Feed names sit a little larger, with the emojis tucked together, and download and delete match the other buttons.",
+    "The date stamp switch now matches the rest of the camera."
   ]
 }
