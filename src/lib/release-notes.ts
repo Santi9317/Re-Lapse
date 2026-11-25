@@ -5,8 +5,8 @@
  * Keep public/release.json in step with this list, and keep its version equal to APP_VERSION.
  */
 export const RELEASE_NOTES = [
-  "Tap a sticker to see who stuck it, with a small photo, their name, and that emoji.",
-  "Sign a note on the back. Your marks sit beside it, and you can delete your own.",
+  "See what's new when you open the camera, if you have not read this update.",
+  "The camera turns off when you leave Shoot, and a tap on Shoot turns it back on.",
 ] as const;
 
 export type PublishedRelease = {
