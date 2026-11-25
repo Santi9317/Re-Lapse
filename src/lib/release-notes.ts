@@ -4,6 +4,7 @@
  * Keep public/release.json in step with this list, and keep its version equal to APP_VERSION.
  */
 export const RELEASE_NOTES = [
+  "Gallery cards stack the cover, the name, and the frame count.",
   "Recover an account from the You menu.",
   "Frames come back in Disposable 400, with warmer skin, softer contrast, and a fine grain.",
   "Daylight and Night are other baths. Pick one before the clock runs out, or when the frame is ready. A frame takes one bath.",
