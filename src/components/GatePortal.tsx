@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { GuestProfile } from "@/components/Profile";
+import { applyAppBadge, gateBadgeCount } from "@/lib/badge";
 import type { SharedProfile } from "@/lib/types";
 
 type Pending = { id: string; name: string; createdAt: number };
@@ -107,6 +108,27 @@ export function GatePortal() {
       window.clearInterval(id);
     };
   }, [load]);
+
+  const gateBadge = phase === "open" ? gateBadgeCount(requests.length, recoveries.length) : null;
+  useEffect(() => {
+    if (gateBadge == null) return;
+    let stop = false;
+    const paint = () => {
+      if (!stop) void applyAppBadge(gateBadge, navigator);
+    };
+    paint();
+    const onVis = () => {
+      if (document.visibilityState === "visible") paint();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    const mode = window.matchMedia("(display-mode: standalone)");
+    mode.addEventListener("change", paint);
+    return () => {
+      stop = true;
+      document.removeEventListener("visibilitychange", onVis);
+      mode.removeEventListener("change", paint);
+    };
+  }, [gateBadge]);
 
   async function unlock(event: React.FormEvent) {
     event.preventDefault();

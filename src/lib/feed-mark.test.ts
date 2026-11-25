@@ -45,6 +45,7 @@ test("the first check stays quiet, then someone else's frame lights the dot", ()
     now: 100,
   });
   assert.equal(opened.show, false);
+  assert.equal(opened.count, 0);
   assert.equal(opened.seenAt, 100);
 
   const quiet = feedTabMark({
@@ -63,7 +64,17 @@ test("the first check stays quiet, then someone else's frame lights the dot", ()
     now: 150,
   });
   assert.equal(fresh.show, true);
+  assert.equal(fresh.count, 1);
   assert.equal(fresh.seenAt, 100);
+
+  const two = feedTabMark({
+    photos: [other(140), other(160), own(120)],
+    seenAt: quiet.seenAt,
+    feedVisible: false,
+    now: 170,
+  });
+  assert.equal(two.show, true);
+  assert.equal(two.count, 2);
 });
 
 test("opening the feed clears the dot, and a later frame from this camera does not bring it back", () => {
@@ -74,6 +85,7 @@ test("opening the feed clears the dot, and a later frame from this camera does n
     now: 150,
   });
   assert.equal(seen.show, false);
+  assert.equal(seen.count, 0);
   assert.equal(seen.seenAt, 140);
 
   const ownLater = feedTabMark({
@@ -92,6 +104,7 @@ test("opening the feed clears the dot, and a later frame from this camera does n
     now: 210,
   });
   assert.equal(otherLater.show, true);
+  assert.equal(otherLater.count, 1);
 
   const caughtUp = feedTabMark({
     photos: [other(200), own(180)],
@@ -111,37 +124,43 @@ test("a frame at the same moment as the last look is already seen", () => {
     now: 150,
   });
   assert.equal(same.show, false);
+  assert.equal(same.count, 0);
 });
 
 test("the dot is remembered on this camera until the feed is opened", () => {
   const storage = memory();
   const now = 1_000;
-  assert.equal(
+  assert.deepEqual(
     noteFeedLook({ storage, photos: [other(400), own(700)], feedVisible: false, now }),
-    false,
+    { show: false, count: 0 },
   );
   assert.equal(storage.getItem(FEED_SEEN_KEY), "1000");
 
-  assert.equal(
+  assert.deepEqual(
     noteFeedLook({ storage, photos: [other(400), own(1_100)], feedVisible: false, now: 1_200 }),
-    false,
+    { show: false, count: 0 },
   );
   assert.equal(storage.getItem(FEED_SEEN_KEY), "1000");
 
-  assert.equal(
+  assert.deepEqual(
     noteFeedLook({ storage, photos: [other(1_300), own(1_100)], feedVisible: false, now: 1_400 }),
-    true,
+    { show: true, count: 1 },
   );
   assert.equal(storage.getItem(FEED_SEEN_KEY), "1000");
 
-  assert.equal(
-    noteFeedLook({ storage, photos: [other(1_300), own(1_100)], feedVisible: true, now: 1_400 }),
-    false,
+  assert.deepEqual(
+    noteFeedLook({ storage, photos: [other(1_300), other(1_500), own(1_100)], feedVisible: false, now: 1_600 }),
+    { show: true, count: 2 },
   );
-  assert.equal(storage.getItem(FEED_SEEN_KEY), "1300");
 
-  assert.equal(
-    noteFeedLook({ storage, photos: [other(1_300), own(1_500)], feedVisible: false, now: 1_600 }),
-    false,
+  assert.deepEqual(
+    noteFeedLook({ storage, photos: [other(1_300), other(1_500), own(1_100)], feedVisible: true, now: 1_600 }),
+    { show: false, count: 0 },
+  );
+  assert.equal(storage.getItem(FEED_SEEN_KEY), "1500");
+
+  assert.deepEqual(
+    noteFeedLook({ storage, photos: [other(1_300), other(1_500), own(1_700)], feedVisible: false, now: 1_800 }),
+    { show: false, count: 0 },
   );
 });
