@@ -8,8 +8,7 @@ import { lapseQuip } from "@/lib/quips";
 import { ensurePhotoFile, iosPhotosTarget, readyPhotoFile, rememberPhotoBlob, shareOrSave } from "@/lib/save";
 import type { Chemistry, LabItem, LabState } from "@/lib/types";
 
-const BATHS: { id: Chemistry; label: string }[] = [
-  { id: "default", label: "Re-Lapse default" },
+const EXTRA_BATHS: { id: "daylight" | "night"; label: string }[] = [
   { id: "daylight", label: "Daylight" },
   { id: "night", label: "Night" },
 ];
@@ -350,10 +349,31 @@ function Bath({
   disabled: boolean;
   onPick: (chemistry: Chemistry) => void;
 }) {
+  const chosen = pushed(item.chemistry);
+  const [open, setOpen] = useState(chosen);
+
+  useEffect(() => {
+    if (chosen) setOpen(true);
+  }, [chosen]);
+
+  if (!open) {
+    return (
+      <div className="bath" role="group" aria-label="Chemistry" data-bath={item.id} data-selected={item.chemistry ?? "unset"}>
+        <button
+          type="button"
+          data-additional-chemistry={item.id}
+          disabled={disabled}
+          onClick={() => setOpen(true)}
+        >
+          Additional chemistry
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="bath" role="group" aria-label="Chemistry" data-bath={item.id} data-selected={item.chemistry ?? "unset"}>
-      <span className="bath-label">Chemistry</span>
-      {BATHS.map((bath) => (
+      {EXTRA_BATHS.map((bath) => (
         <button
           key={bath.id}
           type="button"

@@ -1048,6 +1048,7 @@ button.sticker:active { transform: translate(-50%, -50%) rotate(var(--tilt)) sca
   background: linear-gradient(120deg, #ffc27a, #ffb0d4);
   border-color: transparent;
 }
+.bath button[data-additional-chemistry] { flex: 1 1 100%; }
 .bath button:disabled { opacity: 0.45; cursor: not-allowed; }
 .lab-actions {
   display: flex;
