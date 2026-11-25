@@ -24,12 +24,14 @@ test("this publish carries the same notes the camera can show", () => {
   assert.deepEqual(
     [...RELEASE_NOTES],
     [
-      "Each phone keeps its own allowance, so one phone cannot use up another's.",
+      "The home screen asks once to show the icon count, and remembers the answer.",
+      "General, in the You menu, shows that choice and lets you change it.",
     ],
   );
   const notes = RELEASE_NOTES.join("\n");
   const lower = notes.toLowerCase();
   for (const older of [
+    "Each phone keeps its own allowance, so one phone cannot use up another's.",
     "The home screen icon counts frames ready to develop, new feed photos, and opened timecapsules.",
     "The gate icon counts cameras waiting to join and profiles asking to come back.",
     "The version counts a fix, a feature, or a breaking change.",
