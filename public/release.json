@@ -1,6 +1,6 @@
 {
-  "version": "1.57",
+  "version": "1.58",
   "notes": [
-    "Tapping the empty profile photo adds a photo."
+    "Feed names sit a little larger, with the emojis tucked together, and download and delete match the other buttons."
   ]
 }
