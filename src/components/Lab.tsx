@@ -44,8 +44,6 @@ export function Lab({
   const pendingBath = useRef(new Map<string, Chemistry>());
   const grading = useRef(new Set<string>());
   const finished = useRef(new Set<string>());
-  const stopAuto = useRef(new Set<string>());
-  const gradeRef = useRef<(item: LabItem, chemistry: Chemistry) => Promise<void>>(async () => undefined);
 
   useEffect(() => {
     let stop = false;
@@ -114,23 +112,12 @@ export function Lab({
         ),
       );
     } catch (err) {
-      stopAuto.current.add(item.id);
       setError(err instanceof Error ? err.message : "That frame can't be developed yet.");
     } finally {
       grading.current.delete(item.id);
       setBusy((current) => (current === item.id ? null : current));
     }
   }
-  gradeRef.current = grade;
-
-  useEffect(() => {
-    for (const item of items) {
-      if (item.graded || finished.current.has(item.id) || !pushed(item.chemistry)) continue;
-      if (item.readyAt > Date.now()) continue;
-      if (stopAuto.current.has(item.id) || grading.current.has(item.id)) continue;
-      void gradeRef.current(item, item.chemistry);
-    }
-  }, [items, now]);
 
   async function develop(id: string) {
     setBusy(id);
@@ -149,24 +136,18 @@ export function Lab({
   }
 
   async function pick(item: LabItem, chemistry: Chemistry) {
-    if (item.graded || grading.current.has(item.id)) return;
-    stopAuto.current.delete(item.id);
-    const waiting = item.readyAt > Date.now();
-    if (waiting) {
-      pendingBath.current.set(item.id, chemistry);
-      setItems((current) => current.map((row) => (row.id === item.id ? { ...row, chemistry } : row)));
-      try {
-        const saved = await chooseChemistry(item.id, chemistry);
-        pendingBath.current.set(item.id, saved.chemistry);
-        setItems((current) => current.map((row) => (row.id === item.id ? { ...row, chemistry: saved.chemistry } : row)));
-        if (saved.develop) await grade({ ...item, chemistry: saved.chemistry }, saved.chemistry);
-      } catch (err) {
-        pendingBath.current.delete(item.id);
-        setError(err instanceof Error ? err.message : "That frame can't be developed yet.");
-      }
-      return;
+    if (item.graded || grading.current.has(item.id) || finished.current.has(item.id)) return;
+    pendingBath.current.set(item.id, chemistry);
+    setItems((current) => current.map((row) => (row.id === item.id ? { ...row, chemistry } : row)));
+    try {
+      const saved = await chooseChemistry(item.id, chemistry);
+      if (finished.current.has(item.id)) return;
+      pendingBath.current.set(item.id, saved.chemistry);
+      setItems((current) => current.map((row) => (row.id === item.id ? { ...row, chemistry: saved.chemistry } : row)));
+    } catch (err) {
+      pendingBath.current.delete(item.id);
+      setError(err instanceof Error ? err.message : "That frame can't be developed yet.");
     }
-    await grade(item, chemistry);
   }
 
   async function publish(id: string) {
@@ -227,7 +208,7 @@ export function Lab({
           const state = cardState(item, now);
           const remaining = item.readyAt - now;
           const latent = !item.graded && state !== "sealed" && state !== "developed";
-          const taking = latent && state === "ready" && pushed(item.chemistry) && !stopAuto.current.has(item.id);
+          const bath = pushed(item.chemistry) ? item.chemistry : "default";
           return (
             <article className="lab-card" key={item.id} data-lab-state={state}>
               {state === "developed" ? (
@@ -267,23 +248,17 @@ export function Lab({
                   <>
                     <div className="kicker">Ready ✨</div>
                     <p>{item.caption || "No caption."}</p>
-                    {taking ? (
-                      <p>The bath is taking.</p>
-                    ) : (
-                      <>
-                        <button
-                          className="primary"
-                          type="button"
-                          data-develop={item.id}
-                          disabled={busy === item.id}
-                          onClick={() => void (item.graded ? develop(item.id) : pick(item, "default"))}
-                        >
-                          {busy === item.id ? "Developing…" : "Develop ✨"}
-                        </button>
-                        {latent ? <Bath item={item} disabled={busy === item.id} onPick={(chemistry) => void pick(item, chemistry)} /> : null}
-                        <p>{latent ? "Run a bath once. It stays." : "The lapse is over. Pop the print, then decide who else gets a look."}</p>
-                      </>
-                    )}
+                    <button
+                      className="primary"
+                      type="button"
+                      data-develop={item.id}
+                      disabled={busy === item.id}
+                      onClick={() => void (item.graded ? develop(item.id) : grade(item, bath))}
+                    >
+                      {busy === item.id ? "Developing…" : "Develop ✨"}
+                    </button>
+                    {latent ? <Bath item={item} disabled={busy === item.id} onPick={(chemistry) => void pick(item, chemistry)} /> : null}
+                    <p>{latent ? "Run a bath once. It stays." : "The lapse is over. Pop the print, then decide who else gets a look."}</p>
                   </>
                 ) : (
                   <>
