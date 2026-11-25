@@ -461,6 +461,14 @@ export async function setFrameNote(id: string, text: string): Promise<{ comments
   });
 }
 
+export async function removeFrameNote(id: string, noteId: string): Promise<{ comments: FrameComment[] }> {
+  return request(`/api/photos/${id}/note`, {
+    method: "DELETE",
+    headers: await headers(true),
+    body: JSON.stringify({ id: noteId }),
+  });
+}
+
 export async function filePhoto(id: string, albumId: string | null): Promise<{ ok: boolean }> {
   return request(`/api/photos/${id}/album`, {
     method: "PATCH",

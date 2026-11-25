@@ -3,7 +3,8 @@ import { randomUUID } from "node:crypto";
 import test from "node:test";
 import { sql } from "@/lib/db";
 import { HttpError } from "@/server/http";
-import { listFeed, setFrameNote } from "@/server/store";
+import { NOTE_HANDS } from "@/lib/frame-note";
+import { listFeed, removeFrameNote, setFrameNote } from "@/server/store";
 import { cleanFrameNote } from "@/server/validate";
 
 test("a note is one short line", () => {
@@ -60,10 +61,23 @@ test("a note stays on that frame, and another phone can still write", async () =
   assert.equal(first[0]?.text, "wish you were here");
   assert.equal(first[0]?.profileName, "Ada");
   assert.equal(first[0]?.mine, true);
+  assert.deepEqual(first[0]?.emojis, ["📷", "✨", "🌈"]);
+  assert.equal(NOTE_HANDS.includes(first[0]?.hand ?? "caveat"), true);
 
-  const replaced = await setFrameNote(beaPhoto, ada, "still here");
-  assert.equal(replaced.length, 1);
-  assert.equal(replaced[0]?.text, "still here");
+  const second = await setFrameNote(beaPhoto, ada, "still here");
+  assert.equal(second.length, 2);
+  assert.equal(second.some((note) => note.text === "wish you were here"), true);
+  assert.equal(second.some((note) => note.text === "still here"), true);
+
+  const signed = second.find((note) => note.text === "still here");
+  assert.ok(signed);
+  await assert.rejects(
+    () => removeFrameNote(beaPhoto, bea, signed.id),
+    (err: unknown) => err instanceof HttpError && err.status === 404,
+  );
+  const kept = await removeFrameNote(beaPhoto, ada, signed.id);
+  assert.equal(kept.length, 1);
+  assert.equal(kept[0]?.text, "wish you were here");
 
   const both = await setFrameNote(adaPhoto, bea, "from the other phone");
   assert.equal(both.length, 1);
@@ -72,8 +86,7 @@ test("a note stays on that frame, and another phone can still write", async () =
   const feed = await listFeed(ada);
   const beaFrame = feed.find((item) => item.id === beaPhoto);
   const adaFrame = feed.find((item) => item.id === adaPhoto);
-  assert.equal(beaFrame?.comments[0]?.text, "still here");
-  assert.equal(beaFrame?.comments[0]?.mine, true);
+  assert.equal(beaFrame?.comments.some((note) => note.text === "wish you were here" && note.mine), true);
   assert.equal(adaFrame?.comments[0]?.text, "from the other phone");
   assert.equal(adaFrame?.comments[0]?.mine, false);
   assert.equal(adaFrame?.comments[0]?.text.includes("<"), false);

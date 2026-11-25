@@ -6,9 +6,12 @@ export type FrameSticker = {
 };
 
 export type FrameComment = {
+  id: string;
   text: string;
   profileId: string;
   profileName: string;
+  emojis: [string, string, string];
+  hand: "caveat" | "patrick" | "kalam";
   mine: boolean;
 };
 

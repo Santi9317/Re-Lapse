@@ -1,6 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { devClockRequested, eventTimes, FEED_DAYS, personalReadyAt } from "@/lib/clock";
 import { sql, withTransaction } from "@/lib/db";
+import { noteHand, pickNoteHand } from "@/lib/frame-note";
 import { CAROUSEL_LIMIT, isEmoji } from "@/lib/profile";
 import type { Album, AlbumDetail, Chemistry, EventDetail, EventRoll, EventStatus, FeedItem, FrameComment, FrameSticker, GalleryCard, LabItem, LabState, ProfilePatch, RollMember, SharedProfile } from "@/lib/types";
 import { HttpError } from "@/server/http";
@@ -494,15 +495,20 @@ async function attachComments(items: FeedItem[], viewer: string): Promise<FeedIt
   const marks = ids.map((_, index) => `$${index + 2}`).join(", ");
   const rows = await sql(
     `select
+       n.id,
        n.photo_id,
        n.body,
+       n.hand,
        pr.id as profile_id,
        pr.username as profile_name,
+       pr.emoji_1,
+       pr.emoji_2,
+       pr.emoji_3,
        (n.shooter_token = $1) as mine
      from frame_notes n
      join profiles pr on pr.shooter_token = n.shooter_token
      where n.photo_id in (${marks})
-     order by n.created_at, n.shooter_token`,
+     order by n.created_at, n.id`,
     [viewer, ...ids],
   );
   const grouped = new Map<string, FrameComment[]>();
@@ -510,9 +516,12 @@ async function attachComments(items: FeedItem[], viewer: string): Promise<FeedIt
     const id = String(row.photo_id);
     const list = grouped.get(id) ?? [];
     list.push({
+      id: String(row.id),
       text: String(row.body),
       profileId: String(row.profile_id),
       profileName: String(row.profile_name ?? ""),
+      emojis: [String(row.emoji_1 ?? ""), String(row.emoji_2 ?? ""), String(row.emoji_3 ?? "")],
+      hand: noteHand(row.hand),
       mine: flag(row.mine),
     });
     grouped.set(id, list);
@@ -954,7 +963,7 @@ async function commentsFor(photoId: string, viewer: string): Promise<FrameCommen
   return item?.comments ?? [];
 }
 
-/** One note per camera per frame. Writing again replaces that camera's note. */
+/** Signing adds a line. Another sign adds another line, until the back is full. */
 export async function setFrameNote(photoId: string, token: string, text: string): Promise<FrameComment[]> {
   const profile = await readOwnProfile(token);
   if (!profile) throw new HttpError(409, "Name yourself first.");
@@ -969,24 +978,28 @@ export async function setFrameNote(photoId: string, token: string, text: string)
   if (!frame) throw new HttpError(404, "That frame is gone.");
   if (frame.shooter_token === token) throw new HttpError(403, "Write on a frame that isn't yours.");
   if (!flag(frame.on_feed)) throw new HttpError(409, "That frame isn't on the feed.");
-  const existing = await sql<{ photo_id: string }>(
-    `select photo_id from frame_notes where photo_id = $1 and shooter_token = $2`,
-    [photoId, token],
+  const counted = await sql<{ n: number }>(
+    `select count(*)::int as n from frame_notes where photo_id = $1`,
+    [photoId],
   );
-  if (!existing[0]) {
-    const counted = await sql<{ n: number }>(
-      `select count(*)::int as n from frame_notes where photo_id = $1`,
-      [photoId],
-    );
-    if (num(counted[0]?.n) >= NOTE_CAP) throw new HttpError(409, "The back of this frame is full.");
-  }
+  if (num(counted[0]?.n) >= NOTE_CAP) throw new HttpError(409, "The back of this frame is full.");
   await sql(
-    `insert into frame_notes (photo_id, shooter_token, body)
-     values ($1, $2, $3)
-     on conflict (photo_id, shooter_token) do update
-       set body = excluded.body, updated_at = now()`,
-    [photoId, token, text],
+    `insert into frame_notes (id, photo_id, shooter_token, body, hand)
+     values ($1, $2, $3, $4, $5)`,
+    [randomUUID(), photoId, token, text, pickNoteHand()],
   );
+  return commentsFor(photoId, token);
+}
+
+/** The writer can take their own line back. Anyone else's line stays. */
+export async function removeFrameNote(photoId: string, token: string, noteId: string): Promise<FrameComment[]> {
+  const removed = await sql<{ id: string }>(
+    `delete from frame_notes
+     where id = $1 and photo_id = $2 and shooter_token = $3
+     returning id`,
+    [noteId, photoId, token],
+  );
+  if (!removed[0]) throw new HttpError(404, "That note is gone.");
   return commentsFor(photoId, token);
 }
 
