@@ -1,10 +1,10 @@
 /**
  * Each phone has a small window for new camera ids. Another phone's window
- * does not close this one. The whole lab also has a ceiling, so new phones
- * cannot mint without a bound. Address headers are not a phone: the caller
- * can write them. Unclaimed ids past a keep count are dropped.
+ * does not close this one. The whole lab also has a short ceiling, so new
+ * phones cannot mint a pile of cameras. Address headers are not a phone: the
+ * caller can write them. Unclaimed ids past a keep count are dropped.
  */
-export const MINT_LIMITS = { perPhone: 4, labWindow: 48 } as const;
+export const MINT_LIMITS = { perPhone: 4, labWindow: 12 } as const;
 
 export const UNCLAIMED_MINT_KEEP = 400;
 

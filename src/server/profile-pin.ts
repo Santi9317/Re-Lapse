@@ -1,7 +1,7 @@
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import { sql, withTransaction, type Sql } from "@/lib/db";
 import { budgetPhone } from "@/server/phone-budget";
-import { labPinOpen, pinRestoreDecision, rescueLabRoom, rescueRoom } from "@/server/pin";
+import { labPinOpen, namePinOpen, pinNameKey, pinRestoreDecision, rescueLabRoom, rescueRoom } from "@/server/pin";
 import { hashProfilePin } from "@/server/quota";
 import { isUuid } from "@/server/validate";
 
@@ -82,9 +82,10 @@ export type RescueAsk =
 /**
  * A matching name and PIN open a request. They do not open the camera.
  * The match is decided before a miss is counted, so another phone cannot hold
- * this one shut. Wrong guesses stay on this phone, and so does the rescue
- * window. Another phone keeps its own counts. A ceiling across every phone
- * still bounds new phones. Zero matches and several matches look the same.
+ * this one shut. Wrong guesses stay on this phone, on that profile name, and
+ * on a ceiling across every phone. A new phone does not get a fresh count
+ * against a name already on the feed. Zero matches and several matches look
+ * the same.
  */
 export async function requestRecovery(booth: string, pin: string, name: string): Promise<RescueAsk> {
   if (!isUuid(booth)) return { ok: false, reason: "blocked" };
@@ -146,9 +147,12 @@ export async function requestRecovery(booth: string, pin: string, name: string):
     }
     const lab = await lockPinClient(q, LAB_PIN, WINDOW_MS);
     if (!labPinOpen(lab.recent)) return { ok: false, reason: "blocked" };
+    const named = await lockPinClient(q, pinNameKey(wanted), WINDOW_MS);
+    if (!namePinOpen(named.recent)) return { ok: false, reason: "blocked" };
     const budget = await lockPinClient(q, phone, WINDOW_MS);
     if (pinRestoreDecision(false, budget.recent) === "blocked") return { ok: false, reason: "blocked" };
     await markPinClient(q, phone, budget);
+    await markPinClient(q, pinNameKey(wanted), named);
     await markPinClient(q, LAB_PIN, lab);
     return { ok: false, reason: "wrong" };
   });

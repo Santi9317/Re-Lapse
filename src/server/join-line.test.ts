@@ -9,7 +9,9 @@ test("a phone fills its own join allowance, and that count is its own", () => {
   assert.equal(phoneMayJoin(Number.NaN), false);
 });
 
-test("a new browser shares the join line instead of opening another one", () => {
+test("a new browser shares a short join line instead of opening another one", () => {
+  assert.ok(JOIN_LIMITS.pendingMax <= 12);
+  assert.ok(JOIN_LIMITS.newPerWindow <= 8);
   assert.equal(joinRoom(0, 0), true);
   assert.equal(joinRoom(JOIN_LIMITS.pendingMax - 1, 0), true);
   assert.equal(joinRoom(JOIN_LIMITS.pendingMax, 0), false);

@@ -8,7 +8,7 @@ import { HttpError } from "@/server/http";
 import { JOIN_LIMITS } from "@/server/join-line";
 import { MINT_LIMITS } from "@/server/mint";
 import { SHARED_PHONE } from "@/server/phone-budget";
-import { PIN_RESTORE_LIMIT } from "@/server/pin";
+import { PIN_NAME_LIMIT } from "@/server/pin";
 import { requestRecovery } from "@/server/profile-pin";
 import { hashProfilePin, issueCamera } from "@/server/quota";
 import { sql } from "@/lib/db";
@@ -142,7 +142,7 @@ test("a new browser cannot mint booths or joins, and the right gate key still op
   );
 
   const guessing = await ownPhone();
-  for (let i = 0; i < PIN_RESTORE_LIMIT; i += 1) {
+  for (let i = 0; i < PIN_NAME_LIMIT; i += 1) {
     const miss = await requestRecovery(guessing, "000000", "PinAda");
     assert.equal(miss.ok, false);
     if (!miss.ok) assert.equal(miss.reason, "wrong");
@@ -152,7 +152,10 @@ test("a new browser cannot mint booths or joins, and the right gate key still op
   if (!ownShut.ok) assert.equal(ownShut.reason, "blocked");
   const neighborMiss = await requestRecovery(await ownPhone(), "222222", "PinAda");
   assert.equal(neighborMiss.ok, false);
-  if (!neighborMiss.ok) assert.equal(neighborMiss.reason, "wrong");
+  if (!neighborMiss.ok) assert.equal(neighborMiss.reason, "blocked");
+  const otherName = await requestRecovery(await ownPhone(), "333333", "PinBea");
+  assert.equal(otherName.ok, false);
+  if (!otherName.ok) assert.equal(otherName.reason, "wrong");
   const neighborRight = await requestRecovery(await ownPhone(), "048213", "PinAda");
   assert.equal(neighborRight.ok, true);
 
