@@ -24,3 +24,10 @@ export function wait(ms: number): Promise<void> {
     window.setTimeout(resolve, ms);
   });
 }
+
+/**
+ * How long the finder whites out after the shutter.
+ * A blink, held long enough to see that the frame was taken.
+ * Keep this equal to the `.flash` duration in globals.css.
+ */
+export const SHUTTER_BLINK_MS = 200;

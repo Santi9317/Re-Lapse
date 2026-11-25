@@ -23,11 +23,12 @@ test("this publish carries the same notes the camera can show", () => {
   assert.deepEqual(publishedReleaseFromJson(release), { version: APP_VERSION, notes: [...RELEASE_NOTES] });
   assert.deepEqual(
     [...RELEASE_NOTES],
-    ["Tap Daylight or Night again to clear it. With neither picked, Develop uses the usual bath."],
+    ["The shutter flash lasts a little longer, so you can see that the photo was taken."],
   );
   const notes = RELEASE_NOTES.join("\n");
   const lower = notes.toLowerCase();
   for (const older of [
+    "Tap Daylight or Night again to clear it. With neither picked, Develop uses the usual bath.",
     "Download and Delete sit as small text under a photo.",
     "Write a caption while a photo is on its way to the feed. Once it is up, that line stays as it is.",
     "Tap a frame to read notes written on the back.",

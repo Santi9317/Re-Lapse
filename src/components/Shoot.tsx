@@ -5,7 +5,7 @@ import { blobToBase64, sendPhoto } from "@/lib/api";
 import { cameraWake, isHardwareShutter, openCamera, peekCamera, type CameraWake } from "@/lib/camera";
 import { readDateStamp } from "@/lib/date-stamp";
 import { shouldFlipOnDoubleTap } from "@/lib/tap";
-import { isIosDevice, setTorch, wait } from "@/lib/flash";
+import { isIosDevice, setTorch, SHUTTER_BLINK_MS, wait } from "@/lib/flash";
 import { renderDisposable, renderLatent } from "@/lib/filter";
 import type { EventRoll } from "@/lib/types";
 import {
@@ -67,7 +67,7 @@ export function Shoot({
   const [facing, setFacing] = useState<"environment" | "user">("environment");
   const [mode, setMode] = useState<"opening" | "live" | "fallback">("opening");
   const [error, setError] = useState("");
-  const [burst, setBurst] = useState(false);
+  const [blink, setBlink] = useState(0);
   const [screenFlash, setScreenFlash] = useState(false);
   const [ios, setIos] = useState(false);
   const [lamp, setLamp] = useState(false);
@@ -103,6 +103,14 @@ export function Shoot({
     setIos(apple);
     if (apple) setLamp(true);
   }, []);
+
+  useEffect(() => {
+    if (blink === 0) return;
+    const id = window.setTimeout(() => {
+      setBlink((current) => (current === blink ? 0 : current));
+    }, SHUTTER_BLINK_MS);
+    return () => window.clearTimeout(id);
+  }, [blink]);
 
   const facingRef = useRef(facing);
   facingRef.current = facing;
@@ -364,10 +372,7 @@ export function Shoot({
       }
       clickSound();
       navigator.vibrate?.(15);
-      if (!front) {
-        setBurst(true);
-        window.setTimeout(() => setBurst(false), 90);
-      }
+      if (!front) setBlink((count) => count + 1);
       const still = document.createElement("canvas");
       const scale = engineRef.current?.preview() ?? 1;
       const frame = captureFrame(video.videoWidth, video.videoHeight, scale);
@@ -489,7 +494,9 @@ export function Shoot({
         <div className="sprockets right" />
         <div className="vignette" />
         <div className="grain" />
-        {burst ? <div className="flash" /> : null}
+        {blink > 0 ? (
+          <div key={blink} className="flash" style={{ animationDuration: `${SHUTTER_BLINK_MS}ms` }} />
+        ) : null}
         {screenFlash ? <div className="screen-flash" /> : null}
         {mode === "live" && !zoomIsRest(zoom) ? <div className="zoom-readout">{formatZoom(zoom)}</div> : null}
         <div className="vf-top">
