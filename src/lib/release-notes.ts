@@ -4,6 +4,7 @@
  * Keep public/release.json in step with this list, and keep its version equal to APP_VERSION.
  */
 export const RELEASE_NOTES = [
+  "Wednesday's date stamp reads as a W.",
   "The Home Screen shortcut prompt works again after an update.",
   "Gallery cards stack the cover, the name, and the frame count.",
   "Recover an account from the You menu.",
