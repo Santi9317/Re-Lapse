@@ -11,6 +11,8 @@ export type FeedItem = {
   createdAt: number;
   developedAt: number | null;
   sortAt: number;
+  /** When this frame landed on the feed. A timecapsule pick can be later than sortAt. */
+  addedAt: number;
   albumId: string | null;
   albumName: string | null;
   eventId: string | null;
