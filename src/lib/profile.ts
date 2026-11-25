@@ -378,8 +378,8 @@ export async function portraitFromFile(file: File): Promise<string> {
   }
   try {
     if (bitmap.width < 1 || bitmap.height < 1) throw new Error("This photo can't be read.");
-    // Same print as a shot: renderDisposable in filter.ts. The date stamp stays a camera choice.
-    const printed = await renderDisposable(bitmap, { dateStamp: false });
+    // Same Disposable 400 print as a shot, without the camera date stamp.
+    const printed = await renderDisposable(bitmap, { dateStamp: false, chemistry: "default" });
     const dataUrl = await fitPortrait(printed);
     if (!portraitUrl(dataUrl)) throw new Error("That photo is too heavy. Try another.");
     return dataUrl;

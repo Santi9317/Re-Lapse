@@ -1,5 +1,5 @@
 import { CAROUSEL_LIMIT, isEmoji } from "@/lib/profile";
-import type { ProfilePatch } from "@/lib/types";
+import type { Chemistry, ProfilePatch } from "@/lib/types";
 import { cameraAuthFromCookie } from "@/server/camera-auth";
 import { HttpError } from "@/server/http";
 
@@ -40,6 +40,19 @@ export function cleanName(value: unknown): string {
 export function cleanStickerEmoji(value: unknown): string {
   if (typeof value !== "string" || !isEmoji(value)) throw new HttpError(400, "Pick an emoji.");
   return value;
+}
+
+export function cleanChemistry(value: unknown): Chemistry | null {
+  if (value == null || value === "") return null;
+  if (value === "default" || value === "daylight" || value === "night") return value;
+  throw new HttpError(400, "That bath isn't one of ours.");
+}
+
+export function cleanCapturedAt(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  const now = Date.now();
+  if (value < now - 7 * 86_400_000 || value > now + 5 * 60_000) return null;
+  return Math.round(value);
 }
 
 export function cleanCaption(value: unknown): string {

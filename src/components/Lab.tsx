@@ -1,16 +1,27 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { developPhoto, deletePhoto, fetchLab, fetchPrivateImage, publishPhoto } from "@/lib/api";
+import { blobToBase64, chooseChemistry, developPhoto, deletePhoto, fetchLab, fetchLatent, fetchPrivateImage, publishPhoto } from "@/lib/api";
 import { countdown, longRemain } from "@/lib/format";
+import { renderDisposable } from "@/lib/filter";
 import { lapseQuip } from "@/lib/quips";
 import { ensurePhotoFile, iosPhotosTarget, readyPhotoFile, rememberPhotoBlob, shareOrSave } from "@/lib/save";
-import type { LabItem, LabState } from "@/lib/types";
+import type { Chemistry, LabItem, LabState } from "@/lib/types";
+
+const BATHS: { id: Chemistry; label: string }[] = [
+  { id: "default", label: "Re-Lapse default" },
+  { id: "daylight", label: "Daylight" },
+  { id: "night", label: "Night" },
+];
 
 function cardState(item: LabItem, now: number): LabState {
   if (item.labState === "sealed" || item.labState === "developed") return item.labState;
   if (item.labState === "ready" || item.readyAt - now <= 0) return "ready";
   return "developing";
+}
+
+function pushed(chemistry: Chemistry | null): chemistry is "daylight" | "night" {
+  return chemistry === "daylight" || chemistry === "night";
 }
 
 export function Lab({
@@ -31,6 +42,11 @@ export function Lab({
   const [savingId, setSavingId] = useState<string | null>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const developedIds = useRef(new Set<string>());
+  const pendingBath = useRef(new Map<string, Chemistry>());
+  const grading = useRef(new Set<string>());
+  const finished = useRef(new Set<string>());
+  const stopAuto = useRef(new Set<string>());
+  const gradeRef = useRef<(item: LabItem, chemistry: Chemistry) => Promise<void>>(async () => undefined);
 
   useEffect(() => {
     let stop = false;
@@ -39,12 +55,21 @@ export function Lab({
         const data = await fetchLab();
         if (stop) return;
         for (const photo of data.photos) {
-          if (photo.labState === "developed") developedIds.current.delete(photo.id);
+          if (photo.labState === "developed") {
+            developedIds.current.delete(photo.id);
+            pendingBath.current.delete(photo.id);
+          } else if (pendingBath.current.get(photo.id) === photo.chemistry) {
+            pendingBath.current.delete(photo.id);
+          }
         }
         setItems(
-          data.photos.map((photo) =>
-            developedIds.current.has(photo.id) ? { ...photo, labState: "developed" } : photo,
-          ),
+          data.photos.map((photo) => {
+            const chemistry = pendingBath.current.get(photo.id) ?? photo.chemistry;
+            if (developedIds.current.has(photo.id)) {
+              return { ...photo, chemistry, labState: "developed", graded: true };
+            }
+            return { ...photo, chemistry };
+          }),
         );
         setError("");
       } catch (err) {
@@ -61,6 +86,53 @@ export function Lab({
     };
   }, [revision, refresh]);
 
+  async function grade(item: LabItem, chemistry: Chemistry) {
+    if (item.graded || grading.current.has(item.id) || finished.current.has(item.id)) return;
+    grading.current.add(item.id);
+    setBusy(item.id);
+    setError("");
+    try {
+      const latent = await fetchLatent(item.id);
+      const bitmap = await createImageBitmap(latent);
+      try {
+        const when = item.dateStamp && item.capturedAt != null ? new Date(item.capturedAt) : undefined;
+        const blob = await renderDisposable(bitmap, {
+          chemistry,
+          dateStamp: Boolean(when),
+          date: when,
+          seed: item.id,
+        });
+        await developPhoto(item.id, { imageBase64: await blobToBase64(blob), chemistry });
+      } finally {
+        bitmap.close();
+      }
+      finished.current.add(item.id);
+      pendingBath.current.delete(item.id);
+      developedIds.current.add(item.id);
+      setItems((current) =>
+        current.map((row) =>
+          row.id === item.id ? { ...row, labState: "developed", graded: true, chemistry } : row,
+        ),
+      );
+    } catch (err) {
+      stopAuto.current.add(item.id);
+      setError(err instanceof Error ? err.message : "That frame can't be developed yet.");
+    } finally {
+      grading.current.delete(item.id);
+      setBusy((current) => (current === item.id ? null : current));
+    }
+  }
+  gradeRef.current = grade;
+
+  useEffect(() => {
+    for (const item of items) {
+      if (item.graded || finished.current.has(item.id) || !pushed(item.chemistry)) continue;
+      if (item.readyAt > Date.now()) continue;
+      if (stopAuto.current.has(item.id) || grading.current.has(item.id)) continue;
+      void gradeRef.current(item, item.chemistry);
+    }
+  }, [items, now]);
+
   async function develop(id: string) {
     setBusy(id);
     setError("");
@@ -68,13 +140,34 @@ export function Lab({
       await developPhoto(id);
       developedIds.current.add(id);
       setItems((current) =>
-        current.map((item) => (item.id === id ? { ...item, labState: "developed" } : item)),
+        current.map((item) => (item.id === id ? { ...item, labState: "developed", graded: true } : item)),
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : "That frame can't be developed yet.");
     } finally {
-      setBusy(null);
+      setBusy((current) => (current === id ? null : current));
     }
+  }
+
+  async function pick(item: LabItem, chemistry: Chemistry) {
+    if (item.graded || grading.current.has(item.id)) return;
+    stopAuto.current.delete(item.id);
+    const waiting = item.readyAt > Date.now();
+    if (waiting) {
+      pendingBath.current.set(item.id, chemistry);
+      setItems((current) => current.map((row) => (row.id === item.id ? { ...row, chemistry } : row)));
+      try {
+        const saved = await chooseChemistry(item.id, chemistry);
+        pendingBath.current.set(item.id, saved.chemistry);
+        setItems((current) => current.map((row) => (row.id === item.id ? { ...row, chemistry: saved.chemistry } : row)));
+        if (saved.develop) await grade({ ...item, chemistry: saved.chemistry }, saved.chemistry);
+      } catch (err) {
+        pendingBath.current.delete(item.id);
+        setError(err instanceof Error ? err.message : "That frame can't be developed yet.");
+      }
+      return;
+    }
+    await grade(item, chemistry);
   }
 
   async function publish(id: string) {
@@ -87,7 +180,7 @@ export function Lab({
     } catch (err) {
       setError(err instanceof Error ? err.message : "That frame isn't ready to share.");
     } finally {
-      setBusy(null);
+      setBusy((current) => (current === id ? null : current));
     }
   }
 
@@ -118,7 +211,7 @@ export function Lab({
       setItems(previous);
       setError(err instanceof Error ? err.message : "That frame stayed put.");
     } finally {
-      setBusy(null);
+      setBusy((current) => (current === id ? null : current));
     }
   }
 
@@ -134,6 +227,8 @@ export function Lab({
         items.map((item) => {
           const state = cardState(item, now);
           const remaining = item.readyAt - now;
+          const latent = !item.graded && state !== "sealed" && state !== "developed";
+          const taking = latent && state === "ready" && pushed(item.chemistry) && !stopAuto.current.has(item.id);
           return (
             <article className="lab-card" key={item.id} data-lab-state={state}>
               {state === "developed" ? (
@@ -173,22 +268,35 @@ export function Lab({
                   <>
                     <div className="kicker">Ready ✨</div>
                     <p>{item.caption || "No caption."}</p>
-                    <button
-                      className="primary"
-                      type="button"
-                      data-develop={item.id}
-                      disabled={busy === item.id}
-                      onClick={() => void develop(item.id)}
-                    >
-                      {busy === item.id ? "Developing…" : "Develop ✨"}
-                    </button>
-                    <p>The lapse is over. Pop the print, then decide who else gets a look.</p>
+                    {taking ? (
+                      <p>The bath is taking.</p>
+                    ) : (
+                      <>
+                        <button
+                          className="primary"
+                          type="button"
+                          data-develop={item.id}
+                          disabled={busy === item.id}
+                          onClick={() => void (item.graded ? develop(item.id) : pick(item, "default"))}
+                        >
+                          {busy === item.id ? "Developing…" : "Develop ✨"}
+                        </button>
+                        {latent ? <Bath item={item} disabled={busy === item.id} onPick={(chemistry) => void pick(item, chemistry)} /> : null}
+                        <p>{latent ? "Run a bath once. It stays." : "The lapse is over. Pop the print, then decide who else gets a look."}</p>
+                      </>
+                    )}
                   </>
                 ) : (
                   <>
                     <div className="kicker">Developing 🌀</div>
                     <div className="time" data-countdown={item.id}>{countdown(remaining)}</div>
                     <p>{lapseQuip(item.id)}</p>
+                    {latent ? (
+                      <>
+                        <Bath item={item} disabled={busy === item.id} onPick={(chemistry) => void pick(item, chemistry)} />
+                        <p>The bath waits with the frame.</p>
+                      </>
+                    ) : null}
                   </>
                 )}
                 <div className="lab-actions">
@@ -229,6 +337,34 @@ export function Lab({
           );
         })
       )}
+    </div>
+  );
+}
+
+function Bath({
+  item,
+  disabled,
+  onPick,
+}: {
+  item: LabItem;
+  disabled: boolean;
+  onPick: (chemistry: Chemistry) => void;
+}) {
+  return (
+    <div className="bath" role="group" aria-label="Chemistry" data-bath={item.id} data-selected={item.chemistry ?? "unset"}>
+      <span className="bath-label">Chemistry</span>
+      {BATHS.map((bath) => (
+        <button
+          key={bath.id}
+          type="button"
+          data-chemistry={bath.id}
+          aria-pressed={item.chemistry === bath.id}
+          disabled={disabled}
+          onClick={() => onPick(bath.id)}
+        >
+          {bath.label}
+        </button>
+      ))}
     </div>
   );
 }

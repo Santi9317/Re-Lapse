@@ -19,7 +19,7 @@ import { Shoot } from "@/components/Shoot";
 type InstallPrompt = Event & { prompt: () => Promise<void> };
 
 const lede: Record<Exclude<MainTab, "shoot">, string> = {
-  lab: "Let them lapse. Develop when the clock hits zero. 🧪",
+  lab: "Let them lapse. Develop when the clock hits zero, or pick a bath. 🧪",
   feed: "Everyone with this link. A frame stays up for a week, then it lapses. ✨",
   rolls: "Your galleries, and timecapsules that open, then seal. 🎞️",
   you: "Set your name, photo, and three emojis. They show on the frames you share.",

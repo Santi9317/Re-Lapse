@@ -14,7 +14,7 @@ export const HOW_TO: HowToSection[] = [
     id: "wait",
     title: "The wait",
     body: [
-      "A frame you just shot is not ready. It takes five to thirty minutes, and you do not pick the number. No peeking. When the dot shows, tap Develop.",
+      "A frame you just shot is not ready. It takes five to thirty minutes, and you do not pick the number. No peeking. When the dot shows, tap Develop. Daylight and Night are other baths: pick one before the clock runs out, or when the frame is ready. A frame takes one bath.",
     ],
   },
   {

@@ -8,7 +8,7 @@ import {
   storeCameraProfile,
   withCameraPortrait,
 } from "@/lib/profile";
-import type { Album, AlbumDetail, EventDetail, EventRoll, FeedItem, FrameSticker, GalleryCard, LabItem, ProfilePatch, SharedProfile } from "@/lib/types";
+import type { Album, AlbumDetail, Chemistry, EventDetail, EventRoll, FeedItem, FrameSticker, GalleryCard, LabItem, ProfilePatch, SharedProfile } from "@/lib/types";
 
 const DEV_KEY = "relapse.devtimers";
 const TOKEN_KEY = "relapse.shooter";
@@ -344,6 +344,8 @@ export async function sendPhoto(input: {
   imageBase64: string;
   caption: string;
   eventId: string | null;
+  dateStamp?: boolean;
+  capturedAt?: number | null;
 }): Promise<{ id: string; readyAt: number; createdAt: number; labState: string; eventId: string | null }> {
   const token = await ensureCamera();
   return request("/api/photos", {
@@ -353,8 +355,35 @@ export async function sendPhoto(input: {
   });
 }
 
-export async function developPhoto(id: string): Promise<{ developedAt: number }> {
-  return request(`/api/photos/${id}/develop`, { method: "POST", headers: await headers(false) });
+export async function developPhoto(
+  id: string,
+  print?: { imageBase64: string; chemistry: Chemistry },
+): Promise<{ developedAt: number }> {
+  return request(`/api/photos/${id}/develop`, {
+    method: "POST",
+    headers: await headers(Boolean(print)),
+    body: print ? JSON.stringify(print) : undefined,
+  });
+}
+
+export async function chooseChemistry(
+  id: string,
+  chemistry: Chemistry,
+): Promise<{ chemistry: Chemistry; develop: boolean }> {
+  return request(`/api/photos/${id}/chemistry`, {
+    method: "PATCH",
+    headers: await headers(true),
+    body: JSON.stringify({ chemistry }),
+  });
+}
+
+export async function fetchLatent(id: string): Promise<Blob> {
+  const response = await fetch(`/api/photos/${id}/latent`, {
+    headers: await headers(false),
+    cache: "no-store",
+  });
+  if (!response.ok) throw new Error("That frame isn't ready for a bath.");
+  return response.blob();
 }
 
 export async function publishPhoto(id: string): Promise<{ publishedAt: number }> {

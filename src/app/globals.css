@@ -1018,6 +1018,37 @@ button.sticker:active { transform: translate(-50%, -50%) rotate(var(--tilt)) sca
 }
 .lab-card p { color: var(--muted); font-size: 12px; line-height: 1.4; }
 .lab-card .primary { margin-top: 8px; padding: 12px 10px; }
+.bath {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.bath-label {
+  flex: 1 0 100%;
+  color: var(--amber);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-size: 10px;
+}
+.bath button {
+  flex: 1 1 30%;
+  min-width: 0;
+  padding: 8px 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(180, 150, 255, 0.35);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+.bath button[aria-pressed="true"] {
+  color: #1a0820;
+  background: linear-gradient(120deg, #ffc27a, #ffb0d4);
+  border-color: transparent;
+}
+.bath button:disabled { opacity: 0.45; cursor: not-allowed; }
 .lab-actions {
   display: flex;
   flex-wrap: wrap;

@@ -2,7 +2,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { devClockRequested, eventTimes, FEED_DAYS, personalReadyAt } from "@/lib/clock";
 import { sql, withTransaction } from "@/lib/db";
 import { CAROUSEL_LIMIT, isEmoji } from "@/lib/profile";
-import type { Album, AlbumDetail, EventDetail, EventRoll, EventStatus, FeedItem, FrameSticker, GalleryCard, LabItem, LabState, ProfilePatch, RollMember, SharedProfile } from "@/lib/types";
+import type { Album, AlbumDetail, Chemistry, EventDetail, EventRoll, EventStatus, FeedItem, FrameSticker, GalleryCard, LabItem, LabState, ProfilePatch, RollMember, SharedProfile } from "@/lib/types";
 import { HttpError } from "@/server/http";
 import { assertCreateAllowed, assertJoinAllowed, claimCamera, noteCreate } from "@/server/quota";
 import { cleanJpeg } from "@/server/validate";
@@ -519,6 +519,10 @@ export async function listLab(token: string): Promise<LabItem[]> {
        p.event_id,
        e.name as event_name,
        (extract(epoch from e.reveal_at) * 1000) as reveal_ms,
+       p.chemistry,
+       p.graded,
+       p.date_stamp,
+       (extract(epoch from p.captured_at) * 1000) as captured_ms,
        case
          when p.event_id is not null then 'sealed'
          when p.developed_at is not null then 'developed'
@@ -545,6 +549,10 @@ export async function listLab(token: string): Promise<LabItem[]> {
     eventId: text(row.event_id),
     eventName: text(row.event_name),
     revealAt: row.reveal_ms == null ? null : num(row.reveal_ms),
+    chemistry: row.chemistry === "default" || row.chemistry === "daylight" || row.chemistry === "night" ? row.chemistry : null,
+    graded: flag(row.graded),
+    dateStamp: flag(row.date_stamp),
+    capturedAt: row.captured_ms == null ? null : num(row.captured_ms),
   }));
 }
 
@@ -555,6 +563,8 @@ export async function createPhoto(input: {
   imageBase64: unknown;
   eventId: string | null;
   dev: boolean;
+  dateStamp: boolean;
+  capturedAt: number | null;
 }): Promise<{ id: string; readyAt: number; createdAt: number; labState: LabState; eventId: string | null }> {
   const image = cleanJpeg(input.imageBase64);
   await assertCreateAllowed("photo", input.token, input.proof);
@@ -606,13 +616,27 @@ export async function createPhoto(input: {
   await claimCamera(input.token, input.proof);
 
   const id = randomUUID();
+  const graded = input.eventId != null;
   const rows = await sql<{ created_ms: number; ready_ms: number }>(
-    `insert into photos (id, shooter_token, caption, image_b64, ready_at, event_id)
-     values ($1, $2, $3, $4, $5, $6)
+    `insert into photos (
+       id, shooter_token, caption, image_b64, ready_at, event_id, date_stamp, captured_at, graded, chemistry
+     )
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
      returning
        (extract(epoch from created_at) * 1000) as created_ms,
        (extract(epoch from ready_at) * 1000) as ready_ms`,
-    [id, input.token, input.caption, image, readyAt.toISOString(), input.eventId],
+    [
+      id,
+      input.token,
+      input.caption,
+      image,
+      readyAt.toISOString(),
+      input.eventId,
+      input.dateStamp,
+      input.capturedAt == null ? null : new Date(input.capturedAt).toISOString(),
+      graded,
+      graded ? "default" : null,
+    ],
   );
   const row = rows[0];
   if (!row) throw new HttpError(500, "The lab hit a snag.");
@@ -626,8 +650,88 @@ export async function createPhoto(input: {
   };
 }
 
-export async function developPhoto(id: string, token: string): Promise<{ developedAt: number }> {
-  const rows = await sql<{ developed_ms: number }>(
+export async function chooseChemistry(
+  id: string,
+  token: string,
+  chemistry: Chemistry,
+): Promise<{ chemistry: Chemistry; develop: boolean }> {
+  const rows = await sql<{ chemistry: string; ready: boolean }>(
+    `update photos
+     set chemistry = $3
+     where id = $1
+       and shooter_token = $2
+       and event_id is null
+       and developed_at is null
+       and graded = false
+       and published_at is null
+     returning chemistry, (ready_at <= now()) as ready`,
+    [id, token, chemistry],
+  );
+  const row = rows[0];
+  if (!row || (row.chemistry !== "default" && row.chemistry !== "daylight" && row.chemistry !== "night")) {
+    throw new HttpError(409, "That frame can't be developed yet.");
+  }
+  return { chemistry: row.chemistry, develop: flag(row.ready) };
+}
+
+export async function readLatent(id: string, token: string): Promise<Buffer | null> {
+  const rows = await sql<{ image_b64: string }>(
+    `select image_b64
+     from photos
+     where id = $1
+       and shooter_token = $2
+       and event_id is null
+       and graded = false
+       and developed_at is null
+       and published_at is null
+       and ready_at <= now()`,
+    [id, token],
+  );
+  const row = rows[0];
+  if (!row) return null;
+  return Buffer.from(row.image_b64, "base64");
+}
+
+export async function developPhoto(
+  id: string,
+  token: string,
+  print: { imageBase64: string; chemistry: Chemistry } | null = null,
+): Promise<{ developedAt: number }> {
+  const existing = await sql<{ graded: boolean; developed_at: string | null; event_id: string | null; ready: boolean }>(
+    `select graded, developed_at, event_id, (ready_at <= now()) as ready
+     from photos
+     where id = $1 and shooter_token = $2`,
+    [id, token],
+  );
+  const row = existing[0];
+  if (!row || row.event_id != null || !flag(row.ready)) {
+    throw new HttpError(409, "That frame can't be developed yet.");
+  }
+  if (row.developed_at != null) throw new HttpError(409, "That frame already took its bath.");
+  if (!flag(row.graded)) {
+    if (!print) throw new HttpError(409, "That frame still needs a bath.");
+    const image = cleanJpeg(print.imageBase64);
+    const updated = await sql<{ developed_ms: number }>(
+      `update photos
+       set image_b64 = $3,
+           chemistry = $4,
+           graded = true,
+           developed_at = now()
+       where id = $1
+         and shooter_token = $2
+         and event_id is null
+         and developed_at is null
+         and graded = false
+         and published_at is null
+         and ready_at <= now()
+       returning (extract(epoch from developed_at) * 1000) as developed_ms`,
+      [id, token, image, print.chemistry],
+    );
+    const done = updated[0];
+    if (!done) throw new HttpError(409, "That frame already took its bath.");
+    return { developedAt: num(done.developed_ms) };
+  }
+  const updated = await sql<{ developed_ms: number }>(
     `update photos
      set developed_at = now()
      where id = $1
@@ -636,12 +740,13 @@ export async function developPhoto(id: string, token: string): Promise<{ develop
        and developed_at is null
        and published_at is null
        and ready_at <= now()
+       and graded = true
      returning (extract(epoch from developed_at) * 1000) as developed_ms`,
     [id, token],
   );
-  const row = rows[0];
-  if (!row) throw new HttpError(409, "That frame can't be developed yet.");
-  return { developedAt: num(row.developed_ms) };
+  const done = updated[0];
+  if (!done) throw new HttpError(409, "That frame can't be developed yet.");
+  return { developedAt: num(done.developed_ms) };
 }
 
 export async function publishPhoto(id: string, token: string): Promise<{ publishedAt: number }> {
