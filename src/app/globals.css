@@ -1052,6 +1052,27 @@ button.sticker:active { transform: translate(-50%, -50%) rotate(var(--tilt)) sca
 .lab-actions button:active:not(:disabled) { transform: translateY(1px); }
 .print-actions button:disabled,
 .lab-actions button:disabled { opacity: 0.45; cursor: not-allowed; }
+figure.print .print-actions button[data-download],
+figure.print .print-actions button[data-delete] {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 0;
+  padding: 8px 2px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  color: #5c4638;
+  letter-spacing: 0.08em;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.2;
+  text-align: left;
+}
+figure.print .print-actions button[data-download]:hover:not(:disabled),
+figure.print .print-actions button[data-delete]:hover:not(:disabled) {
+  color: #2a160c;
+}
 .print-actions .meta {
   flex: 1 0 100%;
   margin: 0;

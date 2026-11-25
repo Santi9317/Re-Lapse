@@ -1,7 +1,7 @@
 {
-  "version": "1.83.1",
+  "version": "1.83.2",
   "notes": [
-    "Write a caption while a photo is on its way to the feed. Once it is up, that line stays as it is."
+    "Download and Delete sit as small text under a photo."
   ],
   "icon": "0e6210f1bd3191d086e7c4deb1bb920768940cbf227f6f962125f415635d7665",
   "previousIcon": "0e6210f1bd3191d086e7c4deb1bb920768940cbf227f6f962125f415635d7665"
