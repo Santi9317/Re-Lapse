@@ -5,7 +5,8 @@
  * Keep public/release.json in step with this list, and keep its version equal to APP_VERSION.
  */
 export const RELEASE_NOTES = [
-  "The version counts a fix, a feature, or a breaking change.",
+  "The home screen icon counts frames ready to develop, new feed photos, and opened timecapsules.",
+  "The gate icon counts cameras waiting to join and profiles asking to come back.",
 ] as const;
 
 export type PublishedRelease = {

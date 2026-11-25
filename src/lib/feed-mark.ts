@@ -16,41 +16,50 @@ export function readFeedSeen(raw: string | null): number | null {
   return seen;
 }
 
+/** Posts from other cameras newer than the last look. The first look has none. */
+export function unseenFeedPosts(photos: readonly FeedStamp[], seenAt: number | null): number {
+  if (seenAt == null) return 0;
+  let count = 0;
+  for (const photo of photos) {
+    if (!photo.mine && photo.addedAt > seenAt) count += 1;
+  }
+  return count;
+}
+
 /**
  * Dot on Feed when someone else has added a frame since this camera last
  * caught up. Catching up is opening Feed and seeing the list. A frame this
  * camera took never lights the dot. The first check has no earlier open, so
- * frames already on the feed stay quiet.
+ * frames already on the feed stay quiet. `count` is those unseen posts.
  */
 export function feedTabMark(input: {
   photos: readonly FeedStamp[];
   seenAt: number | null;
   feedVisible: boolean;
   now: number;
-}): { show: boolean; seenAt: number } {
+}): { show: boolean; count: number; seenAt: number } {
   let newest = 0;
-  let newestOther = 0;
   for (const photo of input.photos) {
     if (photo.addedAt > newest) newest = photo.addedAt;
-    if (!photo.mine && photo.addedAt > newestOther) newestOther = photo.addedAt;
   }
 
   if (input.seenAt == null) {
-    return { show: false, seenAt: Math.max(input.now, newest) };
+    return { show: false, count: 0, seenAt: Math.max(input.now, newest) };
   }
   if (input.feedVisible) {
-    return { show: false, seenAt: Math.max(input.seenAt, newest) };
+    return { show: false, count: 0, seenAt: Math.max(input.seenAt, newest) };
   }
-  return { show: newestOther > input.seenAt, seenAt: input.seenAt };
+  const count = unseenFeedPosts(input.photos, input.seenAt);
+  return { show: count > 0, count, seenAt: input.seenAt };
 }
 
-/** Remember a look at the feed, and say whether the Feed tab should show its dot. */
+/** Remember a look at the feed. `count` is unseen posts from other cameras. */
 export function noteFeedLook(input: {
   storage: Storage;
   photos: readonly FeedStamp[];
   feedVisible: boolean;
   now: number;
-}): boolean {
+}): { show: boolean; count: number } {
   const seenAt = readFeedSeen(readStorage(input.storage, FEED_SEEN_KEY));
   const next = feedTabMark({
     photos: input.photos,
@@ -59,5 +68,5 @@ export function noteFeedLook(input: {
     now: input.now,
   });
   if (next.seenAt !== seenAt) writeStorage(input.storage, FEED_SEEN_KEY, String(next.seenAt));
-  return next.show;
+  return { show: next.show, count: next.count };
 }

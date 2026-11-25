@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { adoptSavedProfile, devFlagStored, ensureCamera, fetchConfig, fetchFeed, fetchLab, joinEvent } from "@/lib/api";
+import { adoptSavedProfile, devFlagStored, ensureCamera, fetchConfig, fetchEvents, fetchFeed, fetchLab, joinEvent } from "@/lib/api";
+import { appBadgeCount, applyAppBadge, frameReadyToDevelop, timecapsuleOpened } from "@/lib/badge";
 import { bannerOpensQuote } from "@/lib/banner-quote";
 import { noteFeedLook } from "@/lib/feed-mark";
 import { restorePhone } from "@/lib/identity";
@@ -69,8 +70,15 @@ function CameraDesk() {
   const [labRevision, setLabRevision] = useState(0);
   const [feedRevision, setFeedRevision] = useState(0);
   const [labCount, setLabCount] = useState(0);
-  const [labReady, setLabReady] = useState(false);
-  const [feedFresh, setFeedFresh] = useState(false);
+  const [readyFrames, setReadyFrames] = useState<number | null>(null);
+  const [unseenPosts, setUnseenPosts] = useState<number | null>(null);
+  const [openedCapsules, setOpenedCapsules] = useState<number | null>(null);
+  const labReady = (readyFrames ?? 0) > 0;
+  const feedFresh = (unseenPosts ?? 0) > 0;
+  const badgeCount =
+    readyFrames != null && unseenPosts != null && openedCapsules != null
+      ? appBadgeCount(readyFrames, unseenPosts, openedCapsules)
+      : null;
   const [devTimers, setDevTimers] = useState(false);
   const [tokenReady, setTokenReady] = useState(0);
   const [guestId, setGuestId] = useState<string | null>(null);
@@ -162,8 +170,16 @@ function CameraDesk() {
       try {
         const data = await fetchLab();
         if (stop) return;
+        const now = Date.now();
         setLabCount(data.photos.length);
-        setLabReady(data.photos.some((photo) => photo.labState === "ready" || (photo.labState === "developing" && photo.readyAt <= Date.now())));
+        setReadyFrames(data.photos.filter((photo) => frameReadyToDevelop(photo, now)).length);
+      } catch {
+        /* the badge can wait */
+      }
+      try {
+        const events = await fetchEvents();
+        if (stop) return;
+        setOpenedCapsules(events.filter((event) => timecapsuleOpened(event)).length);
       } catch {
         /* the badge can wait */
       }
@@ -188,13 +204,13 @@ function CameraDesk() {
       try {
         const data = await fetchFeed();
         if (stop) return;
-        setFeedFresh(
+        setUnseenPosts(
           noteFeedLook({
             storage: localStorage,
             photos: data.photos.map((photo) => ({ mine: photo.mine, addedAt: photo.addedAt })),
             feedVisible: false,
             now: Date.now(),
-          }),
+          }).count,
         );
       } catch {
         /* the badge can wait */
@@ -214,15 +230,35 @@ function CameraDesk() {
   }, [tokenReady, feedRevision, tab, guestId, landed]);
 
   function sawFeed(photos: FeedItem[]) {
-    setFeedFresh(
+    setUnseenPosts(
       noteFeedLook({
         storage: localStorage,
         photos: photos.map((photo) => ({ mine: photo.mine, addedAt: photo.addedAt })),
         feedVisible: true,
         now: Date.now(),
-      }),
+      }).count,
     );
   }
+
+  useEffect(() => {
+    if (badgeCount == null) return;
+    let stop = false;
+    const paint = () => {
+      if (!stop) void applyAppBadge(appBadgeCount(readyFrames ?? 0, unseenPosts ?? 0, openedCapsules ?? 0), navigator);
+    };
+    paint();
+    const onVis = () => {
+      if (document.visibilityState === "visible") paint();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    const mode = window.matchMedia("(display-mode: standalone)");
+    mode.addEventListener("change", paint);
+    return () => {
+      stop = true;
+      document.removeEventListener("visibilitychange", onVis);
+      mode.removeEventListener("change", paint);
+    };
+  }, [badgeCount, readyFrames, unseenPosts, openedCapsules]);
 
   return (
     <div className="desk">
