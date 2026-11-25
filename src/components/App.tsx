@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { adoptSavedProfile, devFlagStored, ensureCamera, fetchConfig, fetchEvents, fetchFeed, fetchLab, joinEvent } from "@/lib/api";
+import { openCameraFromTap } from "@/lib/camera";
 import {
   CAMERA_BADGE_PERMISSION_KEY,
   appBadgeCount,
@@ -106,6 +107,9 @@ function CameraDesk() {
 
   function chooseTab(next: MainTab) {
     setGuestId(null);
+    // The tap is still a user gesture here. The camera has to start before
+    // the effect, or iOS treats the reopen as unprompted.
+    if (next === "shoot" && tabNow.current !== "shoot") openCameraFromTap();
     if (shouldReloadOnTabChange(tabNow.current, next)) setLanded((value) => value + 1);
     setTab(next);
   }
@@ -119,7 +123,7 @@ function CameraDesk() {
   }, []);
 
   useEffect(() => {
-    // Coming back onto the open tab reloads its lists. The camera keeps its track.
+    // Coming back onto the open tab reloads its lists. Hiding the page does not stop the camera.
     let shownAt = 0;
     const show = () => {
       if (!shouldReloadOnPageSignal("show")) return;

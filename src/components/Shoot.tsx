@@ -2,7 +2,15 @@
 
 import { useEffect, useRef, useState } from "react";
 import { blobToBase64, sendPhoto } from "@/lib/api";
-import { cameraWake, isHardwareShutter, openCamera, peekCamera, type CameraWake } from "@/lib/camera";
+import {
+  cameraWake,
+  isHardwareShutter,
+  noteCameraFacing,
+  openCamera,
+  peekCamera,
+  releaseCamera,
+  type CameraWake,
+} from "@/lib/camera";
 import { readDateStamp } from "@/lib/date-stamp";
 import { shouldFlipOnDoubleTap } from "@/lib/tap";
 import { isIosDevice, setTorch, SHUTTER_BLINK_MS, wait } from "@/lib/flash";
@@ -114,11 +122,14 @@ export function Shoot({
 
   const facingRef = useRef(facing);
   facingRef.current = facing;
+  noteCameraFacing(facing);
+  const activeRef = useRef(active);
+  activeRef.current = active;
   const modeRef = useRef(mode);
   modeRef.current = mode;
 
   const wakeRef = useRef<(event: CameraWake) => void>(() => {});
-  const openedShoot = useRef(false);
+  const attempt = useRef(0);
 
   function attachStream(stream: MediaStream) {
     streamRef.current = stream;
@@ -128,16 +139,44 @@ export function Shoot({
   }
 
   function wake(event: CameraWake) {
-    const ready = peekCamera(facingRef.current);
+    if (event === "leave-shoot") {
+      // Stop the track so iOS can drop the red camera light. The preview is
+      // hidden on the other tabs; coming back opens it again.
+      attempt.current += 1;
+      const preview = streamRef.current;
+      streamRef.current = null;
+      if (preview) {
+        for (const track of preview.getTracks()) track.stop();
+      }
+      releaseCamera();
+      const video = videoRef.current;
+      if (video) video.srcObject = null;
+      engineRef.current?.adopt(null);
+      if (modeRef.current === "live") setMode("opening");
+      return;
+    }
+    // Another tab is showing. A page show must not turn the camera back on.
+    if (!activeRef.current) return;
+    const facingNow = facingRef.current;
+    const ready = peekCamera(facingNow);
     const action = cameraWake(event, ready != null);
-    if (action === "keep") return;
+    if (action === "keep" || action === "release") return;
     if (action === "reuse" && ready) {
       attachStream(ready);
       return;
     }
-    void openCamera(facingRef.current).then((stream) => {
+    const generation = ++attempt.current;
+    engineRef.current?.adopt(null);
+    if (modeRef.current !== "live") setMode("opening");
+    void openCamera(facingNow).then((stream) => {
+      if (generation !== attempt.current) return;
+      if (!activeRef.current || facingRef.current !== facingNow) return;
       if (!stream) {
-        if (!peekCamera(facingRef.current)) setMode("fallback");
+        if (!peekCamera(facingNow)) {
+          streamRef.current = null;
+          engineRef.current?.adopt(null);
+          setMode("fallback");
+        }
         return;
       }
       attachStream(stream);
@@ -146,38 +185,14 @@ export function Shoot({
   wakeRef.current = wake;
 
   useEffect(() => {
-    let cancel = false;
-    const ready = peekCamera(facing);
-    if (ready && cameraWake("show-shoot", true) === "reuse") {
-      attachStream(ready);
-      return;
-    }
-    engineRef.current?.adopt(null);
-    async function open() {
-      const stream = await openCamera(facing);
-      if (cancel) return;
-      if (!stream) {
-        streamRef.current = null;
-        engineRef.current?.adopt(null);
-        setMode("fallback");
-        return;
-      }
-      attachStream(stream);
-    }
-    setMode("opening");
-    void open();
-    return () => {
-      cancel = true;
-    };
-  }, [facing]);
+    if (!active) return;
+    wakeRef.current("show-shoot");
+  }, [facing, active]);
 
   useEffect(() => {
-    // The re-prompt lived here. visibilitychange (hidden) and pagehide both
-    // called releaseCamera(), which stopped every track. Coming back ran
-    // openCamera(), and camera.ts request() called getUserMedia because no
-    // video track was still live. The effect cleanup did the same stop when
-    // Shoot unmounted. Keep the track. Ask only when none is live. pagehide
-    // and blur are not listened for, so they cannot stop it either.
+    // Hide and pagehide keep the track. Stopping it on the way to the Home
+    // Screen is what made iOS ask again. Leaving Shoot is the path that stops
+    // it. pagehide and blur are not listened for.
     const onVisibility = () => {
       wakeRef.current(document.visibilityState === "hidden" ? "visibility-hidden" : "visibility-visible");
     };
@@ -191,12 +206,8 @@ export function Shoot({
   }, []);
 
   useEffect(() => {
-    if (!active) return;
-    if (!openedShoot.current) {
-      openedShoot.current = true;
-      return;
-    }
-    wakeRef.current("show-shoot");
+    if (active) return;
+    wakeRef.current("leave-shoot");
   }, [active]);
 
   useEffect(() => {

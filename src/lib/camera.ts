@@ -20,6 +20,7 @@ const EMPTY_RECORD: StoredCamera = { origin: null, granted: false, devices: {} }
 let held: Held | null = null;
 let opening: { facing: Facing; promise: Promise<MediaStream | null> } | null = null;
 let ticket = 0;
+let notedFacing: Facing = "environment";
 
 function browserStorage(): Storage | null {
   try {
@@ -194,6 +195,14 @@ export function labeledDeviceIds(inputs: VideoInput[]): string[] {
     .map((device) => device.deviceId);
 }
 
+function frameSize(): Pick<MediaTrackConstraints, "width" | "height"> {
+  return { width: { ideal: 1600 }, height: { ideal: 1200 } };
+}
+
+function facingConstraints(facing: Facing): MediaTrackConstraints {
+  return { facingMode: { ideal: facing }, ...frameSize() };
+}
+
 export function capturePlan(input: {
   permission: CameraPermission;
   facing: Facing;
@@ -201,15 +210,11 @@ export function capturePlan(input: {
   visibleDeviceIds: string[];
 }): MediaTrackConstraints[] | null {
   if (input.permission === "denied") return null;
-  const byFacing: MediaTrackConstraints = {
-    facingMode: { ideal: input.facing },
-    width: { ideal: 1600 },
-    height: { ideal: 1200 },
-  };
+  const byFacing = facingConstraints(input.facing);
   if (input.permission !== "granted") return [byFacing];
   const saved = input.savedDeviceId;
   if (saved && input.visibleDeviceIds.includes(saved)) {
-    return [{ deviceId: { exact: saved }, width: { ideal: 1600 }, height: { ideal: 1200 } }, byFacing];
+    return [{ deviceId: { exact: saved }, ...frameSize() }, byFacing];
   }
   return [byFacing];
 }
@@ -234,14 +239,16 @@ export type CameraWake =
   | "show-shoot";
 
 /**
- * A live track stays up across the Home Screen, a blur, and leaving Shoot.
- * getUserMedia runs only when that track is already gone. A swipe-away ends
- * the process, so the next launch has nothing left to reuse.
+ * Home Screen, blur, and pagehide keep a live track. Stopping it on the way
+ * out of the app is what made iOS ask again on the way back. Leaving Shoot
+ * for another tab releases the track so the camera light can go out. Coming
+ * back reuses a stream that is still live, and calls getUserMedia only when
+ * the previous one is dead. A swipe-away ends the process, so the next launch
+ * has nothing left to reuse.
  */
-export function cameraWake(event: CameraWake, hasLiveTrack: boolean): "keep" | "reuse" | "request" {
-  if (event === "visibility-hidden" || event === "pagehide" || event === "blur" || event === "leave-shoot") {
-    return "keep";
-  }
+export function cameraWake(event: CameraWake, hasLiveTrack: boolean): "keep" | "release" | "reuse" | "request" {
+  if (event === "leave-shoot") return "release";
+  if (event === "visibility-hidden" || event === "pagehide" || event === "blur") return "keep";
   return hasLiveTrack ? "reuse" : "request";
 }
 
@@ -270,13 +277,50 @@ export function peekCamera(facing: Facing): MediaStream | null {
   return liveStream(facing);
 }
 
+function stopStream(stream: MediaStream) {
+  try {
+    stream.getTracks().forEach((track) => track.stop());
+  } catch {
+    /* already ended */
+  }
+}
+
 function stopHeld() {
-  held?.stream.getTracks().forEach((track) => track.stop());
+  if (held) stopStream(held.stream);
   held = null;
 }
 
-/** Stops the held track. Shoot must not call this on hide, blur, pagehide, or a tab change. */
+function deviceIdFrom(stream: MediaStream): string | undefined {
+  try {
+    const id = stream.getVideoTracks()[0]?.getSettings?.().deviceId;
+    return id && id.length > 0 ? id : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function keepStream(facing: Facing, stream: MediaStream, mine: number): MediaStream | null {
+  if (mine !== ticket) {
+    stopStream(stream);
+    return liveStream(facing);
+  }
+  rememberGrant(facing, deviceIdFrom(stream));
+  if (mine !== ticket) {
+    stopStream(stream);
+    return liveStream(facing);
+  }
+  if (held && held.stream !== stream) stopStream(held.stream);
+  held = { facing, stream };
+  return stream;
+}
+
+/**
+ * Stops the held track and drops an open that has not finished.
+ * Hide, blur, and pagehide must not call this. Leaving Shoot does.
+ */
 export function releaseCamera() {
+  ticket += 1;
+  opening = null;
   stopHeld();
 }
 
@@ -335,15 +379,7 @@ async function request(facing: Facing, mine: number): Promise<MediaStream | null
     if (mine !== ticket) return liveStream(facing);
     try {
       const stream = await media.getUserMedia({ audio: false, video: plan[index] });
-      const track = stream.getVideoTracks()[0];
-      const deviceId = track?.getSettings?.().deviceId;
-      rememberGrant(facing, deviceId);
-      if (mine !== ticket) {
-        stream.getTracks().forEach((trackToStop) => trackToStop.stop());
-        return liveStream(facing);
-      }
-      held = { facing, stream };
-      return stream;
+      return keepStream(facing, stream, mine);
     } catch (error) {
       const name = failureName(error);
       if (index < plan.length - 1 && shouldRetryCamera(name)) continue;
@@ -354,7 +390,38 @@ async function request(facing: Facing, mine: number): Promise<MediaStream | null
   return null;
 }
 
+function beginOpen(facing: Facing, video: MediaTrackConstraints): Promise<MediaStream | null> {
+  const media = typeof navigator === "undefined" ? undefined : navigator.mediaDevices;
+  if (!media?.getUserMedia) return Promise.resolve(null);
+  const mine = ++ticket;
+  let pending: Promise<MediaStream>;
+  try {
+    pending = media.getUserMedia({ audio: false, video });
+  } catch (error) {
+    if (failureName(error) === "NotAllowedError") forgetGrant();
+    return Promise.resolve(null);
+  }
+  const promise = pending.then(
+    (stream) => keepStream(facing, stream, mine),
+    (error: unknown) => {
+      if (failureName(error) === "NotAllowedError") forgetGrant();
+      return mine === ticket ? null : liveStream(facing);
+    },
+  );
+  const tracked = promise.finally(() => {
+    if (opening?.promise === tracked) opening = null;
+  });
+  opening = { facing, promise: tracked };
+  return tracked;
+}
+
+/** The facing Shoot last rendered. The tab tap reads it without waiting for an effect. */
+export function noteCameraFacing(facing: Facing) {
+  notedFacing = facing;
+}
+
 export function openCamera(facing: Facing): Promise<MediaStream | null> {
+  noteCameraFacing(facing);
   const existing = liveStream(facing);
   if (existing) return Promise.resolve(existing);
   if (opening?.facing === facing) return opening.promise;
@@ -364,6 +431,22 @@ export function openCamera(facing: Facing): Promise<MediaStream | null> {
   });
   opening = { facing, promise };
   return promise;
+}
+
+/**
+ * Call from the tap that shows Shoot, before any await.
+ * A live stream is reused. Otherwise getUserMedia runs in this turn, which is
+ * the user gesture WebKit uses to skip a new prompt. The promise is the one
+ * openCamera returns for this facing, so Shoot does not ask a second time.
+ */
+export function openCameraFromTap(): Promise<MediaStream | null> {
+  const facing = notedFacing;
+  const existing = liveStream(facing);
+  if (existing) return Promise.resolve(existing);
+  if (opening?.facing === facing) return opening.promise;
+  const saved = savedDeviceId(readCameraRecord(browserStorage()), facing, readOrigin());
+  const video = saved ? { deviceId: { ideal: saved }, ...facingConstraints(facing) } : facingConstraints(facing);
+  return beginOpen(facing, video);
 }
 
 export function isHardwareShutter(event: { code?: string; key?: string; keyCode?: number }): boolean {
