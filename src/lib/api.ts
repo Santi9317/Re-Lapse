@@ -506,11 +506,11 @@ export async function fetchEvents(): Promise<EventRoll[]> {
   return data.events;
 }
 
-export async function createEvent(name: string, durationHours: number): Promise<EventRoll> {
+export async function createEvent(name: string, durationHours: number, startsAt: number): Promise<EventRoll> {
   return request("/api/events", {
     method: "POST",
     headers: await headers(true),
-    body: JSON.stringify({ name, durationHours }),
+    body: JSON.stringify({ name, durationHours, startsAt }),
   });
 }
 

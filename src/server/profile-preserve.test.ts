@@ -38,8 +38,8 @@ test("shots taken before a profile stay attached when it is saved and later edit
   );
   await sql(`insert into albums (id, name, owner_token) values ($1, 'Pocket', $2)`, [album, token]);
   await sql(
-    `insert into events (id, name, duration_hours, ends_at, reveal_at, owner_token, invite_only)
-     values ($1, 'Night roll', 8, now() + interval '8 hours', now() + interval '32 hours', $2, true)`,
+    `insert into events (id, name, duration_hours, starts_at, ends_at, reveal_at, owner_token, invite_only)
+     values ($1, 'Night roll', 8, now(), now() + interval '8 hours', now() + interval '32 hours', $2, true)`,
     [event, token],
   );
   await sql(

@@ -29,6 +29,7 @@ test("a frame is ready to develop when the lab says so, including a clock that a
 
 test("an opened timecapsule is the roll that came back", () => {
   assert.equal(timecapsuleOpened({ status: "ready" }), true);
+  assert.equal(timecapsuleOpened({ status: "waiting" }), false);
   assert.equal(timecapsuleOpened({ status: "open" }), false);
   assert.equal(timecapsuleOpened({ status: "sealing" }), false);
 });

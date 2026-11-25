@@ -104,7 +104,7 @@ export type AlbumDetail = {
   library: FeedItem[];
 };
 
-export type EventStatus = "open" | "sealing" | "ready";
+export type EventStatus = "waiting" | "open" | "sealing" | "ready";
 
 export type RollMember = {
   name: string | null;
@@ -116,6 +116,7 @@ export type EventRoll = {
   name: string;
   durationHours: number;
   createdAt: number;
+  startsAt: number;
   endsAt: number;
   revealAt: number;
   status: EventStatus;

@@ -5,7 +5,7 @@ import { CAROUSEL_LIMIT, isEmoji } from "@/lib/profile";
 import type { Album, AlbumDetail, Chemistry, EventDetail, EventRoll, EventStatus, FeedItem, FrameComment, FrameSticker, GalleryCard, LabItem, LabState, ProfilePatch, RollMember, SharedProfile } from "@/lib/types";
 import { HttpError } from "@/server/http";
 import { assertCreateAllowed, assertJoinAllowed, claimCamera, noteCreate } from "@/server/quota";
-import { cleanJpeg } from "@/server/validate";
+import { cleanJpeg, cleanStart } from "@/server/validate";
 
 // A shared frame stays on the feed for a week and is then deleted. Only a
 // camera the server issued can create anything, and that camera spends only
@@ -615,11 +615,7 @@ export async function createPhoto(input: {
   if (input.eventId) {
     const events = await sql<{ status: EventStatus; reveal_ms: number; owner_token: string | null; invite_only: boolean; member: boolean }>(
       `select
-         case
-           when now() < ends_at then 'open'
-           when now() < reveal_at then 'sealing'
-           else 'ready'
-         end as status,
+         ${eventPhaseSql()} as status,
          (extract(epoch from reveal_at) * 1000) as reveal_ms,
          owner_token,
          invite_only,
@@ -637,6 +633,7 @@ export async function createPhoto(input: {
     );
     const event = events[0];
     if (!event) throw new HttpError(404, "That timecapsule is gone.");
+    if (event.status === "waiting") throw new HttpError(409, "This timecapsule isn't open yet.");
     if (event.status !== "open") throw new HttpError(409, "This timecapsule is closed.");
     if (flag(event.invite_only) && !flag(event.member)) {
       throw new HttpError(403, "Only people invited to this timecapsule can add a frame.");
@@ -1251,17 +1248,33 @@ export async function deleteAlbum(id: string, token: string): Promise<void> {
   });
 }
 
+function eventPhaseSql(table = ""): string {
+  const column = table ? `${table}.` : "";
+  return `case
+    when now() < ${column}starts_at then 'waiting'
+    when now() < ${column}ends_at then 'open'
+    when now() < ${column}reveal_at then 'sealing'
+    else 'ready'
+  end`;
+}
+
+function eventStatus(value: string): EventStatus {
+  if (value === "waiting" || value === "open" || value === "sealing" || value === "ready") return value;
+  return "ready";
+}
+
 function eventFrom(row: Record<string, unknown>): EventRoll {
-  const status = String(row.status);
+  const status = eventStatus(String(row.status));
   const revealed = status === "ready";
   return {
     id: String(row.id),
     name: String(row.name),
     durationHours: num(row.duration_hours),
     createdAt: num(row.created_ms),
+    startsAt: num(row.starts_ms),
     endsAt: num(row.ends_ms),
     revealAt: num(row.reveal_ms),
-    status: (status === "open" || status === "sealing" || status === "ready" ? status : "ready") as EventStatus,
+    status,
     frameCount: revealed ? num(row.frame_count) : null,
     inviteOnly: flag(row.invite_only),
     owner: flag(row.is_owner),
@@ -1278,6 +1291,7 @@ const eventSelect = `
     e.duration_hours,
     e.invite_only,
     (extract(epoch from e.created_at) * 1000) as created_ms,
+    (extract(epoch from e.starts_at) * 1000) as starts_ms,
     (extract(epoch from e.ends_at) * 1000) as ends_ms,
     (extract(epoch from e.reveal_at) * 1000) as reveal_ms,
     (e.owner_token = $1) as is_owner,
@@ -1291,11 +1305,7 @@ const eventSelect = `
       else null
     end as invite_code,
     (select count(*)::int from event_members m where m.event_id = e.id) as member_count,
-    case
-      when now() < e.ends_at then 'open'
-      when now() < e.reveal_at then 'sealing'
-      else 'ready'
-    end as status,
+    ${eventPhaseSql("e")} as status,
     case
       when now() >= e.reveal_at
         then (select count(*)::int from photos p where p.event_id = e.id)
@@ -1375,18 +1385,26 @@ export async function listEvents(viewer: string): Promise<EventRoll[]> {
   return rows.map(eventFrom);
 }
 
-export async function createEvent(name: string, hours: number, dev: boolean, token: string, proof: string | null): Promise<EventRoll> {
+export async function createEvent(
+  name: string,
+  hours: number,
+  dev: boolean,
+  token: string,
+  proof: string | null,
+  startMs: unknown,
+): Promise<EventRoll> {
+  const startsAt = cleanStart(startMs);
   await assertCreateAllowed("event", token, proof);
   await reclaimNow();
   await fitEvents(token);
   await claimCamera(token, proof);
   const id = randomUUID();
-  const times = eventTimes(Date.now(), hours, dev);
+  const times = eventTimes(Date.now(), hours, dev, startsAt);
   const rows = await sql(
-    `insert into events (id, name, duration_hours, ends_at, reveal_at, owner_token, invite_only)
-     values ($1, $2, $3, $4, $5, $6, true)
+    `insert into events (id, name, duration_hours, starts_at, ends_at, reveal_at, owner_token, invite_only)
+     values ($1, $2, $3, $4, $5, $6, $7, true)
      returning id`,
-    [id, name, hours, times.endsAt.toISOString(), times.revealAt.toISOString(), token],
+    [id, name, hours, times.startsAt.toISOString(), times.endsAt.toISOString(), times.revealAt.toISOString(), token],
   );
   if (!rows[0]) throw new HttpError(500, "The lab hit a snag.");
   await sql(
@@ -1485,11 +1503,7 @@ export async function publishEventFeed(eventId: string, token: string, photoIds:
     `select
        owner_token,
        invite_only,
-       case
-         when now() < ends_at then 'open'
-         when now() < reveal_at then 'sealing'
-         else 'ready'
-       end as status
+       ${eventPhaseSql()} as status
      from events
      where id = $1`,
     [eventId],

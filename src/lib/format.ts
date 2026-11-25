@@ -50,6 +50,20 @@ export function clockLabel(ms: number): string {
   });
 }
 
+/** A `datetime-local` value in the viewer's local time, to the minute. */
+export function dateTimeLocalValue(ms: number): string {
+  const date = new Date(ms);
+  const pad = (part: number) => String(part).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+/** The local minute from a `datetime-local` value, or null when it is not one. */
+export function dateTimeLocalMs(value: string): number | null {
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value)) return null;
+  const ms = new Date(value).getTime();
+  return Number.isFinite(ms) ? ms : null;
+}
+
 export function disposableDate(date: Date): string {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");

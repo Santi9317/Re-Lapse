@@ -28,7 +28,7 @@ export const HOW_TO: HowToSection[] = [
     id: "timecapsules",
     title: "Timecapsules",
     body: [
-      "A timecapsule stays open for 1 to 24 hours, then it seals for a day. Invite people, and when it opens you pick which frames hit the feed.",
+      "Pick when a timecapsule opens. It stays open for 1 to 24 hours from that time, then it seals for a day. Invite people, and when it comes back you pick which frames hit the feed.",
     ],
   },
   {

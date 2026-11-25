@@ -36,8 +36,8 @@ test("a bath is chosen while the clock runs and the print is graded once", async
     [legacy, token, JPEG],
   );
   await sql(
-    `insert into events (id, name, duration_hours, ends_at, reveal_at)
-     values ($1, 'Roll', 8, now() + interval '1 hour', now() + interval '2 hours')`,
+    `insert into events (id, name, duration_hours, starts_at, ends_at, reveal_at)
+     values ($1, 'Roll', 8, now() - interval '7 hours', now() + interval '1 hour', now() + interval '2 hours')`,
     [eventId],
   );
   await sql(

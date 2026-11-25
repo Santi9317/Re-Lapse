@@ -1463,9 +1463,26 @@ figure.print .print-actions button[data-delete]:hover:not(:disabled) {
   border: 1px solid currentColor;
   border-radius: 999px;
 }
+.pill[data-status="waiting"] { color: #c084fc; }
 .pill[data-status="open"] { color: #7dffa8; }
 .pill[data-status="sealing"] { color: #ff8a3d; }
 .pill[data-status="ready"] { color: #3de0ff; }
+
+.capsule-start {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+}
+.capsule-start span {
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.field[type="datetime-local"] {
+  color-scheme: dark;
+}
 
 .stepper {
   display: flex;
@@ -1504,7 +1521,7 @@ figure.print .print-actions button[data-delete]:hover:not(:disabled) {
 
 .phases {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
   margin: 14px 0;
 }

@@ -16,11 +16,13 @@ import {
 import { CaptionField } from "@/components/CaptionField";
 import { Gallery, GalleryCardButton } from "@/components/Gallery";
 import { PhotoStrip, StripShot } from "@/components/PhotoStrip";
-import { clockLabel, frames, longRemain } from "@/lib/format";
+import { capsuleWindow, EVENT_START_AHEAD_MS, EVENT_START_SKEW_MS } from "@/lib/clock";
+import { clockLabel, dateTimeLocalMs, dateTimeLocalValue, frames, longRemain } from "@/lib/format";
 import type { Album, EventDetail, EventRoll, EventStatus, FeedItem } from "@/lib/types";
 import { Lightbox, PrintView } from "@/components/Print";
 
 function statusLine(event: EventRoll, now: number): string {
+  if (event.status === "waiting") return `Opens in ${longRemain(Math.max(0, event.startsAt - now))}`;
   if (event.status === "open") return `Open · ${longRemain(Math.max(0, event.endsAt - now))} left`;
   if (event.status === "sealing") return `Sealing · back in ${longRemain(Math.max(0, event.revealAt - now))}`;
   return "Ready · the timecapsule is back";
@@ -39,6 +41,7 @@ function eventMeta(event: EventRoll): string {
 }
 
 function inviteBlurb(status: EventStatus): string {
+  if (status === "waiting") return "Invite other people. They can add frames once this timecapsule opens.";
   if (status === "open") return "Invite other people. Anyone who joins can add frames until this timecapsule closes.";
   if (status === "sealing") return "The window is closed. People you invite can still watch for the timecapsule to come back.";
   return "Share this if someone should see the whole timecapsule. The feed only gets the frames you pick.";
@@ -92,6 +95,9 @@ export function Rolls({
   const [albumName, setAlbumName] = useState("");
   const [eventName, setEventName] = useState("");
   const [hours, setHours] = useState(12);
+  const [startValue, setStartValue] = useState(() => dateTimeLocalValue(Date.now()));
+  const [startEdited, setStartEdited] = useState(false);
+  const startFocused = useRef(false);
   const [joinCode, setJoinCode] = useState("");
   const [inviteName, setInviteName] = useState("");
   const [copied, setCopied] = useState("");
@@ -111,6 +117,11 @@ export function Rolls({
     const id = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(id);
   }, []);
+
+  useEffect(() => {
+    if (startEdited || startFocused.current) return;
+    setStartValue(dateTimeLocalValue(now));
+  }, [now, startEdited]);
 
   useEffect(() => {
     let stop = false;
@@ -188,14 +199,31 @@ export function Rolls({
     }
   }
 
+  function pickedStart(nowMs: number): number | null {
+    if (!startEdited) return nowMs;
+    return dateTimeLocalMs(startValue);
+  }
+
   async function makeEvent() {
     if (!eventName.trim() || busy) return;
+    const nowMs = Date.now();
+    const picked = pickedStart(nowMs);
+    if (picked == null || picked < nowMs - EVENT_START_SKEW_MS) {
+      setError("Pick a start from now on.");
+      return;
+    }
+    if (picked > nowMs + EVENT_START_AHEAD_MS) {
+      setError("Pick a start within the next year.");
+      return;
+    }
     setBusy(true);
     setError("");
     try {
-      const event = await createEvent(eventName.trim(), hours);
+      const event = await createEvent(eventName.trim(), hours, Math.max(picked, nowMs));
       setEvents((current) => [event, ...current]);
       setEventName("");
+      setStartEdited(false);
+      setStartValue(dateTimeLocalValue(Date.now()));
       setInviteName("");
       setCopied("");
       setEventDetail(await fetchEvent(event.id));
@@ -394,6 +422,7 @@ export function Rolls({
         <h2 className="word" style={{ fontSize: 40, marginTop: 10 }}>{eventDetail.name}</h2>
         <p className="fine">{eventMeta(eventDetail)}</p>
         <div className="phases">
+          <Phase label="Starts" detail={clockLabel(eventDetail.startsAt)} on={eventDetail.status === "waiting"} />
           <Phase label="Open" detail={`until ${clockLabel(eventDetail.endsAt)}`} on={eventDetail.status === "open"} />
           <Phase label="Sealing" detail={`until ${clockLabel(eventDetail.revealAt)}`} on={eventDetail.status === "sealing"} />
           <Phase label="Ready" detail={eventDetail.inviteOnly ? "pick the feed" : "the timecapsule returns"} on={eventDetail.status === "ready"} />
@@ -435,8 +464,19 @@ export function Rolls({
             <p className="fine" style={{ marginTop: 8 }}>{memberLine(eventDetail)}</p>
           </section>
         ) : null}
+        {eventDetail.inviteOnly && !eventDetail.owner && eventDetail.status === "waiting" ? (
+          <p className="fine">You're invited. You can add frames once this timecapsule opens.</p>
+        ) : null}
         {eventDetail.inviteOnly && !eventDetail.owner && eventDetail.status === "open" ? (
           <p className="fine">You're invited. Add frames until this timecapsule closes.</p>
+        ) : null}
+        {eventDetail.status === "waiting" ? (
+          <div className="empty" data-capsule-waiting={eventDetail.id}>
+            <h2>Not open yet.</h2>
+            <p>
+              This timecapsule opens {clockLabel(eventDetail.startsAt)}. Frames can be added then. Nothing is viewable until a day after it closes.
+            </p>
+          </div>
         ) : null}
         {eventDetail.status === "open" ? (
           <button className="primary" type="button" data-arm-event={eventDetail.id} onClick={() => onArm(eventDetail)}>
@@ -547,10 +587,16 @@ export function Rolls({
     );
   }
 
+  const chosen = pickedStart(now);
+  const startReady =
+    chosen != null && chosen >= now - EVENT_START_SKEW_MS && chosen <= now + EVENT_START_AHEAD_MS;
+  const preview = capsuleWindow(Math.max(chosen ?? now, now), hours);
+  const openFor = hours === 1 ? "1 hour" : `${hours} hours`;
+
   return (
     <div className="scroll" data-screen="keepsakes">
       <p className="fine">
-        Keepsakes are galleries of your photos. Timecapsules stay open for 1 to 24 hours, then the whole album seals for a day. Invite people onto it, and pick what hits the feed.
+        Keepsakes are galleries of your photos. Pick when a timecapsule opens. It stays open for 1 to 24 hours, then the whole album seals for a day. Invite people onto it, and pick what hits the feed.
       </p>
       {error || joinNotice ? <p className="error">{error || joinNotice}</p> : null}
       <h2 className="section">Galleries</h2>
@@ -589,6 +635,29 @@ export function Rolls({
         value={eventName}
         onChange={(event) => setEventName(event.target.value)}
       />
+      <label className="capsule-start">
+        <span>Opens</span>
+        <input
+          className="field"
+          type="datetime-local"
+          data-capsule-start
+          value={startValue}
+          min={dateTimeLocalValue(now)}
+          max={dateTimeLocalValue(now + EVENT_START_AHEAD_MS)}
+          step={60}
+          onFocus={() => {
+            startFocused.current = true;
+          }}
+          onBlur={() => {
+            startFocused.current = false;
+          }}
+          onChange={(event) => {
+            setStartEdited(true);
+            setStartValue(event.target.value);
+          }}
+          required
+        />
+      </label>
       <div className="stepper">
         <button type="button" aria-label="Shorter timecapsule" onClick={() => setHours((value) => Math.max(1, value - 1))}>
           –
@@ -601,8 +670,22 @@ export function Rolls({
           +
         </button>
       </div>
-      <p className="fine">Open for 1 to 24 hours. When it closes, the timecapsule seals for 24 hours. Then you choose which frames go on the feed.</p>
-      <button className="primary" type="button" style={{ marginTop: 12 }} disabled={busy || !eventName.trim()} onClick={() => void makeEvent()}>
+      <p className="fine" data-capsule-window>
+        {startReady
+          ? `Opens ${clockLabel(preview.startsAt)}. It stays open for ${openFor}, until ${clockLabel(preview.endsAt)}. Then it seals for 24 hours. You can see it ${clockLabel(preview.revealAt)}.`
+          : chosen == null
+            ? "Pick when it opens. It stays open for the hours you chose, then seals for 24 hours."
+            : chosen > now + EVENT_START_AHEAD_MS
+              ? "Pick a start within the next year."
+              : "Pick a start from now on."}
+      </p>
+      <button
+        className="primary"
+        type="button"
+        style={{ marginTop: 12 }}
+        disabled={busy || !eventName.trim() || !startReady}
+        onClick={() => void makeEvent()}
+      >
         Start the timecapsule
       </button>
       <h2 className="section">Join</h2>
@@ -628,7 +711,7 @@ export function Rolls({
       {events.length === 0 ? (
         <div className="empty">
           <h2>No timecapsules yet. 🎉</h2>
-          <p>Start one, invite people, and they can add frames until it closes.</p>
+          <p>Pick when it opens, invite people, and they can add frames until it closes.</p>
         </div>
       ) : (
         events.map((event) => (

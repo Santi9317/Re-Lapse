@@ -1,3 +1,4 @@
+import { EVENT_START_AHEAD_MS, EVENT_START_SKEW_MS } from "@/lib/clock";
 import { FRAME_NOTE_LIMIT } from "@/lib/frame-note";
 import { CAROUSEL_LIMIT, isEmoji } from "@/lib/profile";
 import type { Chemistry, ProfilePatch } from "@/lib/types";
@@ -139,6 +140,16 @@ export function cleanHours(value: unknown): number {
     throw new HttpError(400, "A timecapsule stays open between 1 and 24 hours.");
   }
   return hours;
+}
+
+/** The moment the open hours begin. A start a couple of minutes ago still opens now. */
+export function cleanStart(value: unknown, now = Date.now()): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new HttpError(400, "Pick when the timecapsule opens.");
+  }
+  if (value < now - EVENT_START_SKEW_MS) throw new HttpError(400, "Pick a start from now on.");
+  if (value > now + EVENT_START_AHEAD_MS) throw new HttpError(400, "Pick a start within the next year.");
+  return Math.max(value, now);
 }
 
 const INVITE_CODE = /^[A-HJ-NP-Z2-9]{6,12}$/;

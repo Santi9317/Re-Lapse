@@ -24,13 +24,14 @@ test("this publish carries the same notes the camera can show", () => {
   assert.deepEqual(
     [...RELEASE_NOTES],
     [
-      "The line of cameras waiting to join stays short, so a new browser cannot fill it.",
-      "A name on the feed is not enough to guess that profile's PIN.",
+      "Pick when a timecapsule opens. It stays open for the hours you chose, and you can see it a day after it closes.",
     ],
   );
   const notes = RELEASE_NOTES.join("\n");
   const lower = notes.toLowerCase();
   for (const older of [
+    "The line of cameras waiting to join stays short, so a new browser cannot fill it.",
+    "A name on the feed is not enough to guess that profile's PIN.",
     "The shutter flash lasts a little longer, so you can see that the photo was taken.",
     "Tap Daylight or Night again to clear it. With neither picked, Develop uses the usual bath.",
     "Download and Delete sit as small text under a photo.",

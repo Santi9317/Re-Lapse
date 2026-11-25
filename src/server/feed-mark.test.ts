@@ -26,8 +26,8 @@ test("a feed frame is new from when it was added, and a frame this camera took i
     [adaShot, ada, image, beaShot, bea],
   );
   await sql(
-    `insert into events (id, name, duration_hours, ends_at, reveal_at, owner_token, invite_only)
-     values ($1, 'Open roll', 1, now() - interval '3 hours', now() - interval '2 hours', $2, false)`,
+    `insert into events (id, name, duration_hours, starts_at, ends_at, reveal_at, owner_token, invite_only)
+     values ($1, 'Open roll', 1, now() - interval '4 hours', now() - interval '3 hours', now() - interval '2 hours', $2, false)`,
     [openEvent, bea],
   );
   await sql(
@@ -36,8 +36,8 @@ test("a feed frame is new from when it was added, and a frame this camera took i
     [openShot, bea, image, openEvent],
   );
   await sql(
-    `insert into events (id, name, duration_hours, ends_at, reveal_at, owner_token, invite_only)
-     values ($1, 'Picked roll', 1, now() - interval '5 hours', now() - interval '4 hours', $2, true)`,
+    `insert into events (id, name, duration_hours, starts_at, ends_at, reveal_at, owner_token, invite_only)
+     values ($1, 'Picked roll', 1, now() - interval '6 hours', now() - interval '5 hours', now() - interval '4 hours', $2, true)`,
     [pickedEvent, bea],
   );
   await sql(

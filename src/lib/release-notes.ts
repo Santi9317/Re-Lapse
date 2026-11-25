@@ -5,8 +5,7 @@
  * Keep public/release.json in step with this list, and keep its version equal to APP_VERSION.
  */
 export const RELEASE_NOTES = [
-  "The line of cameras waiting to join stays short, so a new browser cannot fill it.",
-  "A name on the feed is not enough to guess that profile's PIN.",
+  "Pick when a timecapsule opens. It stays open for the hours you chose, and you can see it a day after it closes.",
 ] as const;
 
 export type PublishedRelease = {

@@ -324,7 +324,7 @@ export function Shoot({
   async function handoff(bitmap: ImageBitmap, capturedAt: number) {
     try {
       const roll = armedRef.current;
-      const openEvent = roll != null && capturedAt < roll.endsAt;
+      const openEvent = roll != null && capturedAt >= roll.startsAt && capturedAt < roll.endsAt;
       const stamp = openEvent && readDateStamp();
       const blob = openEvent
         ? await renderDisposable(bitmap, {
@@ -441,7 +441,7 @@ export function Shoot({
   }
   flipRef.current = flipCamera;
 
-  const eventClosed = armed != null && now >= armed.endsAt;
+  const eventClosed = armed != null && (now < armed.startsAt || now >= armed.endsAt);
   const preview = previewScale(optical, zoom);
   const lensStyle = lensTransform(facing === "user", preview);
 
