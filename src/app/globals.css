@@ -779,25 +779,40 @@ button.sticker:active { transform: translate(-50%, -50%) rotate(var(--tilt)) sca
 .print-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
   margin: 10px 4px 0;
+}
+.print-actions button,
+.lab-actions button {
+  border: 0;
+  border-radius: 999px;
+  background: linear-gradient(120deg, #ffc27a, #ffb0d4);
+  color: #1a0820;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  padding: 10px 12px;
+  text-align: center;
+  box-shadow: 0 6px 16px rgba(255, 150, 190, 0.28);
 }
 .print-actions button {
   flex: 1 1 0;
   min-width: 72px;
-  border: 1px solid #c8b8a4;
-  color: #2a160c;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  font-size: 10px;
-  padding: 8px 6px;
-  background: transparent;
 }
 .print-actions button[data-delete],
-.print-actions button[data-confirm-delete] {
-  color: #8a2e12;
+.print-actions button[data-confirm-delete],
+.lab-actions button[data-delete],
+.lab-actions button[data-confirm-delete] {
+  background: linear-gradient(120deg, #ff9a86, #ff6d93);
+  color: #1a0820;
+  box-shadow: 0 6px 16px rgba(255, 100, 130, 0.28);
 }
-.print-actions button:disabled { opacity: 0.45; }
+.print-actions button:active:not(:disabled),
+.lab-actions button:active:not(:disabled) { transform: translateY(1px); }
+.print-actions button:disabled,
+.lab-actions button:disabled { opacity: 0.45; cursor: not-allowed; }
 .print-actions .meta {
   flex: 1 0 100%;
   margin: 0;
@@ -805,8 +820,8 @@ button.sticker:active { transform: translate(-50%, -50%) rotate(var(--tilt)) sca
 .grid .print-actions { margin-top: 6px; }
 .grid .print-actions button {
   letter-spacing: 0.04em;
-  font-size: 9px;
-  padding: 7px 2px;
+  font-size: 11px;
+  padding: 8px 6px;
   min-width: 0;
 }
 
@@ -894,25 +909,6 @@ button.sticker:active { transform: translate(-50%, -50%) rotate(var(--tilt)) sca
   gap: 8px;
   margin-top: 10px;
 }
-.lab-actions button {
-  border: 1px solid currentColor;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  font-size: 10px;
-  padding: 8px 10px;
-  color: var(--amber);
-}
-.lab-card[data-lab-state="developed"] .lab-actions button {
-  color: #2a160c;
-  border-color: #c8b8a4;
-}
-.lab-actions button[data-delete],
-.lab-actions button[data-confirm-delete],
-.lab-card[data-lab-state="developed"] .lab-actions button[data-delete],
-.lab-card[data-lab-state="developed"] .lab-actions button[data-confirm-delete] {
-  color: #8a2e12;
-}
-.lab-actions button:disabled { opacity: 0.45; }
 
 .section {
   margin: 20px 0 8px;
@@ -1265,11 +1261,13 @@ button.byline .byline-name { text-decoration: underline; text-underline-offset: 
 .byline-name {
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  font-size: 11px;
+  font-size: 14px;
+  line-height: 1;
 }
 .byline-marks {
   font-size: 14px;
-  letter-spacing: 0.08em;
+  letter-spacing: 0;
+  line-height: 1;
   font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
 }
 
