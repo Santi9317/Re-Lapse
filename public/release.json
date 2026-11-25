@@ -1,6 +1,7 @@
 {
-  "version": "1.70",
+  "version": "1.71",
   "notes": [
+    "The Home Screen shortcut prompt works again after an update.",
     "Gallery cards stack the cover, the name, and the frame count.",
     "Recover an account from the You menu.",
     "Frames come back in Disposable 400, with warmer skin, softer contrast, and a fine grain.",
