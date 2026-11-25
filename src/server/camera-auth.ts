@@ -4,7 +4,7 @@ const PROOF = /^[0-9a-f]{64}$/i;
 /** A document load can refresh the phone cookie. API responses set it themselves. */
 export function shouldRefreshPhoneCookie(method: string, pathname: string): boolean {
   if (method !== "GET") return false;
-  if (pathname.startsWith("/api/") || pathname.startsWith("/_next/")) return false;
+  if (pathname.startsWith("/api/") || pathname.startsWith("/_next/") || pathname.startsWith("/icons/")) return false;
   return true;
 }
 

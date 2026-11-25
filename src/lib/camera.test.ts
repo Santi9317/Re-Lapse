@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
   cameraWake,
@@ -223,6 +224,17 @@ test("the lens cookie round-trips the saved camera", () => {
   const encoded = encodeURIComponent(lensCookieValue(stored));
   assert.deepEqual(recordFromLensCookie(encoded), stored);
   assert.deepEqual(recordFromLensCookie(null), { origin: null, granted: false, devices: {} });
+});
+
+test("hide and blur do not stop the camera", () => {
+  const source = readFileSync(new URL("../components/Shoot.tsx", import.meta.url), "utf8");
+  assert.match(source, /document\.addEventListener\("visibilitychange"/);
+  assert.match(source, /window\.addEventListener\("pageshow"/);
+  assert.equal(/addEventListener\(\s*["']blur["']/.test(source), false);
+  assert.equal(/addEventListener\(\s*["']pagehide["']/.test(source), false);
+  assert.equal(cameraWake("visibility-hidden", true), "keep");
+  assert.equal(cameraWake("pagehide", true), "keep");
+  assert.equal(cameraWake("blur", true), "keep");
 });
 
 test("corrupt site data does not become a grant", () => {

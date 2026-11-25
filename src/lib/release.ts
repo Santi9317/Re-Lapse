@@ -5,8 +5,9 @@
  * Keep package.json "version" equal to this string.
  * Keep public/sw.js RELEASE_VERSION and public/release.json "version" equal to it,
  * and write this publish's notes in src/lib/release-notes.ts and public/release.json.
+ * Shortcut icon URLs in the manifests and public/sw.js include this version.
  */
-export const APP_VERSION = "1.63";
+export const APP_VERSION = "1.64";
 
 export type Release = {
   version: string;
