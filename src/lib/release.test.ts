@@ -24,7 +24,8 @@ test("this publish carries the same notes the camera can show", () => {
   assert.deepEqual(
     [...RELEASE_NOTES],
     [
-      "Pick when a timecapsule opens. It stays open for the hours you chose, and you can see it a day after it closes.",
+      "Tap a sticker to see who stuck it, with a small photo, their name, and that emoji.",
+      "Sign a note on the back. Your marks sit beside it, and you can delete your own.",
     ],
   );
   const notes = RELEASE_NOTES.join("\n");
@@ -57,6 +58,7 @@ test("this publish carries the same notes the camera can show", () => {
     "The date stamp switch sits with your prints. A developed frame gets the date only when it is on.",
     "A caption shows up on a photo after you send it to the feed.",
     "The shutter sends the frame on, and the next shot is ready right away.",
+    "Pick when a timecapsule opens. It stays open for the hours you chose, and you can see it a day after it closes.",
   ]) {
     assert.equal(notes.includes(older), false);
   }

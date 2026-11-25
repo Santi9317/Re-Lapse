@@ -5,7 +5,8 @@
  * Keep public/release.json in step with this list, and keep its version equal to APP_VERSION.
  */
 export const RELEASE_NOTES = [
-  "Pick when a timecapsule opens. It stays open for the hours you chose, and you can see it a day after it closes.",
+  "Tap a sticker to see who stuck it, with a small photo, their name, and that emoji.",
+  "Sign a note on the back. Your marks sit beside it, and you can delete your own.",
 ] as const;
 
 export type PublishedRelease = {
