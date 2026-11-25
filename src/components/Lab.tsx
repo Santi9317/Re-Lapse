@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { blobToBase64, chooseChemistry, developPhoto, deletePhoto, fetchLab, fetchLatent, fetchPrivateImage, publishPhoto } from "@/lib/api";
-import { countdown, longRemain } from "@/lib/format";
+import { developStampDate, readDateStamp, writeDateStamp } from "@/lib/date-stamp";
+import { countdown, disposableDate, longRemain } from "@/lib/format";
 import { renderDisposable } from "@/lib/filter";
 import { lapseQuip } from "@/lib/quips";
 import { ensurePhotoFile, iosPhotosTarget, readyPhotoFile, rememberPhotoBlob, shareOrSave } from "@/lib/save";
@@ -40,10 +41,25 @@ export function Lab({
   const [busy, setBusy] = useState<string | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [stamp, setStamp] = useState(true);
+  const stampRef = useRef(true);
   const developedIds = useRef(new Set<string>());
   const pendingBath = useRef(new Map<string, Chemistry>());
   const grading = useRef(new Set<string>());
   const finished = useRef(new Set<string>());
+
+  useEffect(() => {
+    const saved = readDateStamp();
+    stampRef.current = saved;
+    setStamp(saved);
+  }, []);
+
+  function toggleStamp() {
+    const next = !stampRef.current;
+    stampRef.current = next;
+    setStamp(next);
+    writeDateStamp(next);
+  }
 
   useEffect(() => {
     let stop = false;
@@ -92,7 +108,7 @@ export function Lab({
       const latent = await fetchLatent(item.id);
       const bitmap = await createImageBitmap(latent);
       try {
-        const when = item.dateStamp && item.capturedAt != null ? new Date(item.capturedAt) : undefined;
+        const when = developStampDate(stampRef.current, item.capturedAt);
         const blob = await renderDisposable(bitmap, {
           chemistry,
           dateStamp: Boolean(when),
@@ -198,6 +214,25 @@ export function Lab({
   return (
     <div className="scroll" data-screen="lab">
       {error ? <p className="error">{error}</p> : null}
+      <label className="stamp-toggle" data-date-stamp={stamp ? "on" : "off"}>
+        <input
+          type="checkbox"
+          role="switch"
+          checked={stamp}
+          aria-checked={stamp}
+          onChange={toggleStamp}
+        />
+        <span className="stamp-imprint" aria-hidden="true">
+          {disposableDate(new Date())}
+        </span>
+        <span className="stamp-copy">
+          Date stamp
+          <span aria-hidden="true">{stamp ? "On" : "Off"}</span>
+        </span>
+        <span className="stamp-track" aria-hidden="true">
+          <span />
+        </span>
+      </label>
       {items.length === 0 ? (
         <div className="empty">
           <h2>Nothing in the soup. 🧪</h2>
@@ -232,7 +267,6 @@ export function Lab({
                 ) : state === "developed" ? (
                   <>
                     <div className="kicker">Developed 🌈</div>
-                    <p>{item.caption || "No caption."}</p>
                     <button
                       className="primary"
                       type="button"
@@ -247,7 +281,6 @@ export function Lab({
                 ) : state === "ready" ? (
                   <>
                     <div className="kicker">Ready ✨</div>
-                    <p>{item.caption || "No caption."}</p>
                     <button
                       className="primary"
                       type="button"

@@ -287,11 +287,10 @@ function CameraDesk() {
             <Shoot
               active={tab === "shoot"}
               armed={armed}
-              devTimers={devTimers}
               onDisarm={() => setArmed(null)}
               onSent={() => {
                 setLabRevision((value) => value + 1);
-                chooseTab("lab");
+                setLabCount((count) => count + 1);
               }}
             />
           </div>

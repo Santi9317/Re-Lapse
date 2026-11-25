@@ -429,6 +429,14 @@ export async function fetchLatent(id: string): Promise<Blob> {
   return response.blob();
 }
 
+export async function updateCaption(id: string, caption: string): Promise<{ caption: string }> {
+  return request(`/api/photos/${id}`, {
+    method: "PATCH",
+    headers: await headers(true),
+    body: JSON.stringify({ caption }),
+  });
+}
+
 export async function publishPhoto(id: string): Promise<{ publishedAt: number }> {
   return request(`/api/photos/${id}/publish`, { method: "POST", headers: await headers(false) });
 }
