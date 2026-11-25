@@ -6,10 +6,15 @@ import {
   capturePlan,
   labeledDeviceIds,
   lensCookieValue,
+  noteCameraFacing,
+  openCamera,
+  openCameraFromTap,
   parseStoredCamera,
+  peekCamera,
   recordFromLensCookie,
   permissionFromSignals,
   readCameraRecord,
+  releaseCamera,
   savedDeviceId,
   shouldRetryCamera,
   streamHasLiveVideo,
@@ -192,10 +197,12 @@ test("a refusal is not retried, and a missing saved camera is", () => {
 });
 
 test("leaving the home screen keeps a live track and does not ask again", () => {
-  for (const event of ["visibility-hidden", "pagehide", "blur", "leave-shoot"] as const) {
+  for (const event of ["visibility-hidden", "pagehide", "blur"] as const) {
     assert.equal(cameraWake(event, true), "keep");
     assert.equal(cameraWake(event, false), "keep");
   }
+  assert.equal(cameraWake("leave-shoot", true), "release");
+  assert.equal(cameraWake("leave-shoot", false), "release");
   assert.equal(cameraWake("visibility-visible", true), "reuse");
   assert.equal(cameraWake("pageshow", true), "reuse");
   assert.equal(cameraWake("show-shoot", true), "reuse");
@@ -226,8 +233,9 @@ test("the lens cookie round-trips the saved camera", () => {
   assert.deepEqual(recordFromLensCookie(null), { origin: null, granted: false, devices: {} });
 });
 
-test("hide and blur do not stop the camera", () => {
+test("hide and blur do not stop the camera, and leaving Shoot does", () => {
   const source = readFileSync(new URL("../components/Shoot.tsx", import.meta.url), "utf8");
+  const app = readFileSync(new URL("../components/App.tsx", import.meta.url), "utf8");
   assert.match(source, /document\.addEventListener\("visibilitychange"/);
   assert.match(source, /window\.addEventListener\("pageshow"/);
   assert.equal(/addEventListener\(\s*["']blur["']/.test(source), false);
@@ -235,6 +243,106 @@ test("hide and blur do not stop the camera", () => {
   assert.equal(cameraWake("visibility-hidden", true), "keep");
   assert.equal(cameraWake("pagehide", true), "keep");
   assert.equal(cameraWake("blur", true), "keep");
+  assert.match(source, /releaseCamera\(\)/);
+  assert.match(source, /wakeRef\.current\("leave-shoot"\)/);
+  assert.match(source, /noteCameraFacing\(facing\)/);
+  assert.match(app, /next === "shoot" && tabNow\.current !== "shoot"\) openCameraFromTap\(\)/);
+  assert.equal(app.includes("releaseCamera"), false);
+  assert.equal(app.includes("getUserMedia"), false);
+});
+
+test("leaving Shoot stops a live track, and a later open reuses one that is still live", async () => {
+  const calls: Array<MediaTrackConstraints | undefined> = [];
+  let pending: ((stream: MediaStream) => void) | null = null;
+  const originalNavigator = globalThis.navigator;
+
+  function fakeStream(id: string): MediaStream {
+    const track = {
+      readyState: "live",
+      stop() {
+        track.readyState = "ended";
+      },
+      getSettings() {
+        return { deviceId: id };
+      },
+    };
+    return {
+      getVideoTracks: () => [track],
+      getTracks: () => [track],
+    } as unknown as MediaStream;
+  }
+
+  Object.defineProperty(globalThis, "navigator", {
+    configurable: true,
+    value: {
+      mediaDevices: {
+        enumerateDevices: async () => [{ kind: "videoinput", deviceId: "rear", label: "Back Camera" }],
+        getUserMedia: (constraints: MediaStreamConstraints) => {
+          calls.push(constraints.video);
+          return new Promise<MediaStream>((resolve) => {
+            pending = resolve;
+          });
+        },
+      },
+      permissions: {
+        query: async () => ({ state: "granted" }),
+      },
+    },
+  });
+
+  try {
+    noteCameraFacing("user");
+    const tapped = openCameraFromTap();
+    assert.equal(calls.length, 1);
+    const firstVideo = calls[0];
+    assert.equal(typeof firstVideo === "object" && firstVideo != null && "facingMode" in firstVideo, true);
+    const front = fakeStream("front");
+    pending?.(front);
+    pending = null;
+    assert.equal(await tapped, front);
+
+    const again = await openCamera("user");
+    assert.equal(again, front);
+    assert.equal(calls.length, 1);
+    assert.equal(peekCamera("user"), front);
+
+    const secondTap = openCameraFromTap();
+    assert.equal(await secondTap, front);
+    assert.equal(calls.length, 1);
+
+    releaseCamera();
+    assert.equal(front.getVideoTracks()[0]?.readyState, "ended");
+    assert.equal(peekCamera("user"), null);
+
+    const reopened = openCamera("user");
+    for (let i = 0; i < 6 && calls.length < 2; i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    assert.equal(calls.length, 2);
+    const frontAgain = fakeStream("front");
+    pending?.(frontAgain);
+    pending = null;
+    assert.equal(await reopened, frontAgain);
+    assert.equal(await openCamera("user"), frontAgain);
+    assert.equal(calls.length, 2);
+
+    releaseCamera();
+    const hanging = openCameraFromTap();
+    const joined = openCameraFromTap();
+    assert.equal(joined, hanging);
+    assert.equal(calls.length, 3);
+    releaseCamera();
+    const dropped = fakeStream("front");
+    pending?.(dropped);
+    pending = null;
+    assert.equal(await hanging, null);
+    assert.equal(dropped.getVideoTracks()[0]?.readyState, "ended");
+    assert.equal(peekCamera("user"), null);
+  } finally {
+    pending?.(fakeStream("cleanup"));
+    releaseCamera();
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: originalNavigator });
+  }
 });
 
 test("corrupt site data does not become a grant", () => {
