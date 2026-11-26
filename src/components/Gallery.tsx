@@ -3,8 +3,8 @@
 import { useEffect, useState } from "react";
 import { deleteAlbum, deletePhoto, fetchAlbum, filePhoto, updateAlbum } from "@/lib/api";
 import { frames } from "@/lib/format";
-import { galleryView, type GalleryPlace } from "@/lib/gallery-view";
-import type { AlbumDetail, FeedItem, GalleryCard } from "@/lib/types";
+import { galleryTitleSave, galleryView, type GalleryPlace } from "@/lib/gallery-view";
+import type { AlbumDetail, FeedItem, FrameComment, GalleryCard } from "@/lib/types";
 import { PhotoStrip, StripShot } from "@/components/PhotoStrip";
 import { Lightbox, PrintView } from "@/components/Print";
 
@@ -97,7 +97,14 @@ export function Gallery({
         if (stop) return;
         setDetail(next);
         setTitle(next.album.name);
-        setOpen((current) => (current ? next.photos.find((photo) => photo.id === current.id) ?? null : null));
+        setOpen((current) => {
+          if (!current) return null;
+          return (
+            next.photos.find((photo) => photo.id === current.id) ??
+            next.library.find((photo) => photo.id === current.id) ??
+            null
+          );
+        });
       })
       .catch((err: unknown) => {
         if (!stop) setError(err instanceof Error ? err.message : "That gallery is gone.");
@@ -112,17 +119,30 @@ export function Gallery({
     setTick((value) => value + 1);
   }
 
-  async function rename() {
-    const name = title.trim();
-    if (!detail || !name || name === detail.album.name || busy) return;
+  function onPhotoNotes(id: string, comments: FrameComment[]) {
+    setDetail((current) => {
+      if (!current) return current;
+      const apply = (photo: FeedItem) => (photo.id === id ? { ...photo, comments } : photo);
+      return { ...current, photos: current.photos.map(apply), library: current.library.map(apply) };
+    });
+    setOpen((current) => (current?.id === id ? { ...current, comments } : current));
+  }
+
+  async function saveGallery() {
+    if (!detail || busy) return;
+    const plan = galleryTitleSave(title, detail.album.name);
+    if (plan.status === "stay") {
+      setError(plan.error);
+      return;
+    }
     setBusy(true);
     setError("");
     try {
-      await updateAlbum(detail.album.id, { name });
-      reload();
+      if (plan.status === "write") await updateAlbum(detail.album.id, { name: plan.name });
+      onChanged?.();
+      onBack();
     } catch (err) {
       setError(err instanceof Error ? err.message : "That title stayed put.");
-    } finally {
       setBusy(false);
     }
   }
@@ -240,16 +260,17 @@ export function Gallery({
               value={title}
               onChange={(event) => setTitle(event.target.value)}
               onKeyDown={(event) => {
-                if (event.key === "Enter") void rename();
+                if (event.key === "Enter") void saveGallery();
               }}
             />
             <button
               className="primary"
               type="button"
-              disabled={busy || !title.trim() || title.trim() === detail.album.name}
-              onClick={() => void rename()}
+              data-save-gallery={detail.album.id}
+              disabled={busy}
+              onClick={() => void saveGallery()}
             >
-              Save
+              {busy ? "Saving…" : "Save"}
             </button>
           </div>
         </>
@@ -293,7 +314,12 @@ export function Gallery({
         <div className="thread">
           {view.photos.map((photo) => (
             <div className="gallery-frame" key={photo.id} data-gallery-photo={photo.id}>
-              <PrintView item={photo} onOpenProfile={onOpenProfile} />
+              <PrintView
+                item={photo}
+                onOpenProfile={onOpenProfile}
+                onComments={photo.mine ? onPhotoNotes : undefined}
+                notes="owner"
+              />
             </div>
           ))}
         </div>
@@ -355,6 +381,8 @@ export function Gallery({
           onClose={() => setOpen(null)}
           onOpenProfile={onOpenProfile}
           onDelete={canEdit ? onDelete : undefined}
+          onComments={open.mine ? onPhotoNotes : undefined}
+          notes="owner"
         />
       ) : null}
     </div>

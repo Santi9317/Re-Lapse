@@ -15,3 +15,8 @@ export function pickNoteHand(): NoteHand {
   const index = Math.floor(Math.random() * NOTE_HANDS.length);
   return NOTE_HANDS[index] ?? "caveat";
 }
+
+/** The back of a photo opens only for the person who shot it. */
+export function photoBackOpens(mine: boolean): boolean {
+  return mine;
+}

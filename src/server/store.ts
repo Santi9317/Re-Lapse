@@ -976,7 +976,7 @@ export async function setFrameNote(photoId: string, token: string, text: string)
   );
   const frame = frames[0];
   if (!frame) throw new HttpError(404, "That frame is gone.");
-  if (frame.shooter_token === token) throw new HttpError(403, "Write on a frame that isn't yours.");
+  // The person who shot it can sign their own photo. Anyone can still sign a frame on the feed.
   if (!flag(frame.on_feed)) throw new HttpError(409, "That frame isn't on the feed.");
   const counted = await sql<{ n: number }>(
     `select count(*)::int as n from frame_notes where photo_id = $1`,

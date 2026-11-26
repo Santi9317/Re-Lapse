@@ -47,14 +47,39 @@ test("a note stays on that frame, and another phone can still write", async () =
     [adaPhoto, ada, image, beaPhoto, bea, privatePhoto],
   );
 
+  const labPhoto = randomUUID();
+  await sql(
+    `insert into photos (id, shooter_token, caption, image_b64, created_at, ready_at, developed_at)
+     values ($1, $2, 'In the lab', $3, now(), now(), now())`,
+    [labPhoto, ada, image],
+  );
   await assert.rejects(
-    () => setFrameNote(adaPhoto, ada, "mine"),
-    (err: unknown) => err instanceof HttpError && err.status === 403,
+    () => setFrameNote(labPhoto, ada, "too soon"),
+    (err: unknown) => err instanceof HttpError && err.status === 409,
   );
   await assert.rejects(
     () => setFrameNote(privatePhoto, ada, "hidden"),
     (err: unknown) => err instanceof HttpError && err.status === 409,
   );
+
+  const own = await setFrameNote(adaPhoto, ada, "on my photo");
+  assert.equal(own.length, 1);
+  assert.equal(own[0]?.text, "on my photo");
+  assert.equal(own[0]?.profileName, "Ada");
+  assert.equal(own[0]?.mine, true);
+  assert.deepEqual(own[0]?.emojis, ["📷", "✨", "🌈"]);
+  assert.equal(NOTE_HANDS.includes(own[0]?.hand ?? "caveat"), true);
+  const again = await setFrameNote(adaPhoto, ada, "another line");
+  assert.equal(again.length, 2);
+  const extra = again.find((note) => note.text === "another line");
+  assert.ok(extra);
+  await assert.rejects(
+    () => removeFrameNote(adaPhoto, bea, extra.id),
+    (err: unknown) => err instanceof HttpError && err.status === 404,
+  );
+  const keptOwn = await removeFrameNote(adaPhoto, ada, extra.id);
+  assert.equal(keptOwn.length, 1);
+  assert.equal(keptOwn[0]?.text, "on my photo");
 
   const first = await setFrameNote(beaPhoto, ada, "wish you were here");
   assert.equal(first.length, 1);
@@ -91,16 +116,18 @@ test("a note stays on that frame, and another phone can still write", async () =
   assert.equal(kept[0]?.text, "wish you were here");
 
   const both = await setFrameNote(adaPhoto, bea, "from the other phone");
-  assert.equal(both.length, 1);
-  assert.equal(both[0]?.profileName, "Bea");
+  assert.equal(both.length, 2);
+  assert.equal(both.find((note) => note.text === "from the other phone")?.profileName, "Bea");
+  assert.equal(both.find((note) => note.text === "from the other phone")?.mine, true);
+  assert.equal(both.find((note) => note.text === "on my photo")?.mine, false);
 
   const feed = await listFeed(ada);
   const beaFrame = feed.find((item) => item.id === beaPhoto);
   const adaFrame = feed.find((item) => item.id === adaPhoto);
   assert.equal(beaFrame?.comments.some((note) => note.text === "wish you were here" && note.mine), true);
-  assert.equal(adaFrame?.comments[0]?.text, "from the other phone");
-  assert.equal(adaFrame?.comments[0]?.mine, false);
-  assert.equal(adaFrame?.comments[0]?.text.includes("<"), false);
+  assert.equal(adaFrame?.comments.some((note) => note.text === "on my photo" && note.mine), true);
+  assert.equal(adaFrame?.comments.some((note) => note.text === "from the other phone" && !note.mine), true);
+  assert.equal(adaFrame?.comments.every((note) => !note.text.includes("<")), true);
 
   for (let i = 0; i < 24; i += 1) {
     await sql(

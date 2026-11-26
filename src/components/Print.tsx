@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { fetchOwnProfile, fetchPublicProfile, isProfileRemoved, removeFrameNote, saveOwnProfile, setFrameNote, setFrameSticker } from "@/lib/api";
 import { CaptionField } from "@/components/CaptionField";
-import { FRAME_NOTE_LIMIT } from "@/lib/frame-note";
+import { FRAME_NOTE_LIMIT, photoBackOpens } from "@/lib/frame-note";
 import { ago, leavesIn } from "@/lib/format";
 import {
   EMOJI_CHOICES,
@@ -362,11 +362,13 @@ function FrameFace({
   imageRef,
   onStickers,
   onComments,
+  notes = "feed",
 }: {
   item: FeedItem;
   imageRef: RefObject<HTMLImageElement | null>;
   onStickers?: (id: string, stickers: FrameSticker[]) => void;
   onComments?: (id: string, comments: FrameComment[]) => void;
+  notes?: "feed" | "owner";
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [composing, setComposing] = useState(false);
@@ -382,7 +384,9 @@ function FrameFace({
   const [quick, setQuick] = useState<string[]>([]);
   const quickRef = useRef<string[]>([]);
   const reactable = Boolean(onStickers) && !item.mine;
-  const canWrite = Boolean(onComments) && !item.mine;
+  const ownPhoto = photoBackOpens(item.mine);
+  const canOpenNotes = notes === "owner" ? ownPhoto : true;
+  const canWrite = Boolean(onComments) && (notes === "owner" ? ownPhoto : !item.mine);
   const nameId = `sticker-name-${item.id}`;
   const mineEmoji = item.stickers.find((sticker) => sticker.mine)?.emoji ?? "";
 
@@ -410,10 +414,15 @@ function FrameFace({
     input.focus();
   }
 
-  const tap = useFrameTap(() => {
-    setBack((value) => !value);
-    if (!back) closeKeyboard();
-  }, !back && reactable ? openKeyboard : null);
+  const tap = useFrameTap(
+    canOpenNotes
+      ? () => {
+          setBack((value) => !value);
+          if (!back) closeKeyboard();
+        }
+      : null,
+    !back && reactable ? openKeyboard : null,
+  );
 
   useEffect(() => {
     if (!composing && !back) return;
@@ -520,54 +529,70 @@ function FrameFace({
   );
   const label = reactable
     ? "Turn the frame over. Double tap to leave a sticker."
-    : "Turn the frame over.";
+    : notes === "owner"
+      ? "Turn the photo over."
+      : "Turn the frame over.";
+  const turned = back && canOpenNotes;
+  const interactive = canOpenNotes || reactable;
 
   return (
     <>
-      <div className={`frame-stage${back ? " is-back" : ""}`} data-back={back ? "true" : "false"}>
+      <div
+        className={`frame-stage${turned ? " is-back" : ""}`}
+        data-back={turned ? "true" : "false"}
+        data-notes={canOpenNotes ? (notes === "owner" ? "owner" : "feed") : "closed"}
+      >
         <div className="frame-card">
-          <div className="frame-face frame-front" inert={back}>
-            <button className="frame" type="button" onClick={tap} aria-label={label} data-frame={item.id}>
-              {image}
-            </button>
+          <div className="frame-face frame-front" inert={turned}>
+            {interactive ? (
+              <button className="frame" type="button" onClick={tap} aria-label={label} data-frame={item.id}>
+                {image}
+              </button>
+            ) : (
+              <div className="frame" data-frame={item.id}>
+                {image}
+              </div>
+            )}
             <StickerLayer item={item} onPreview={setPreview} />
             {preview ? <StickerSlip sticker={preview} onClose={() => setPreview(null)} /> : null}
           </div>
-          <div
-            className="frame-face frame-back"
-            data-frame-back={item.id}
-            inert={!back}
-            onClick={() => setBack(false)}
-          >
-            <FrameNotes
-              frameId={item.id}
-              comments={item.comments}
-              canWrite={canWrite}
-              canDelete={Boolean(onComments)}
-              draft={draft}
-              onDraft={setDraft}
-              onSign={() => void sendNote()}
-              onDelete={(id) => void deleteNote(id)}
-              openId={openNote}
-              onOpen={(id) => setOpenNote((current) => (current === id ? null : id))}
-              needsName={needsName && back}
-              name={name}
-              onName={setName}
-              nameId={nameId}
-              error={back ? error : ""}
-              busy={busy}
-            />
-            <button
-              className="frame-turn"
-              type="button"
-              onClick={(event) => {
-                event.stopPropagation();
-                setBack(false);
-              }}
+          {canOpenNotes ? (
+            <div
+              className="frame-face frame-back"
+              data-frame-back={item.id}
+              inert={!turned}
+              onClick={() => setBack(false)}
             >
-              Turn over
-            </button>
-          </div>
+              <FrameNotes
+                frameId={item.id}
+                comments={item.comments}
+                canWrite={canWrite}
+                canDelete={Boolean(onComments)}
+                draft={draft}
+                onDraft={setDraft}
+                onSign={() => void sendNote()}
+                onDelete={(id) => void deleteNote(id)}
+                openId={openNote}
+                onOpen={(id) => setOpenNote((current) => (current === id ? null : id))}
+                needsName={needsName && back}
+                name={name}
+                onName={setName}
+                nameId={nameId}
+                error={back ? error : ""}
+                busy={busy}
+              />
+              <button
+                className="frame-turn"
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setBack(false);
+                }}
+              >
+                Turn over
+              </button>
+            </div>
+          ) : null}
         </div>
       </div>
       {reactable ? (
@@ -802,6 +827,7 @@ export function PrintView({
   onStickers,
   onComments,
   onCaption,
+  notes = "feed",
   compact = false,
 }: {
   item: FeedItem;
@@ -810,6 +836,7 @@ export function PrintView({
   onStickers?: (id: string, stickers: FrameSticker[]) => void;
   onComments?: (id: string, comments: FrameComment[]) => void;
   onCaption?: (id: string, caption: string) => void;
+  notes?: "feed" | "owner";
   compact?: boolean;
 }) {
   const imageRef = useRef<HTMLImageElement>(null);
@@ -835,7 +862,7 @@ export function PrintView({
 
   return (
     <figure className="print" data-feed-photo={item.id} ref={rootRef}>
-      <FrameFace item={item} imageRef={imageRef} onStickers={onStickers} onComments={onComments} />
+      <FrameFace item={item} imageRef={imageRef} onStickers={onStickers} onComments={onComments} notes={notes} />
       {!compact ? <PhotoCaption item={item} onCaption={onCaption} editable /> : null}
       {!compact ? <ProfileLink item={item} onOpenProfile={onOpenProfile} /> : null}
       <p className="meta">{meta}</p>
@@ -852,6 +879,7 @@ export function Lightbox({
   onStickers,
   onComments,
   onCaption,
+  notes = "feed",
 }: {
   item: FeedItem;
   onClose: () => void;
@@ -860,6 +888,7 @@ export function Lightbox({
   onStickers?: (id: string, stickers: FrameSticker[]) => void;
   onComments?: (id: string, comments: FrameComment[]) => void;
   onCaption?: (id: string, caption: string) => void;
+  notes?: "feed" | "owner";
 }) {
   const imageRef = useRef<HTMLImageElement>(null);
   const where = place(item);
@@ -867,7 +896,7 @@ export function Lightbox({
   return (
     <div className="lightbox" role="dialog" aria-modal="true" aria-label={item.caption || "Frame"} onClick={onClose}>
       <figure className="print" onClick={(event) => event.stopPropagation()}>
-        <FrameFace item={item} imageRef={imageRef} onStickers={onStickers} onComments={onComments} />
+        <FrameFace item={item} imageRef={imageRef} onStickers={onStickers} onComments={onComments} notes={notes} />
         <PhotoCaption item={item} onCaption={onCaption} />
         <ProfileLink item={item} onOpenProfile={onOpenProfile} />
         <p className="meta">{meta}</p>

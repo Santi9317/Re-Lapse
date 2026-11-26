@@ -757,12 +757,12 @@ h1.word button {
   overflow: hidden;
   box-shadow: 0 16px 32px rgba(0, 0, 0, 0.22);
 }
-.print button.frame {
+.print .frame {
   display: block;
   width: 100%;
   padding: 0;
-  touch-action: manipulation;
 }
+.print button.frame { touch-action: manipulation; }
 .frame-stage { position: relative; }
 .frame-card { display: grid; }
 .frame-face { grid-area: 1 / 1; }
