@@ -1,8 +1,8 @@
 {
-  "version": "1.83.8",
+  "version": "1.83.9",
   "notes": [
-    "See what's new when you open the camera, if you have not read this update.",
-    "The camera turns off when you leave Shoot, and a tap on Shoot turns it back on."
+    "Sign the back of a gallery photo you shot.",
+    "Save a changed album title, or leave if unchanged, and return to Keepsakes. A blank title or a failed save stays and shows the error."
   ],
   "icon": "0e6210f1bd3191d086e7c4deb1bb920768940cbf227f6f962125f415635d7665",
   "previousIcon": "0e6210f1bd3191d086e7c4deb1bb920768940cbf227f6f962125f415635d7665"

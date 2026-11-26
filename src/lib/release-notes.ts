@@ -5,8 +5,8 @@
  * Keep public/release.json in step with this list, and keep its version equal to APP_VERSION.
  */
 export const RELEASE_NOTES = [
-  "See what's new when you open the camera, if you have not read this update.",
-  "The camera turns off when you leave Shoot, and a tap on Shoot turns it back on.",
+  "Sign the back of a gallery photo you shot.",
+  "Save a changed album title, or leave if unchanged, and return to Keepsakes. A blank title or a failed save stays and shows the error.",
 ] as const;
 
 export type PublishedRelease = {

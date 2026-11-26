@@ -44,13 +44,15 @@ test("this publish carries the same notes the camera can show", () => {
   assert.deepEqual(
     [...RELEASE_NOTES],
     [
-      "See what's new when you open the camera, if you have not read this update.",
-      "The camera turns off when you leave Shoot, and a tap on Shoot turns it back on.",
+      "Sign the back of a gallery photo you shot.",
+      "Save a changed album title, or leave if unchanged, and return to Keepsakes. A blank title or a failed save stays and shows the error.",
     ],
   );
   const notes = RELEASE_NOTES.join("\n");
   const lower = notes.toLowerCase();
   for (const older of [
+    "See what's new when you open the camera, if you have not read this update.",
+    "The camera turns off when you leave Shoot, and a tap on Shoot turns it back on.",
     "Tap a sticker to see who stuck it, with a small photo, their name, and that emoji.",
     "Sign a note on the back. Your marks sit beside it, and you can delete your own.",
     "The line of cameras waiting to join stays short, so a new browser cannot fill it.",
