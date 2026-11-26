@@ -117,7 +117,9 @@ test("an unseen pin keeps the sticker edge until it has been on screen", () => {
   assert.match(print, /intersectionRatio >= 0\.5/);
   assert.match(print, /!entry\.isIntersecting && onScreen\.current\.has\(profileId\)/);
   assert.match(print, /item\.onFeed/);
-  assert.match(css, /\.sticker\[data-unseen="true"\]/);
+  const unseenRule = css.match(/\.sticker\[data-unseen="true"\]\s*\{[^}]*\}/)?.[0] ?? "";
+  assert.match(unseenRule, /0 0 0 2px var\(--signal\)/);
+  assert.equal(unseenRule.includes("26, 16, 40"), false);
   assert.equal(css.includes("sticker-badge"), false);
   assert.equal(print.includes("Keepsakes"), false);
 });
