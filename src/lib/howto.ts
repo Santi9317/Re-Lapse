@@ -21,7 +21,7 @@ export const HOW_TO: HowToSection[] = [
     id: "keepsakes",
     title: "Keepsakes",
     body: [
-      "A gallery is photos you sent to the feed. Name the album, pick a cover, and add or remove your frames on that gallery. It shows on your profile.",
+      "A gallery is photos you sent to the feed. Name the album, pick a cover, and add or remove your frames on that gallery. It shows on your profile. Open a photo you shot and tap it to write on the back. A photo you did not shoot stays face up.",
     ],
   },
   {
