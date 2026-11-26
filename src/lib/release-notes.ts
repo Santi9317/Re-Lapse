@@ -7,6 +7,7 @@
 export const RELEASE_NOTES = [
   "Sign the back of a gallery photo you shot.",
   "Save a changed album title, or leave if unchanged, and return to Keepsakes. A blank title or a failed save stays and shows the error.",
+  "The Feed dot also marks a new note or a new emoji, and a new emoji keeps a thin outline until you see it.",
 ] as const;
 
 export type PublishedRelease = {
