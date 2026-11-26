@@ -282,6 +282,7 @@ test("the dot counts a new photo, a new note, and a new pin together", () => {
 test("the feed dot is the same mark, and Keepsakes stays plain", () => {
   const app = readFileSync(new URL("../components/App.tsx", import.meta.url), "utf8");
   assert.match(app, /function catchFeed/);
+  assert.match(app, /recallNotes/);
   assert.match(app, /notes: photo\.comments\.map/);
   assert.match(app, /pins: photo\.stickers\.map/);
   assert.match(app, /catchFeed\(data\.photos, false\)/);

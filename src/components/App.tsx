@@ -13,6 +13,7 @@ import {
 } from "@/lib/badge";
 import { bannerOpensQuote } from "@/lib/banner-quote";
 import { noteFeedLook } from "@/lib/feed-mark";
+import { recallNotes } from "@/lib/note-seen";
 import { recallStickers } from "@/lib/sticker-seen";
 import { restorePhone } from "@/lib/identity";
 import { drawInspiration, type Quote } from "@/lib/quotes";
@@ -82,6 +83,18 @@ function catchFeed(photos: FeedItem[], feedVisible: boolean): number {
         profileId: sticker.profileId,
         pinnedAt: sticker.pinnedAt,
         mine: sticker.mine,
+      })),
+    ),
+    now,
+  });
+  recallNotes({
+    storage: localStorage,
+    notes: photos.flatMap((photo) =>
+      photo.comments.map((note) => ({
+        photoId: photo.id,
+        noteId: note.id,
+        createdAt: note.createdAt,
+        mine: note.mine,
       })),
     ),
     now,

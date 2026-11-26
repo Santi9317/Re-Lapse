@@ -19,6 +19,7 @@ import {
   withCameraPortrait,
 } from "@/lib/profile";
 import { pickQuickStickers } from "@/lib/quick-stickers";
+import { frameHasUnseenNote, noteNotesViewed } from "@/lib/note-seen";
 import { noteStickerViewed, stickerUnseen } from "@/lib/sticker-seen";
 import {
   ensurePhotoFile,
@@ -469,12 +470,15 @@ function FrameFace({
   onStickers,
   onComments,
   notes = "feed",
+  noteSignal = false,
 }: {
   item: FeedItem;
   imageRef: RefObject<HTMLImageElement | null>;
   onStickers?: (id: string, stickers: FrameSticker[]) => void;
   onComments?: (id: string, comments: FrameComment[]) => void;
   notes?: "feed" | "owner";
+  /** The blue frame outline. Only the feed list passes this. */
+  noteSignal?: boolean;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [composing, setComposing] = useState(false);
@@ -487,12 +491,23 @@ function FrameFace({
   const [openNote, setOpenNote] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [noteRev, setNoteRev] = useState(0);
   const [quick, setQuick] = useState<string[]>([]);
   const quickRef = useRef<string[]>([]);
   const reactable = Boolean(onStickers) && !item.mine;
   const ownPhoto = photoBackOpens(item.mine);
   const canOpenNotes = notes === "owner" ? ownPhoto : true;
   const canWrite = Boolean(onComments) && (notes === "owner" ? ownPhoto : !item.mine);
+  const turned = back && canOpenNotes;
+  const noteStamps = item.comments.map((note) => ({
+    photoId: item.id,
+    noteId: note.id,
+    createdAt: note.createdAt,
+    mine: note.mine,
+  }));
+  // noteRev rerenders once the open back has been written down.
+  const noteFresh =
+    noteSignal && item.onFeed && noteRev >= 0 && frameHasUnseenNote(localStorage, noteStamps);
   const nameId = `sticker-name-${item.id}`;
   const mineEmoji = item.stickers.find((sticker) => sticker.mine)?.emoji ?? "";
 
@@ -563,6 +578,19 @@ function FrameFace({
       window.removeEventListener("keydown", onKey);
     };
   }, [composing, back]);
+
+  // Opening the back marks the notes already there. Scrolling past the front
+  // does not: the note is not on the front, so the outline stays until the back shows.
+  useEffect(() => {
+    if (!turned) return;
+    const stamps = item.comments.map((note) => ({
+      photoId: item.id,
+      noteId: note.id,
+      createdAt: note.createdAt,
+      mine: note.mine,
+    }));
+    if (noteNotesViewed(localStorage, stamps)) setNoteRev((value) => value + 1);
+  }, [turned, item.id, item.comments]);
 
   async function place(emoji: string) {
     if (busy) return;
@@ -638,7 +666,6 @@ function FrameFace({
     : notes === "owner"
       ? "Turn the photo over."
       : "Turn the frame over.";
-  const turned = back && canOpenNotes;
   const interactive = canOpenNotes || reactable;
 
   return (
@@ -646,6 +673,7 @@ function FrameFace({
       <div
         className={`frame-stage${turned ? " is-back" : ""}`}
         data-back={turned ? "true" : "false"}
+        data-note-unseen={noteFresh ? "true" : undefined}
         data-notes={canOpenNotes ? (notes === "owner" ? "owner" : "feed") : "closed"}
       >
         <div className="frame-card">
@@ -934,6 +962,7 @@ export function PrintView({
   onComments,
   onCaption,
   notes = "feed",
+  noteSignal = false,
   compact = false,
 }: {
   item: FeedItem;
@@ -943,6 +972,7 @@ export function PrintView({
   onComments?: (id: string, comments: FrameComment[]) => void;
   onCaption?: (id: string, caption: string) => void;
   notes?: "feed" | "owner";
+  noteSignal?: boolean;
   compact?: boolean;
 }) {
   const imageRef = useRef<HTMLImageElement>(null);
@@ -968,7 +998,7 @@ export function PrintView({
 
   return (
     <figure className="print" data-feed-photo={item.id} ref={rootRef}>
-      <FrameFace item={item} imageRef={imageRef} onStickers={onStickers} onComments={onComments} notes={notes} />
+      <FrameFace item={item} imageRef={imageRef} onStickers={onStickers} onComments={onComments} notes={notes} noteSignal={noteSignal} />
       {!compact ? <PhotoCaption item={item} onCaption={onCaption} editable /> : null}
       {!compact ? <ProfileLink item={item} onOpenProfile={onOpenProfile} /> : null}
       <p className="meta">{meta}</p>
@@ -986,6 +1016,7 @@ export function Lightbox({
   onComments,
   onCaption,
   notes = "feed",
+  noteSignal = false,
 }: {
   item: FeedItem;
   onClose: () => void;
@@ -995,6 +1026,7 @@ export function Lightbox({
   onComments?: (id: string, comments: FrameComment[]) => void;
   onCaption?: (id: string, caption: string) => void;
   notes?: "feed" | "owner";
+  noteSignal?: boolean;
 }) {
   const imageRef = useRef<HTMLImageElement>(null);
   const where = place(item);
@@ -1002,7 +1034,7 @@ export function Lightbox({
   return (
     <div className="lightbox" role="dialog" aria-modal="true" aria-label={item.caption || "Frame"} onClick={onClose}>
       <figure className="print" onClick={(event) => event.stopPropagation()}>
-        <FrameFace item={item} imageRef={imageRef} onStickers={onStickers} onComments={onComments} notes={notes} />
+        <FrameFace item={item} imageRef={imageRef} onStickers={onStickers} onComments={onComments} notes={notes} noteSignal={noteSignal} />
         <PhotoCaption item={item} onCaption={onCaption} />
         <ProfileLink item={item} onOpenProfile={onOpenProfile} />
         <p className="meta">{meta}</p>

@@ -89,6 +89,7 @@ export function Feed({
               onDelete={onDelete}
               onStickers={onStickers}
               onComments={onComments}
+              noteSignal
             />
           ))}
         </div>
