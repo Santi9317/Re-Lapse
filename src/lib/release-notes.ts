@@ -7,7 +7,11 @@
 export const RELEASE_NOTES = [
   "Sign the back of a gallery photo you shot.",
   "Save a changed album title, or leave if unchanged, and return to Keepsakes. A blank title or a failed save stays and shows the error.",
-  "The Feed dot also marks a new note or new emoji. A new emoji keeps a blue ring, and a new note outlines the frame in blue, until you see it.",
+  "The Feed dot and the Home Screen count include someone else's new photo, a note you did not write, or a pin you did not place.",
+  "The new photo, note, and pin leave the Feed dot and the Home Screen count once the Feed list has loaded, and stay off while Feed is open.",
+  "An emoji you did not place keeps a cyan ring until that look ends.",
+  "A frame with a note you did not write keeps that cyan outline until you open the back. Scrolling past the front leaves it.",
+  "Keepsakes does not get a mark for these.",
 ] as const;
 
 export type PublishedRelease = {
