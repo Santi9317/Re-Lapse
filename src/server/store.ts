@@ -467,7 +467,8 @@ async function attachStickers(items: FeedItem[], viewer: string): Promise<FeedIt
        s.emoji,
        pr.id as profile_id,
        pr.username as profile_name,
-       (s.shooter_token = $1) as mine
+       (s.shooter_token = $1) as mine,
+       (extract(epoch from s.updated_at) * 1000) as pinned_ms
      from stickers s
      join profiles pr on pr.shooter_token = s.shooter_token
      where s.photo_id in (${marks})
@@ -483,6 +484,7 @@ async function attachStickers(items: FeedItem[], viewer: string): Promise<FeedIt
       profileId: String(row.profile_id),
       profileName: String(row.profile_name ?? ""),
       mine: flag(row.mine),
+      pinnedAt: num(row.pinned_ms),
     });
     grouped.set(id, list);
   }
@@ -504,7 +506,8 @@ async function attachComments(items: FeedItem[], viewer: string): Promise<FeedIt
        pr.emoji_1,
        pr.emoji_2,
        pr.emoji_3,
-       (n.shooter_token = $1) as mine
+       (n.shooter_token = $1) as mine,
+       (extract(epoch from n.created_at) * 1000) as created_ms
      from frame_notes n
      join profiles pr on pr.shooter_token = n.shooter_token
      where n.photo_id in (${marks})
@@ -523,6 +526,7 @@ async function attachComments(items: FeedItem[], viewer: string): Promise<FeedIt
       emojis: [String(row.emoji_1 ?? ""), String(row.emoji_2 ?? ""), String(row.emoji_3 ?? "")],
       hand: noteHand(row.hand),
       mine: flag(row.mine),
+      createdAt: num(row.created_ms),
     });
     grouped.set(id, list);
   }
@@ -928,7 +932,11 @@ export async function setSticker(photoId: string, token: string, emoji: string):
     `insert into stickers (photo_id, shooter_token, emoji)
      values ($1, $2, $3)
      on conflict (photo_id, shooter_token) do update
-       set emoji = excluded.emoji, updated_at = now()`,
+       set emoji = excluded.emoji,
+           updated_at = case
+             when stickers.emoji is distinct from excluded.emoji then now()
+             else stickers.updated_at
+           end`,
     [photoId, token, emoji],
   );
   return stickersFor(photoId, token);

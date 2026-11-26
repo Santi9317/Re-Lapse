@@ -1,8 +1,9 @@
 import { isIosDevice, isStandaloneDisplay, readStorage, writeStorage } from "@/lib/shell";
 
 /**
- * The Home Screen icon count. It is ready frames, unseen feed posts, and
- * timecapsules that have opened. The same checks the camera already uses.
+ * The Home Screen icon count. It is ready frames, the Feed dot's count, and
+ * timecapsules that have opened. That count is new photos, notes, and pins
+ * since this camera last checked the feed.
  */
 
 export function frameReadyToDevelop(photo: { labState: string; readyAt: number }, now: number): boolean {

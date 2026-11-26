@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import test from "node:test";
 import { sql } from "@/lib/db";
-import { listFeed } from "@/server/store";
+import { listFeed, setSticker } from "@/server/store";
 
 const image = "a".repeat(120);
 
@@ -60,4 +60,55 @@ test("a feed frame is new from when it was added, and a frame this camera took i
   assert.ok(picked && picked.addedAt > picked.sortAt + 60 * 60 * 1000);
   assert.equal(opened?.mine, false);
   assert.equal(picked?.mine, false);
+});
+
+test("a sticker's pin time moves when the emoji changes, and stays when it does not", async () => {
+  const ada = randomUUID();
+  const bea = randomUUID();
+  const adaId = randomUUID();
+  const beaId = randomUUID();
+  const beaPhoto = randomUUID();
+  const image = "a".repeat(120);
+
+  for (const [token, id, name] of [
+    [ada, adaId, "Ada"],
+    [bea, beaId, "Bea"],
+  ] as const) {
+    await sql(`insert into cameras (token, created_at) values ($1, now())`, [token]);
+    await sql(
+      `insert into profiles (id, shooter_token, username, emoji_1, emoji_2, emoji_3, carousel)
+       values ($1, $2, $3, '📷', '✨', '🌈', '[]')`,
+      [id, token, name],
+    );
+  }
+  await sql(
+    `insert into photos (id, shooter_token, caption, image_b64, created_at, ready_at, developed_at, published_at)
+     values ($1, $2, 'Bea frame', $3, now(), now(), now(), now())`,
+    [beaPhoto, bea, image],
+  );
+
+  const first = await setSticker(beaPhoto, ada, "✨");
+  const stuck = first.find((sticker) => sticker.mine);
+  assert.equal(stuck?.emoji, "✨");
+  assert.ok(stuck && stuck.pinnedAt > Date.now() - 60_000 && stuck.pinnedAt < Date.now() + 60_000);
+
+  await sql(
+    `update stickers set updated_at = now() - interval '2 hours' where photo_id = $1 and shooter_token = $2`,
+    [beaPhoto, ada],
+  );
+  const same = await setSticker(beaPhoto, ada, "✨");
+  const held = same.find((sticker) => sticker.mine);
+  assert.equal(held?.emoji, "✨");
+  assert.ok(held && held.pinnedAt < Date.now() - 60 * 60 * 1000);
+
+  const changed = await setSticker(beaPhoto, ada, "🌙");
+  const fresh = changed.find((sticker) => sticker.mine);
+  assert.equal(fresh?.emoji, "🌙");
+  assert.ok(fresh && fresh.pinnedAt > Date.now() - 60_000);
+
+  const feed = await listFeed(bea);
+  const onBea = feed.find((item) => item.id === beaPhoto)?.stickers.find((sticker) => sticker.profileId === adaId);
+  assert.equal(onBea?.mine, false);
+  assert.equal(onBea?.emoji, "🌙");
+  assert.ok(onBea && fresh && Math.abs(onBea.pinnedAt - fresh.pinnedAt) < 1_500);
 });

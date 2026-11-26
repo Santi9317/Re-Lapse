@@ -67,6 +67,7 @@ test("a note stays on that frame, and another phone can still write", async () =
   assert.equal(own[0]?.text, "on my photo");
   assert.equal(own[0]?.profileName, "Ada");
   assert.equal(own[0]?.mine, true);
+  assert.ok(own[0] && own[0].createdAt > Date.now() - 60_000 && own[0].createdAt < Date.now() + 60_000);
   assert.deepEqual(own[0]?.emojis, ["📷", "✨", "🌈"]);
   assert.equal(NOTE_HANDS.includes(own[0]?.hand ?? "caveat"), true);
   const again = await setFrameNote(adaPhoto, ada, "another line");
