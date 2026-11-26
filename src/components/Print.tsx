@@ -19,6 +19,7 @@ import {
   withCameraPortrait,
 } from "@/lib/profile";
 import { pickQuickStickers } from "@/lib/quick-stickers";
+import { noteStickerViewed, stickerUnseen } from "@/lib/sticker-seen";
 import {
   ensurePhotoFile,
   fileFromImage,
@@ -116,16 +117,118 @@ async function ensureStickerIdentity(typedName: string, naming: boolean): Promis
 
 function StickerLayer({
   item,
+  shown,
   onPreview,
 }: {
   item: FeedItem;
+  shown: boolean;
   onPreview: (sticker: FrameSticker) => void;
 }) {
+  const rootRef = useRef<HTMLUListElement>(null);
+  const onScreen = useRef(new Set<string>());
+  const stickersRef = useRef(item.stickers);
+  const photoRef = useRef(item.id);
+  stickersRef.current = item.stickers;
+  photoRef.current = item.id;
+  const [seenRev, setSeenRev] = useState(0);
+  const [unseen, setUnseen] = useState<ReadonlySet<string>>(() => new Set());
+
+  function markViewed(profileIds: Iterable<string>): boolean {
+    let changed = false;
+    for (const profileId of profileIds) {
+      const sticker = stickersRef.current.find((mark) => mark.profileId === profileId);
+      if (!sticker) continue;
+      if (
+        noteStickerViewed(localStorage, {
+          photoId: photoRef.current,
+          profileId: sticker.profileId,
+          pinnedAt: sticker.pinnedAt,
+          mine: sticker.mine,
+        })
+      ) {
+        changed = true;
+      }
+    }
+    return changed;
+  }
+
+  const markRef = useRef(markViewed);
+  markRef.current = markViewed;
+
+  useEffect(() => {
+    const watching = onScreen.current;
+    return () => {
+      if (watching.size === 0) return;
+      const ids = [...watching];
+      watching.clear();
+      markRef.current(ids);
+    };
+  }, []);
+
+  useEffect(() => {
+    const next = new Set<string>();
+    if (item.onFeed) {
+      for (const sticker of item.stickers) {
+        if (
+          stickerUnseen(localStorage, {
+            photoId: item.id,
+            profileId: sticker.profileId,
+            pinnedAt: sticker.pinnedAt,
+            mine: sticker.mine,
+          })
+        ) {
+          next.add(sticker.profileId);
+        }
+      }
+    }
+    setUnseen((current) => {
+      if (current.size === next.size && [...next].every((id) => current.has(id))) return current;
+      return next;
+    });
+  }, [item.id, item.onFeed, item.stickers, seenRev]);
+
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!shown || !root || unseen.size === 0 || typeof IntersectionObserver === "undefined") {
+      if (!shown && onScreen.current.size > 0) {
+        const ids = [...onScreen.current];
+        onScreen.current.clear();
+        if (markRef.current(ids)) setSeenRev((value) => value + 1);
+      }
+      return;
+    }
+    const scroll = root.closest(".scroll, .lightbox");
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const left: string[] = [];
+        for (const entry of entries) {
+          const profileId = (entry.target as HTMLElement).dataset.profileId;
+          if (!profileId) continue;
+          // The stronger edge stays while the emoji is on screen. It returns
+          // to the usual sticker once that look ends.
+          if (entry.isIntersecting && entry.intersectionRatio >= 0.5) {
+            onScreen.current.add(profileId);
+            continue;
+          }
+          if (!entry.isIntersecting && onScreen.current.has(profileId)) {
+            onScreen.current.delete(profileId);
+            left.push(profileId);
+          }
+        }
+        if (left.length > 0 && markRef.current(left)) setSeenRev((value) => value + 1);
+      },
+      { root: scroll instanceof Element ? scroll : null, threshold: [0, 0.5] },
+    );
+    for (const button of root.querySelectorAll<HTMLElement>("[data-unseen='true']")) observer.observe(button);
+    return () => observer.disconnect();
+  }, [shown, unseen, item.id]);
+
   if (item.stickers.length === 0) return null;
   return (
-    <ul className="stickers" aria-label="Stickers on this frame">
+    <ul className="stickers" aria-label="Stickers on this frame" ref={rootRef}>
       {item.stickers.map((sticker, index) => {
         const style = stickerStyle(index);
+        const fresh = unseen.has(sticker.profileId);
         return (
           <li key={sticker.profileId}>
             <button
@@ -136,11 +239,14 @@ function StickerLayer({
               data-profile-id={sticker.profileId}
               data-sticker-preview={sticker.profileId}
               data-mine={sticker.mine ? "true" : "false"}
+              data-unseen={fresh ? "true" : undefined}
               title={sticker.profileName}
               aria-label={`${sticker.profileName} stuck ${sticker.emoji}`}
               onClick={(event) => {
                 event.stopPropagation();
                 event.preventDefault();
+                onScreen.current.delete(sticker.profileId);
+                if (markViewed([sticker.profileId])) setSeenRev((value) => value + 1);
                 onPreview(sticker);
               }}
             >
@@ -553,7 +659,7 @@ function FrameFace({
                 {image}
               </div>
             )}
-            <StickerLayer item={item} onPreview={setPreview} />
+            <StickerLayer item={item} shown={!turned} onPreview={setPreview} />
             {preview ? <StickerSlip sticker={preview} onClose={() => setPreview(null)} /> : null}
           </div>
           {canOpenNotes ? (

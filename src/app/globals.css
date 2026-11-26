@@ -1004,6 +1004,12 @@ h1.word button {
 }
 button.sticker { color: #1a1028; }
 button.sticker:active { transform: translate(-50%, -50%) rotate(var(--tilt)) scale(0.94); }
+.sticker[data-unseen="true"] {
+  box-shadow:
+    0 0 0 2px rgba(26, 16, 40, 0.55),
+    0 2px 0 rgba(90, 60, 40, 0.18),
+    0 6px 12px rgba(20, 10, 8, 0.28);
+}
 .sticker[data-inert="true"] { pointer-events: none; }
 .sticker[data-mine="true"] {
   box-shadow:

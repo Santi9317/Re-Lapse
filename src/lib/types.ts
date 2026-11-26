@@ -3,6 +3,8 @@ export type FrameSticker = {
   profileId: string;
   profileName: string;
   mine: boolean;
+  /** When this emoji was pinned. Changing the emoji moves it. */
+  pinnedAt: number;
 };
 
 export type FrameComment = {
@@ -13,6 +15,8 @@ export type FrameComment = {
   emojis: [string, string, string];
   hand: "caveat" | "patrick" | "kalam";
   mine: boolean;
+  /** When this note was signed. */
+  createdAt: number;
 };
 
 export type FeedItem = {

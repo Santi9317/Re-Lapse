@@ -13,6 +13,7 @@ import {
 } from "@/lib/badge";
 import { bannerOpensQuote } from "@/lib/banner-quote";
 import { noteFeedLook } from "@/lib/feed-mark";
+import { recallStickers } from "@/lib/sticker-seen";
 import { restorePhone } from "@/lib/identity";
 import { drawInspiration, type Quote } from "@/lib/quotes";
 import { shouldReloadOnPageSignal, shouldReloadOnTabChange, type MainTab } from "@/lib/refresh";
@@ -68,6 +69,34 @@ export function App() {
   if (!open) return <JoinGate onOpen={() => setOpen(true)} />;
   if (!pinChosen) return <ChoosePin onReady={() => setPinChosen(true)} />;
   return <CameraDesk />;
+}
+
+/** Checked means the Feed list is open. That look catches frames, notes, and pins. */
+function catchFeed(photos: FeedItem[], feedVisible: boolean): number {
+  const now = Date.now();
+  recallStickers({
+    storage: localStorage,
+    stickers: photos.flatMap((photo) =>
+      photo.stickers.map((sticker) => ({
+        photoId: photo.id,
+        profileId: sticker.profileId,
+        pinnedAt: sticker.pinnedAt,
+        mine: sticker.mine,
+      })),
+    ),
+    now,
+  });
+  return noteFeedLook({
+    storage: localStorage,
+    photos: photos.map((photo) => ({
+      mine: photo.mine,
+      addedAt: photo.addedAt,
+      notes: photo.comments.map((note) => ({ mine: note.mine, at: note.createdAt })),
+      pins: photo.stickers.map((sticker) => ({ mine: sticker.mine, at: sticker.pinnedAt })),
+    })),
+    feedVisible,
+    now,
+  }).count;
 }
 
 function CameraDesk() {
@@ -216,14 +245,7 @@ function CameraDesk() {
       try {
         const data = await fetchFeed();
         if (stop) return;
-        setUnseenPosts(
-          noteFeedLook({
-            storage: localStorage,
-            photos: data.photos.map((photo) => ({ mine: photo.mine, addedAt: photo.addedAt })),
-            feedVisible: false,
-            now: Date.now(),
-          }).count,
-        );
+        setUnseenPosts(catchFeed(data.photos, false));
       } catch {
         /* the badge can wait */
       }
@@ -242,14 +264,7 @@ function CameraDesk() {
   }, [tokenReady, feedRevision, tab, guestId, landed]);
 
   function sawFeed(photos: FeedItem[]) {
-    setUnseenPosts(
-      noteFeedLook({
-        storage: localStorage,
-        photos: photos.map((photo) => ({ mine: photo.mine, addedAt: photo.addedAt })),
-        feedVisible: true,
-        now: Date.now(),
-      }).count,
-    );
+    setUnseenPosts(catchFeed(photos, true));
   }
 
   useEffect(() => {
@@ -349,7 +364,7 @@ function CameraDesk() {
               {label}
               {id === "lab" && labReady ? <i className="dot" aria-label="Ready to develop" /> : null}
               {id === "lab" && !labReady && labCount > 0 ? <sup>{labCount}</sup> : null}
-              {id === "feed" && feedFresh ? <i className="dot" aria-label="New photos" /> : null}
+              {id === "feed" && feedFresh ? <i className="dot" aria-label="New on the feed" /> : null}
             </button>
           ))}
         </nav>
