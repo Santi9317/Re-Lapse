@@ -121,7 +121,7 @@ test("scrolling past the front does not clear a note outline; turning the frame 
   assert.match(print, /data-note-unseen=\{noteFresh \? "true" : undefined\}/);
   assert.match(print, /noteSignal && item\.onFeed && noteRev >= 0 && frameHasUnseenNote/);
   assert.match(css, /\.frame-stage\[data-note-unseen="true"\] \.frame/);
-  assert.match(css, /0 0 0 2px var\(--signal\)/);
+  assert.match(css, /0 0 0 3px var\(--signal\)/);
   assert.match(feed, /noteSignal/);
   assert.equal(gallery.includes("noteSignal"), false);
   assert.equal(rolls.includes("noteSignal"), false);
