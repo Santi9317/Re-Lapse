@@ -295,18 +295,54 @@ h1.word button {
   flex: 1;
   min-height: 0;
   display: flex;
-  background: #07060f;
+  flex-direction: column;
+  gap: 8px;
+  padding: calc(10px + var(--safe-top)) 16px 12px;
+  touch-action: none;
+  background:
+    radial-gradient(ellipse at 50% 38%, rgba(180, 75, 255, 0.22), transparent 42%),
+    radial-gradient(ellipse at 50% 46%, #24143f 0%, #07060f 72%);
 }
 
 .viewfinder {
   position: relative;
   flex: 1;
   min-height: 0;
+  min-width: 0;
   overflow: hidden;
   touch-action: none;
-  background:
-    radial-gradient(ellipse at 50% 40%, rgba(180, 75, 255, 0.22), transparent 42%),
-    radial-gradient(ellipse at 50% 48%, #24143f 0%, #07060f 70%);
+}
+
+/* A size container on the flex item itself reports no height. This box is the
+   viewfinder's used size, and the print is fitted inside it. */
+.shoot-sizer {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  container-type: size;
+}
+
+/* Paper, radius, and padding match .print. The inner frame is 4:5, the cover
+   crop renderLatent and renderDisposable bake into the 900×1125 print.
+   20px is the side padding; 32px leaves the paper plus a little of its shadow. */
+.shoot-window {
+  width: min(100cqw, calc((100cqh - 32px) * 4 / 5 + 20px));
+  max-width: 100%;
+  background: var(--paper);
+  color: var(--paper-ink);
+  padding: 10px 10px 12px;
+  border-radius: 18px;
+  box-shadow: 0 16px 32px rgba(0, 0, 0, 0.22);
+}
+
+.shoot-print {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4 / 5;
+  overflow: hidden;
+  border-radius: 12px;
+  background: #d9cbb8;
 }
 
 .lens {
@@ -326,7 +362,7 @@ h1.word button {
   position: absolute;
   z-index: 3;
   left: 50%;
-  bottom: 128px;
+  bottom: 12px;
   transform: translateX(-50%);
   color: var(--amber);
   font-size: 12px;
@@ -338,19 +374,11 @@ h1.word button {
   pointer-events: none;
 }
 
+/* The holes used to sit on the full-bleed finder. On the print they would hide
+   edges the photo keeps, so they stay out of the crop. */
 .sprockets {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 22px;
-  z-index: 2;
-  background: #07060f;
-  background-image: radial-gradient(circle at 50% 12px, #3a2468 4.5px, transparent 5px);
-  background-size: 22px 28px;
-  pointer-events: none;
+  display: none;
 }
-.sprockets.left { left: 0; }
-.sprockets.right { right: 0; }
 
 .vignette, .grain, .flash {
   position: absolute;
@@ -385,21 +413,24 @@ h1.word button {
 }
 
 .vf-top, .vf-bottom {
-  position: absolute;
-  left: 30px;
-  right: 30px;
+  position: relative;
   z-index: 3;
   display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
+  flex: none;
 }
 .vf-top {
-  top: calc(12px + var(--safe-top));
+  justify-content: space-between;
   align-items: flex-start;
   text-shadow: 0 2px 12px rgba(0, 0, 0, 0.65);
 }
+.vf-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
 .vf-bottom {
-  bottom: 16px;
+  width: 100%;
   flex-direction: column;
   align-items: center;
   gap: 8px;
@@ -422,8 +453,11 @@ h1.word button {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  padding: 72px 36px 120px;
+  padding: 24px 20px;
   text-align: center;
+  background:
+    radial-gradient(ellipse at 50% 42%, rgba(180, 75, 255, 0.28), transparent 46%),
+    #07060f;
 }
 .empty-lens h2 {
   font-family: var(--display);
@@ -475,15 +509,18 @@ h1.word button {
 }
 .flip {
   position: absolute;
-  right: 30px;
-  bottom: 28px;
+  right: 0;
+  bottom: 0;
   z-index: 3;
 }
+.shoot-error {
+  flex: none;
+  margin: 0;
+  text-align: center;
+}
 .lamp {
-  position: absolute;
+  position: relative;
   z-index: 3;
-  top: calc(54px + var(--safe-top));
-  right: 30px;
   width: 32px;
   height: 32px;
   border-radius: 50%;
@@ -500,11 +537,10 @@ h1.word button {
 }
 
 .tape {
-  position: absolute;
+  position: relative;
   z-index: 3;
-  top: 18%;
-  left: 10%;
-  right: 10%;
+  flex: none;
+  margin: 0 8px;
   background: linear-gradient(90deg, #ffc27a, #ffb0d4);
   color: #1a0820;
   text-align: center;
