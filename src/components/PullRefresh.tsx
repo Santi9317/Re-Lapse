@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, type HTMLAttributes, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, type HTMLAttributes, type ReactNode, type Ref } from "react";
 import {
   PULL_HOLD,
   PULL_MIN_VISIBLE_MS,
@@ -14,6 +14,11 @@ import {
 
 const FIELD = "input, textarea, select, [contenteditable='true']";
 
+function assignRef<T>(ref: Ref<T> | undefined, value: T) {
+  if (typeof ref === "function") ref(value);
+  else if (ref) ref.current = value;
+}
+
 type Phase = "idle" | "pulling" | "refreshing";
 
 function wordFor(phase: Phase, pulled: number): string {
@@ -26,6 +31,7 @@ export function PullRefresh({
   onRefresh,
   className,
   scroll = true,
+  scrollerRef,
   children,
   ...rest
 }: {
@@ -33,6 +39,8 @@ export function PullRefresh({
   className?: string;
   /** The body is the scroller. Shoot and the keepsakes hub are fixed columns. */
   scroll?: boolean;
+  /** The scrolling body, so a tab can jump back to the top. */
+  scrollerRef?: Ref<HTMLDivElement | null>;
   children: ReactNode;
 } & Omit<HTMLAttributes<HTMLDivElement>, "onRefresh" | "className" | "children">) {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -269,7 +277,14 @@ export function PullRefresh({
           <span className="pull-word">Pull</span>
         </div>
       </div>
-      <div ref={bodyRef} className={bodyClass} {...rest}>
+      <div
+        ref={(node) => {
+          bodyRef.current = node;
+          assignRef(scrollerRef, node);
+        }}
+        className={bodyClass}
+        {...rest}
+      >
         {children}
       </div>
     </div>

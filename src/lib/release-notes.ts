@@ -5,7 +5,7 @@
  * Keep public/release.json in step with this list, and keep its version equal to APP_VERSION.
  */
 export const RELEASE_NOTES = [
-  "Double-tap a photo you shot to place an emoji on it.",
+  "Tap Feed while it is already open to return home and scroll back to the top.",
 ] as const;
 
 export type PublishedRelease = {
