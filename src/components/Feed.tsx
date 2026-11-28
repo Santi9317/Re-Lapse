@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { deletePhoto, fetchFeed } from "@/lib/api";
+import { feedHomeScroll } from "@/lib/tab-home";
 import type { FeedItem, FrameComment, FrameSticker } from "@/lib/types";
 import { PrintView } from "@/components/Print";
 import { PullRefresh } from "@/components/PullRefresh";
@@ -9,11 +10,14 @@ import { PullRefresh } from "@/components/PullRefresh";
 export function Feed({
   revision,
   refresh = 0,
+  homeTick = 0,
   onOpenProfile,
   onSeen,
 }: {
   revision: number;
   refresh?: number;
+  /** Bumps when Feed is tapped while it is already the open tab. */
+  homeTick?: number;
   onOpenProfile: (id: string) => void;
   onSeen?: (photos: FeedItem[]) => void;
 }) {
@@ -24,6 +28,20 @@ export function Feed({
   const onSeenRef = useRef(onSeen);
   onSeenRef.current = onSeen;
   const loadRef = useRef<() => Promise<void>>(async () => {});
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const homeSeen = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (homeSeen.current === null) {
+      homeSeen.current = homeTick;
+      return;
+    }
+    if (homeSeen.current === homeTick) return;
+    homeSeen.current = homeTick;
+    const node = scrollerRef.current;
+    if (!node) return;
+    node.scrollTo(feedHomeScroll(window.matchMedia("(prefers-reduced-motion: reduce)").matches));
+  }, [homeTick]);
 
   useEffect(() => {
     let stop = false;
@@ -75,7 +93,7 @@ export function Feed({
   }
 
   return (
-    <PullRefresh data-screen="feed" onRefresh={() => loadRef.current()}>
+    <PullRefresh scrollerRef={scrollerRef} data-screen="feed" onRefresh={() => loadRef.current()}>
       {error ? <p className="error">{error}</p> : null}
       {photos.length === 0 ? (
         <div className="empty">

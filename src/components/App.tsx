@@ -398,7 +398,7 @@ function CameraDesk() {
             <>
               {tab === "feed" && !recapDone ? <FeedRecapLive onDismiss={() => setRecapDone(true)} /> : null}
               {tab === "feed" && recapDone ? (
-                <Feed revision={feedRevision} refresh={landed} onOpenProfile={setGuestId} onSeen={sawFeed} />
+                <Feed revision={feedRevision} refresh={landed} homeTick={homeTick} onOpenProfile={setGuestId} onSeen={sawFeed} />
               ) : null}
               {tab === "you" ? (
                 <Profile
