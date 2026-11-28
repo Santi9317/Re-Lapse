@@ -9,10 +9,17 @@ test("the walk is the feed, a frame, and the notes on the back", () => {
     ["feed", "frame", "notes"],
   );
   const lines = FEATURE_WALK.map((step) => step.line).join(" ");
+  const titles = FEATURE_WALK.map((step) => step.title).join(" ");
+  assert.match(titles, /The Feed/);
+  assert.equal(titles.includes("Frames from this link"), false);
   assert.match(lines, /show up here/);
-  assert.match(lines, /turn it over/);
+  assert.match(lines, /emoji/);
+  assert.match(lines, /glows blue/);
+  assert.match(lines, /signature/);
   assert.match(lines, /on the back/);
-  assert.match(lines, /sample is gone|sample is only/);
+  assert.match(lines, /sample is gone/);
+  assert.equal(lines.includes("This sample is only"), false);
+  assert.equal(lines.includes("The front is the picture"), false);
   assert.equal(FEATURE_WALK_KEY, "relapse.featureWalk");
 });
 
@@ -32,8 +39,10 @@ test("the walk is a sample, not a standing tip, and the menu can start it", () =
   const lab = readFileSync(new URL("../components/Lab.tsx", import.meta.url), "utf8");
   const sleeve = readFileSync(new URL("../components/Sleeve.tsx", import.meta.url), "utf8");
   const app = readFileSync(new URL("../components/App.tsx", import.meta.url), "utf8");
+  const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
   assert.match(walk, /sample is not saved/);
   assert.match(feature, /data-sample-photo/);
+  assert.match(feature, /step\.id !== "feed"/);
   assert.match(feature, /data-feature-walk/);
   assert.match(feature, /\/recap\/roof\.png/);
   assert.equal(feed.includes("WalkTip"), false);
@@ -47,4 +56,8 @@ test("the walk is a sample, not a standing tip, and the menu can start it", () =
   assert.match(app, /FeatureWalk/);
   assert.match(app, /onProfileCreated/);
   assert.match(app, /FEATURE_WALK_KEY/);
+  assert.match(app, /data-nav=\{id\}/);
+  assert.match(app, /data-walk-step/);
+  assert.match(css, /data-walk-step="feed"/);
+  assert.match(css, /data-nav="feed"/);
 });

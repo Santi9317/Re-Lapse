@@ -20,7 +20,7 @@ test("a photo turns over only for the person who shot it", () => {
   const feed = readFileSync(new URL("../components/Feed.tsx", import.meta.url), "utf8");
   assert.match(print, /const ownPhoto = photoBackOpens\(item\.mine\)/);
   assert.match(print, /const canOpenNotes = notes === "owner" \? ownPhoto : true/);
-  assert.match(print, /const canWrite = Boolean\(onComments\) && \(notes === "owner" \? ownPhoto : !item\.mine\)/);
+  assert.match(print, /const canWrite = Boolean\(onComments\) && \(notes === "owner" \? ownPhoto : true\)/);
   assert.match(print, /data-notes=\{canOpenNotes \? \(notes === "owner" \? "owner" : "feed"\) : "closed"\}/);
   assert.match(print, /\{canOpenNotes \? \(/);
   assert.match(gallery, /notes="owner"/);

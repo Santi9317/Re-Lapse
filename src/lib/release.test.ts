@@ -44,14 +44,11 @@ test("this publish carries the same notes the camera can show", () => {
   assert.deepEqual(
     [...RELEASE_NOTES],
     [
-      "Swipe one print at a time. Right keeps it, left deletes it, and Soup opens the chemistry list.",
-      "Keepsakes opens as two halves: Galleries, and Time Capsules.",
-      "When the Feed has new frames, it opens on a swipe recap and then the new notes and reactions.",
-      "A sample photo shows the Feed and the notes on the back of a frame, then that sample is gone.",
-      "Feature Walkthrough in You starts the sample again, and so does making a profile.",
-      "A photo can belong to more than one gallery. Adding it to another leaves the first one.",
-      "The Feed does not show a gallery name on a frame.",
-      "An emoji can be moved by the person who placed it, and by the one who shot the frame.",
+      "The walk opens on the Feed tab. The sample photo comes next, for emojis, notes, and the blue glow, and it is not saved.",
+      "Tap the tab you are already on to return to its home. Keepsakes returns to Galleries and Time Capsules.",
+      "Frames you can develop come first. Tap one, then swipe to keep or discard, and add a caption while you swipe.",
+      "Darkroom keeps the countdown and the chemistry. A photo you just took shows up there.",
+      "You can write and sign the back of a frame you shot, from the Feed.",
     ],
   );
   const notes = RELEASE_NOTES.join("\n");
@@ -105,6 +102,14 @@ test("this publish carries the same notes the camera can show", () => {
     "One print at a time. Swipe right keeps, swipe left deletes, and undo lasts until you leave the tab. Soup opens the chemistry list.",
     "A gallery has a Shoot button. Those photos still develop, and keeping one files it in that gallery. The marker matches a time capsule.",
     "Pull down to refresh on Feed, Keepsakes, You, and where frames develop. The tab shows A little more, then In the soup.",
+    "Swipe one print at a time. Right keeps it, left deletes it, and Soup opens the chemistry list.",
+    "Keepsakes opens as two halves: Galleries, and Time Capsules.",
+    "When the Feed has new frames, it opens on a swipe recap and then the new notes and reactions.",
+    "A sample photo shows the Feed and the notes on the back of a frame, then that sample is gone.",
+    "Feature Walkthrough in You starts the sample again, and so does making a profile.",
+    "A photo can belong to more than one gallery. Adding it to another leaves the first one.",
+    "The Feed does not show a gallery name on a frame.",
+    "An emoji can be moved by the person who placed it, and by the one who shot the frame.",
   ]) {
     assert.equal(notes.includes(older), false);
   }

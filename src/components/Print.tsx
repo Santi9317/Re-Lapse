@@ -633,7 +633,8 @@ function FrameFace({
   const reactable = Boolean(onStickers) && !item.mine;
   const ownPhoto = photoBackOpens(item.mine);
   const canOpenNotes = notes === "owner" ? ownPhoto : true;
-  const canWrite = Boolean(onComments) && (notes === "owner" ? ownPhoto : !item.mine);
+  // The feed lets the person who shot the frame sign it, the same as anyone else.
+  const canWrite = Boolean(onComments) && (notes === "owner" ? ownPhoto : true);
   const turned = back && canOpenNotes;
   const noteStamps = item.comments.map((note) => ({
     photoId: item.id,

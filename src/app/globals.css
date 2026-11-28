@@ -2875,7 +2875,45 @@ button.byline .byline-name { text-decoration: underline; text-underline-offset: 
   overflow: hidden;
   background: #d9cbb8;
 }
-.lab-swipe[data-live="true"] { padding-bottom: 8px; }
+.lab-swipe[data-live="true"] {
+  flex: none;
+  width: 100%;
+  overflow: visible;
+  container-type: normal;
+  align-items: stretch;
+  padding-bottom: 8px;
+}
+.lab-swipe[data-live="true"] .lab-swipe-stage {
+  width: min(100%, 340px);
+  margin-inline: auto;
+}
+.lab-swipe[data-live="true"] .lab-swipe-well {
+  aspect-ratio: 4 / 5;
+}
+.lab-swipe-caption {
+  width: min(100%, 340px);
+  margin: 12px auto 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.lab-swipe-caption .primary { margin-top: 0; }
+.lab-switch {
+  display: flex;
+  gap: 8px;
+  margin: 0 0 12px;
+}
+.lab-switch button {
+  flex: 1;
+  padding: 10px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(180, 150, 255, 0.35);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--blue);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 12px;
+}
 .lab-swipe-photo svg,
 .lab-swipe-photo img {
   display: block;
@@ -3079,6 +3117,16 @@ button.byline .byline-name { text-decoration: underline; text-underline-offset: 
   .lab-swipe-card { transition: none; }
 }
 
+.phone[data-walk-step="feed"] .nav {
+  z-index: 32;
+}
+.phone[data-walk-step="feed"] .nav button[data-nav="feed"] {
+  color: var(--blue);
+  background: rgba(58, 212, 255, 0.18);
+  box-shadow:
+    0 0 0 3px var(--signal),
+    0 0 18px rgba(58, 212, 255, 0.55);
+}
 .feature-walk {
   position: absolute;
   inset: 0;
@@ -3091,6 +3139,9 @@ button.byline .byline-name { text-decoration: underline; text-underline-offset: 
     radial-gradient(ellipse at 50% 30%, rgba(180, 75, 255, 0.2), transparent 46%),
     rgba(7, 6, 15, 0.96);
   overflow: auto;
+}
+.feature-walk[data-step="feed"] {
+  bottom: calc(64px + var(--safe-bottom));
 }
 .feature-walk h2 {
   font-family: var(--serif);

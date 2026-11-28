@@ -11,7 +11,7 @@ import { groupedPin, RecoveryPinPanel } from "@/components/RecoveryPin";
 
 type Panel = "menu" | "version" | "general" | "howto" | "inspiration" | "recovery" | "account";
 
-export function Sleeve({ onFeatureWalk }: { onFeatureWalk?: () => void }) {
+export function Sleeve({ onFeatureWalk, homeTick = 0 }: { onFeatureWalk?: () => void; homeTick?: number }) {
   const [panel, setPanel] = useState<Panel | null>(null);
   const [quote, setQuote] = useState<Quote | null>(null);
   const [recoverySet, setRecoverySet] = useState(false);
@@ -19,6 +19,17 @@ export function Sleeve({ onFeatureWalk }: { onFeatureWalk?: () => void }) {
   const backRef = useRef<HTMLButtonElement>(null);
   const markRef = useRef<HTMLButtonElement>(null);
   const opened = useRef(false);
+  const homeSeen = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (homeSeen.current === null) {
+      homeSeen.current = homeTick;
+      return;
+    }
+    if (homeSeen.current === homeTick) return;
+    homeSeen.current = homeTick;
+    setPanel(null);
+  }, [homeTick]);
 
   useEffect(() => {
     if (panel) {

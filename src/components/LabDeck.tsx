@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { CaptionField } from "@/components/CaptionField";
 import { Lab } from "@/components/Lab";
 import { PullRefresh } from "@/components/PullRefresh";
-import { deletePhoto, fetchLab, fetchPrivateImage } from "@/lib/api";
+import { deletePhoto, fetchLab, fetchPrivateImage, publishPhoto, updateCaption } from "@/lib/api";
 import { disposableDate } from "@/lib/format";
+import { ensurePhotoFile, iosPhotosTarget, readyPhotoFile, shareOrSave } from "@/lib/save";
 import {
   commitSwipe,
   restoreSwipe,
@@ -13,7 +15,6 @@ import {
   type SwipeUndo,
   type SwipeVerdict,
 } from "@/lib/lab-swipe";
-import { lapseQuip } from "@/lib/quips";
 import type { LabItem, LabState } from "@/lib/types";
 
 type Print = { id: string; caption: string; stamp: string };
@@ -27,27 +28,37 @@ function cardState(item: LabItem, now: number): LabState {
 function toPrint(item: LabItem): Print {
   const when = new Date(item.capturedAt ?? item.createdAt);
   const stamp = item.dateStamp && Number.isFinite(when.getTime()) ? disposableDate(when) : "";
-  return { id: item.id, caption: item.caption.trim() || "Developed frame", stamp };
+  return { id: item.id, caption: item.caption, stamp };
 }
 
 export function LabDeck({
   revision,
   refresh = 0,
+  homeTick = 0,
   onPublished,
   onDeleted,
 }: {
   revision: number;
   refresh?: number;
+  homeTick?: number;
   onPublished: () => void;
   onDeleted?: () => void;
 }) {
-  const [soup, setSoup] = useState(false);
+  const [place, setPlace] = useState<"select" | "swipe" | "darkroom">("select");
   const [prints, setPrints] = useState<Print[]>([]);
   const [developing, setDeveloping] = useState(0);
   const [undo, setUndo] = useState<SwipeUndo | null>(null);
   const [held, setHeld] = useState<Print | null>(null);
   const [error, setError] = useState("");
+  const [focusId, setFocusId] = useState<string | null>(null);
+  const [deckBump, setDeckBump] = useState(0);
+  const [aside, setAside] = useState<string[]>([]);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [savingId, setSavingId] = useState<string | null>(null);
   const deckRef = useRef<Print[]>([]);
+  const focusRef = useRef<string | null>(null);
+  const captionDrafts = useRef(new Map<string, string>());
+  focusRef.current = focusId;
   const passed = useRef(new Set<string>());
   const pendingDelete = useRef(new Set<string>());
   const onDeletedRef = useRef(onDeleted);
@@ -81,6 +92,14 @@ export function LabDeck({
           if (state === "developing") soupCount += 1;
           if (state === "developed" && !passed.current.has(photo.id)) ready.push(toPrint(photo));
         }
+        const focus = focusRef.current;
+        if (focus) {
+          const index = ready.findIndex((print) => print.id === focus);
+          if (index > 0) {
+            const [hit] = ready.splice(index, 1);
+            ready.unshift(hit);
+          }
+        }
         setDeveloping(soupCount);
         setPrints((current) => {
           const incoming = new Map(ready.map((print) => [print.id, print]));
@@ -102,17 +121,40 @@ export function LabDeck({
       stop = true;
       window.clearInterval(poll);
     };
-  }, [revision, refresh]);
+  }, [revision, refresh, deckBump]);
+
+  const homeSeen = useRef<number | null>(null);
+  useEffect(() => {
+    if (homeSeen.current === null) {
+      homeSeen.current = homeTick;
+      return;
+    }
+    if (homeSeen.current === homeTick) return;
+    homeSeen.current = homeTick;
+    setPlace("select");
+    setFocusId(null);
+  }, [homeTick]);
+
+  function rememberAside() {
+    setAside([...passed.current]);
+  }
 
   function commit(verdict: SwipeVerdict) {
     const result = commitSwipe(deckRef.current, verdict);
     if (!result) return;
+    if (verdict === "keep") {
+      const draft = (captionDrafts.current.get(result.frame.id) ?? result.frame.caption).trim();
+      if (draft !== result.frame.caption.trim()) {
+        void updateCaption(result.frame.id, draft).catch(() => setError("That caption didn't stick."));
+      }
+    }
     deckRef.current = result.deck;
     setPrints(result.deck);
     setHeld(result.frame);
     setUndo(result.undo);
     passed.current.add(result.frame.id);
     if (verdict === "delete") pendingDelete.current.add(result.frame.id);
+    rememberAside();
   }
 
   function undoSwipe() {
@@ -124,20 +166,103 @@ export function LabDeck({
     pendingDelete.current.delete(held.id);
     setHeld(null);
     setUndo(null);
+    rememberAside();
   }
 
-  if (soup) {
+  function openSwipe(id: string) {
+    setFocusId(id);
+    setPrints((current) => {
+      const hit = current.find((print) => print.id === id);
+      const next = hit ? [hit, ...current.filter((print) => print.id !== id)] : [{ id, caption: "", stamp: "" }, ...current];
+      deckRef.current = next;
+      return next;
+    });
+    setPlace("swipe");
+    setDeckBump((value) => value + 1);
+  }
+
+  async function publish(id: string) {
+    if (busyId) return;
+    setBusyId(id);
+    setError("");
+    try {
+      const frame = deckRef.current.find((print) => print.id === id);
+      const draft = (captionDrafts.current.get(id) ?? frame?.caption ?? "").trim();
+      if (frame && draft !== frame.caption.trim()) {
+        const saved = await updateCaption(id, draft);
+        captionDrafts.current.set(id, saved.caption);
+      }
+      await publishPhoto(id);
+      captionDrafts.current.delete(id);
+      passed.current.add(id);
+      const next = deckRef.current.filter((print) => print.id !== id);
+      deckRef.current = next;
+      setPrints(next);
+      rememberAside();
+      onPublished();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "That frame isn't ready to share.");
+    } finally {
+      setBusyId((current) => (current === id ? null : current));
+    }
+  }
+
+  function saveFrame(id: string) {
+    setError("");
+    const file = readyPhotoFile(id);
+    if (file) {
+      shareOrSave(file);
+      return;
+    }
+    setSavingId(id);
+    void ensurePhotoFile(id)
+      .then((next) => shareOrSave(next))
+      .catch(() => setError("That frame didn't download."))
+      .finally(() => setSavingId(null));
+  }
+
+  const frames = (
+    <div className="lab-switch">
+      <button type="button" data-open-darkroom onClick={() => setPlace("darkroom")}>
+        Darkroom{developing > 0 ? ` · ${developing}` : ""}
+      </button>
+      {prints.length > 0 ? (
+        <button type="button" data-open-swipe onClick={() => setPlace("swipe")}>
+          Swipe
+        </button>
+      ) : null}
+    </div>
+  );
+
+  if (place === "darkroom") {
     return (
       <Lab
         revision={revision}
-        refresh={refresh}
+        refresh={refresh + deckBump}
         onPublished={onPublished}
         onDeleted={onDeleted}
+        screen="darkroom"
+        aside={aside}
         leading={
-          <button type="button" className="lab-swipe-soup-btn" data-close-soup onClick={() => setSoup(false)}>
-            Print
+          <button type="button" className="ghost back" data-close-darkroom onClick={() => setPlace("select")}>
+            ← Frames
           </button>
         }
+      />
+    );
+  }
+
+  if (place === "select") {
+    return (
+      <Lab
+        revision={revision}
+        refresh={refresh + deckBump}
+        onPublished={onPublished}
+        onDeleted={onDeleted}
+        screen="select"
+        aside={aside}
+        onSwipe={openSwipe}
+        leading={frames}
       />
     );
   }
@@ -148,6 +273,9 @@ export function LabDeck({
 
   return (
     <PullRefresh data-screen="lab" data-lab-view="swipe" onRefresh={() => loadRef.current()}>
+      <button type="button" className="ghost back" data-lab-home onClick={() => setPlace("select")}>
+        ← Frames
+      </button>
       {error ? <p className="error">{error}</p> : null}
       <div className="lab-swipe" data-live="true" data-lab-swipe={frame ? "print" : "developing"}>
         {frame ? (
@@ -158,10 +286,43 @@ export function LabDeck({
             undo={liveUndo}
             onCommit={commit}
             onUndo={undoSwipe}
-            onSoup={() => setSoup(true)}
+            onDarkroom={() => setPlace("darkroom")}
+            extra={
+              <div className="lab-swipe-caption">
+                <CaptionField
+                  id={frame.id}
+                  caption={frame.caption}
+                  disabled={busyId === frame.id}
+                  onDraft={(photoId, value) => {
+                    captionDrafts.current.set(photoId, value);
+                  }}
+                />
+                <button
+                  className="primary"
+                  type="button"
+                  data-publish={frame.id}
+                  disabled={busyId === frame.id}
+                  onClick={() => void publish(frame.id)}
+                >
+                  {busyId === frame.id ? "Sending…" : "Send to the feed"}
+                </button>
+                <button
+                  type="button"
+                  data-download={frame.id}
+                  aria-label={iosPhotosTarget() ? "Download this photo to Photos" : "Download this photo"}
+                  disabled={savingId === frame.id}
+                  onClick={() => saveFrame(frame.id)}
+                >
+                  {savingId === frame.id ? "Saving…" : "Download"}
+                </button>
+              </div>
+            }
           />
         ) : (
-          <Soup count={developing} onSoup={() => setSoup(true)} />
+          <div className="empty">
+            <h2>No print to swipe.</h2>
+            <p>Develop a frame, then it shows up here.</p>
+          </div>
         )}
       </div>
     </PullRefresh>
@@ -175,7 +336,8 @@ function LivePrint({
   undo,
   onCommit,
   onUndo,
-  onSoup,
+  onDarkroom,
+  extra,
 }: {
   frame: Print;
   next: Print | null;
@@ -183,7 +345,8 @@ function LivePrint({
   undo: { frame: Print; verdict: SwipeVerdict } | null;
   onCommit: (verdict: SwipeVerdict) => void;
   onUndo: () => void;
-  onSoup: () => void;
+  onDarkroom: () => void;
+  extra?: ReactNode;
 }) {
   const wellRef = useRef<HTMLDivElement>(null);
   const timer = useRef(0);
@@ -283,7 +446,7 @@ function LivePrint({
             data-frame={frame.id}
             role="group"
             tabIndex={0}
-            aria-label={`${frame.caption}. Swipe right to keep, swipe left to delete.`}
+            aria-label={`${frame.caption.trim() || "Developed frame"}. Swipe right to keep, swipe left to delete.`}
             style={{ transform: `translate3d(${shown}px, 0, 0) rotate(${tilt}deg) scale(${dragging ? 1.02 : 1})` }}
             onPointerDown={down}
             onPointerMove={move}
@@ -314,7 +477,8 @@ function LivePrint({
           </div>
         </div>
       </div>
-      <Tray developing={developing} dx={shown} undo={undo} onUndo={onUndo} onSoup={onSoup} />
+      {extra}
+      <Tray developing={developing} dx={shown} undo={undo} onUndo={onUndo} onDarkroom={onDarkroom} />
     </>
   );
 }
@@ -349,13 +513,13 @@ function Tray({
   dx,
   undo,
   onUndo,
-  onSoup,
+  onDarkroom,
 }: {
   developing: number;
   dx: number;
   undo: { frame: Print; verdict: SwipeVerdict } | null;
   onUndo: () => void;
-  onSoup: () => void;
+  onDarkroom: () => void;
 }) {
   const hint = 1 - Math.min(1, Math.abs(dx) / 84);
   return (
@@ -371,8 +535,8 @@ function Tray({
           </span>
         </p>
       ) : null}
-      <button type="button" className="lab-swipe-soup-btn" data-open-soup onClick={onSoup}>
-        Soup
+      <button type="button" className="lab-swipe-soup-btn" data-open-darkroom onClick={onDarkroom}>
+        Darkroom
       </button>
       {undo ? (
         <div className="lab-swipe-undo" data-undo={undo.verdict}>
@@ -394,21 +558,3 @@ function Tray({
   );
 }
 
-function Soup({ count, onSoup }: { count: number; onSoup: () => void }) {
-  return (
-    <div className="lab-swipe-soup">
-      <div className="safelight" />
-      <div className="lab-swipe-soup-copy">
-        <p className="kicker">In the soup</p>
-        <p className="time" data-developing-count={count}>
-          {count}
-        </p>
-        <p className="lab-swipe-countword">developing</p>
-        <p className="lab-swipe-quip">{count > 0 ? lapseQuip("lab-soup") : "Shoot a frame and let it lapse."}</p>
-        <button type="button" className="lab-swipe-soup-btn" data-open-soup onClick={onSoup}>
-          Soup
-        </button>
-      </div>
-    </div>
-  );
-}

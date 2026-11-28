@@ -18,7 +18,8 @@ import { recallNotes } from "@/lib/note-seen";
 import { recallStickers } from "@/lib/sticker-seen";
 import { restorePhone } from "@/lib/identity";
 import { readStorage, writeStorage } from "@/lib/shell";
-import { FEATURE_WALK_KEY, featureWalkSeen } from "@/lib/walkthrough";
+import { tabTapHomes } from "@/lib/tab-home";
+import { FEATURE_WALK_KEY, featureWalkSeen, type FeatureWalkStep } from "@/lib/walkthrough";
 import { drawInspiration, type Quote } from "@/lib/quotes";
 import { shouldReloadOnPageSignal, shouldReloadOnTabChange, type MainTab } from "@/lib/refresh";
 import type { EventRoll, FeedItem, GalleryRoll } from "@/lib/types";
@@ -147,6 +148,8 @@ function CameraDesk() {
   const bannerRef = useRef<HTMLButtonElement>(null);
   const [recapDone, setRecapDone] = useState(false);
   const [walkOpen, setWalkOpen] = useState(false);
+  const [walkStep, setWalkStep] = useState<FeatureWalkStep["id"] | null>(null);
+  const [homeTick, setHomeTick] = useState(0);
 
   function openBannerQuote() {
     setBannerQuote(drawInspiration(localStorage));
@@ -158,10 +161,20 @@ function CameraDesk() {
   }
 
   function chooseTab(next: MainTab) {
+    const same = tabTapHomes(tabNow.current, next);
     setGuestId(null);
     // The tap is still a user gesture here. The camera has to start before
     // the effect, or iOS treats the reopen as unprompted.
     if (next === "shoot" && tabNow.current !== "shoot") openCameraFromTap();
+    if (same) {
+      if (next === "shoot") {
+        setArmed(null);
+        setGalleryRoll(null);
+      }
+      if (next === "feed") setRecapDone(true);
+      setHomeTick((value) => value + 1);
+      return;
+    }
     if (shouldReloadOnTabChange(tabNow.current, next)) setLanded((value) => value + 1);
     if (next !== "feed") setRecapDone(false);
     setTab(next);
@@ -170,6 +183,12 @@ function CameraDesk() {
   function finishWalk() {
     writeStorage(localStorage, FEATURE_WALK_KEY, "seen");
     setWalkOpen(false);
+    setWalkStep(null);
+  }
+
+  function openWalk() {
+    setWalkStep("feed");
+    setWalkOpen(true);
   }
 
   useEffect(() => {
@@ -206,7 +225,7 @@ function CameraDesk() {
   }, [tab]);
 
   useEffect(() => {
-    if (!featureWalkSeen(readStorage(localStorage, FEATURE_WALK_KEY))) setWalkOpen(true);
+    if (!featureWalkSeen(readStorage(localStorage, FEATURE_WALK_KEY))) openWalk();
   }, []);
 
   useEffect(() => {
@@ -322,7 +341,10 @@ function CameraDesk() {
 
   return (
     <div className="desk">
-      <div className={tab === "shoot" ? "phone" : "phone pin-tabs"}>
+      <div
+        className={tab === "shoot" && !(walkOpen && (walkStep ?? "feed") === "feed") ? "phone" : "phone pin-tabs"}
+        data-walk-step={walkOpen ? (walkStep ?? "feed") : undefined}
+      >
         {bannerOpensQuote(tab) ? (
           <header className="top">
             <h1 className="word">
@@ -352,6 +374,7 @@ function CameraDesk() {
             <LabDeck
               revision={labRevision}
               refresh={landed}
+              homeTick={homeTick}
               onPublished={() => {
                 setFeedRevision((value) => value + 1);
                 setLabRevision((value) => value + 1);
@@ -386,13 +409,15 @@ function CameraDesk() {
                     setGalleryRoll(gallery);
                     chooseTab("shoot");
                   }}
-                  onFeatureWalk={() => setWalkOpen(true)}
-                  onProfileCreated={() => setWalkOpen(true)}
+                  onFeatureWalk={openWalk}
+                  onProfileCreated={openWalk}
+                  homeTick={homeTick}
                 />
               ) : null}
               {tab === "rolls" ? (
                 <Rolls
                   hub={keepsakesHub}
+                  homeTick={homeTick}
                   revision={feedRevision}
                   refresh={landed}
                   focusEventId={focusEventId}
@@ -425,7 +450,7 @@ function CameraDesk() {
               ["you", "You", "🪪"],
             ] as const
           ).map(([id, label, emoji]) => (
-            <button key={id} type="button" aria-pressed={tab === id && !guestId} onClick={() => chooseTab(id)}>
+            <button key={id} type="button" data-nav={id} aria-pressed={tab === id && !guestId} onClick={() => chooseTab(id)}>
               <span className="nav-emoji" aria-hidden="true">{emoji}</span>
               {label}
               {id === "lab" && labReady ? <i className="dot" aria-label="Ready to develop" /> : null}
@@ -435,7 +460,7 @@ function CameraDesk() {
           ))}
         </nav>
         {bannerQuote ? <QuoteDialog quote={bannerQuote} onClose={closeBannerQuote} /> : null}
-        {walkOpen ? <FeatureWalk onDone={finishWalk} /> : null}
+        {walkOpen ? <FeatureWalk onDone={finishWalk} onStep={setWalkStep} /> : null}
         <ShellPrompts />
       </div>
     </div>
