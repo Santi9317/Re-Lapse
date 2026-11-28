@@ -921,39 +921,54 @@ export async function setCaption(id: string, token: string, caption: string): Pr
 export async function publishPhoto(id: string, token: string): Promise<{ publishedAt: number }> {
   // Keeping a developed frame sends it to the feed. One shot for a gallery joins that gallery then.
   // A second gallery is added. It does not take the frame out of a gallery it already has.
-  await sql(
-    `insert into album_photos (album_id, photo_id)
-     select a.id, p.id
-     from photos p
-     join albums a on a.id = p.for_album_id and a.owner_token = p.shooter_token
-     where p.id = $1 and p.shooter_token = $2
-     on conflict do nothing`,
-    [id, token],
-  );
-  const rows = await sql<{ published_ms: number }>(
-    `update photos
-     set published_at = now(),
-         album_id = coalesce(
-           album_id,
-           (
-             select a.id
-             from albums a
-             where a.id = photos.for_album_id
-               and a.owner_token = photos.shooter_token
-           )
-         ),
-         for_album_id = null
-     where id = $1
-       and shooter_token = $2
-       and event_id is null
-       and developed_at is not null
-       and published_at is null
-     returning (extract(epoch from published_at) * 1000) as published_ms`,
-    [id, token],
-  );
-  const row = rows[0];
-  if (!row) throw new HttpError(409, "That frame isn't ready to share.");
-  return { publishedAt: num(row.published_ms) };
+  // A left swipe sets discarded_at. That frame stays off the feed, including this older route,
+  // until undo clears the discard. Another camera cannot post it either.
+  return withTransaction(async (q) => {
+    const locked = await q<{ id: string }>(
+      `select id from photos where id = $1 and shooter_token = $2 for update`,
+      [id, token],
+    );
+    if (!locked[0]) throw new HttpError(409, "That frame isn't ready to share.");
+    await q(
+      `insert into album_photos (album_id, photo_id)
+       select a.id, p.id
+       from photos p
+       join albums a on a.id = p.for_album_id and a.owner_token = p.shooter_token
+       where p.id = $1
+         and p.shooter_token = $2
+         and p.event_id is null
+         and p.developed_at is not null
+         and p.published_at is null
+         and p.discarded_at is null
+       on conflict do nothing`,
+      [id, token],
+    );
+    const rows = await q<{ published_ms: number }>(
+      `update photos
+       set published_at = now(),
+           album_id = coalesce(
+             album_id,
+             (
+               select a.id
+               from albums a
+               where a.id = photos.for_album_id
+                 and a.owner_token = photos.shooter_token
+             )
+           ),
+           for_album_id = null
+       where id = $1
+         and shooter_token = $2
+         and event_id is null
+         and developed_at is not null
+         and published_at is null
+         and discarded_at is null
+       returning (extract(epoch from published_at) * 1000) as published_ms`,
+      [id, token],
+    );
+    const row = rows[0];
+    if (!row) throw new HttpError(409, "That frame isn't ready to share.");
+    return { publishedAt: num(row.published_ms) };
+  });
 }
 
 /**

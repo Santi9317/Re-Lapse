@@ -1,9 +1,8 @@
 {
-  "version": "1.84.9",
+  "version": "1.84.10",
   "notes": [
-    "Darkroom is the thin button at the top again.",
-    "Swipe left deletes that photo. Swipe right posts it to the Feed.",
-    "Skip a caption with one tap. Undo puts the last photo back."
+    "A photo you swipe left cannot be posted until undo brings it back.",
+    "The walk says the Feed, emojis, and signatures once each."
   ],
   "icon": "0e6210f1bd3191d086e7c4deb1bb920768940cbf227f6f962125f415635d7665",
   "previousIcon": "0e6210f1bd3191d086e7c4deb1bb920768940cbf227f6f962125f415635d7665"
