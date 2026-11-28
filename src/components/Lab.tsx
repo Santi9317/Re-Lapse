@@ -10,6 +10,7 @@ import { renderDisposable } from "@/lib/filter";
 import { lapseQuip } from "@/lib/quips";
 import { ensurePhotoFile, iosPhotosTarget, readyPhotoFile, rememberPhotoBlob, shareOrSave } from "@/lib/save";
 import type { Chemistry, LabItem, LabState } from "@/lib/types";
+import { PullRefresh } from "@/components/PullRefresh";
 import { useWalk, WalkMark, WalkTip } from "@/components/Walkthrough";
 
 const EXTRA_BATHS: { id: ExtraChemistry; label: string }[] = [
@@ -63,6 +64,8 @@ export function Lab({
     writeDateStamp(next);
   }
 
+  const loadRef = useRef<() => Promise<void>>(async () => {});
+
   useEffect(() => {
     let stop = false;
     async function load() {
@@ -94,6 +97,7 @@ export function Lab({
         if (!stop) setError(err instanceof Error ? err.message : "The lab didn't answer.");
       }
     }
+    loadRef.current = load;
     void load();
     const poll = window.setInterval(() => void load(), 4000);
     const tick = window.setInterval(() => setNow(Date.now()), 1000);
@@ -249,7 +253,7 @@ export function Lab({
   const labWalk = useWalk("lab", firstDeveloped !== null);
 
   return (
-    <div className="scroll" data-screen="lab">
+    <PullRefresh data-screen="lab" onRefresh={() => loadRef.current()}>
       {error ? <p className="error">{error}</p> : null}
       <label className="stamp-toggle" data-date-stamp={stamp ? "on" : "off"}>
         <input
@@ -401,7 +405,7 @@ export function Lab({
           );
         })
       )}
-    </div>
+    </PullRefresh>
   );
 }
 

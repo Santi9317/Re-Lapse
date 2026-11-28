@@ -21,6 +21,7 @@ import { capsuleWindow, EVENT_START_AHEAD_MS, EVENT_START_SKEW_MS } from "@/lib/
 import { clockLabel, dateTimeLocalMs, dateTimeLocalValue, frames, longRemain } from "@/lib/format";
 import type { Album, EventDetail, EventRoll, EventStatus, FeedItem, GalleryRoll } from "@/lib/types";
 import { Lightbox, PrintView } from "@/components/Print";
+import { PullRefresh } from "@/components/PullRefresh";
 
 function statusLine(event: EventRoll, now: number): string {
   if (event.status === "waiting") return `Opens in ${longRemain(Math.max(0, event.startsAt - now))}`;
@@ -129,6 +130,8 @@ export function Rolls({
     setStartValue(dateTimeLocalValue(now));
   }, [now, startEdited]);
 
+  const loadRef = useRef<() => Promise<void>>(async () => {});
+
   useEffect(() => {
     let stop = false;
     async function load() {
@@ -142,6 +145,7 @@ export function Rolls({
         if (!stop) setError(err instanceof Error ? err.message : "The lab didn't answer.");
       }
     }
+    loadRef.current = load;
     void load();
     const id = window.setInterval(() => void load(), 5000);
     return () => {
@@ -151,22 +155,25 @@ export function Rolls({
   }, [revision, refresh, tick]);
 
   const watchedEvent = eventDetail?.id ?? null;
+  const refreshEventRef = useRef<() => Promise<void>>(async () => {});
   useEffect(() => {
     if (!watchedEvent) return;
     let stop = false;
-    const pull = () => {
-      void fetchEvent(watchedEvent)
-        .then((detail) => {
-          if (stop) return;
-          setEventDetail({
-            ...detail,
-            photos: detail.photos.filter((photo) => !removed.current.has(photo.id)),
-          });
-        })
-        .catch(() => undefined);
+    const pull = async () => {
+      try {
+        const detail = await fetchEvent(watchedEvent);
+        if (stop) return;
+        setEventDetail({
+          ...detail,
+          photos: detail.photos.filter((photo) => !removed.current.has(photo.id)),
+        });
+      } catch {
+        /* the open timecapsule can wait for the next look */
+      }
     };
-    pull();
-    const id = window.setInterval(pull, 3000);
+    refreshEventRef.current = pull;
+    void pull();
+    const id = window.setInterval(() => void pull(), 3000);
     return () => {
       stop = true;
       window.clearInterval(id);
@@ -415,7 +422,12 @@ export function Rolls({
     const feedReady = eventDetail.inviteOnly && eventDetail.owner && eventDetail.status === "ready" && eventDetail.photos.length > 0;
     const feedLabel = chosen === 0 ? "Keep the feed clear" : `Add ${chosen} ${chosen === 1 ? "frame" : "frames"} to the feed`;
     return (
-      <div className="scroll" data-screen="event" data-status={eventDetail.status} data-invite-only={eventDetail.inviteOnly ? "yes" : "no"}>
+      <PullRefresh
+        data-screen="event"
+        data-status={eventDetail.status}
+        data-invite-only={eventDetail.inviteOnly ? "yes" : "no"}
+        onRefresh={() => refreshEventRef.current()}
+      >
         <button
           className="ghost back"
           type="button"
@@ -591,7 +603,7 @@ export function Rolls({
             onCaption={onCaption}
           />
         ) : null}
-      </div>
+      </PullRefresh>
     );
   }
 
@@ -736,40 +748,45 @@ export function Rolls({
 
   if (lane === "hub") {
     return (
-      <KeepsakesHub
-        onGalleries={() => {
-          setError("");
-          setLane("galleries");
-        }}
-        onCapsules={() => {
-          setError("");
-          setLane("capsules");
-        }}
-      />
+      <PullRefresh scroll={false} onRefresh={() => loadRef.current()}>
+        <KeepsakesHub
+          onGalleries={() => {
+            setError("");
+            setLane("galleries");
+          }}
+          onCapsules={() => {
+            setError("");
+            setLane("capsules");
+          }}
+        />
+      </PullRefresh>
     );
   }
 
   if (lane === "galleries" || lane === "capsules") {
     return (
-      <div className="scroll" data-screen={lane === "galleries" ? "keepsakes-galleries" : "keepsakes-capsules"}>
+      <PullRefresh
+        data-screen={lane === "galleries" ? "keepsakes-galleries" : "keepsakes-capsules"}
+        onRefresh={() => loadRef.current()}
+      >
         <button className="ghost back" type="button" onClick={() => setLane("hub")}>
           ← Keepsakes
         </button>
         {error || joinNotice ? <p className="error">{error || joinNotice}</p> : null}
         {lane === "galleries" ? galleriesPane : capsulesPane}
-      </div>
+      </PullRefresh>
     );
   }
 
   return (
-    <div className="scroll" data-screen="keepsakes">
+    <PullRefresh data-screen="keepsakes" onRefresh={() => loadRef.current()}>
       <p className="fine">
         Keepsakes are galleries of your photos. Pick when a timecapsule opens. It stays open for 1 to 24 hours, then the whole album seals for a day. Invite people onto it, and pick what hits the feed.
       </p>
       {error || joinNotice ? <p className="error">{error || joinNotice}</p> : null}
       {galleriesPane}
       {capsulesPane}
-    </div>
+    </PullRefresh>
   );
 }
 

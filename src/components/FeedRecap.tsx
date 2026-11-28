@@ -12,6 +12,7 @@ import {
   type RecapSource,
 } from "@/lib/feed-recap";
 import { ago, leavesIn } from "@/lib/format";
+import { PullRefresh } from "@/components/PullRefresh";
 import { readStorage } from "@/lib/shell";
 import type { FeedItem } from "@/lib/types";
 
@@ -203,23 +204,33 @@ export function FeedRecapWorkshop({ onDismiss }: { onDismiss: () => void }) {
   const [source, setSource] = useState<"sample" | "live">("sample");
   const onDismissRef = useRef(onDismiss);
   onDismissRef.current = onDismiss;
+  const loadRef = useRef<() => Promise<void>>(async () => {});
 
   useEffect(() => {
     let stop = false;
-    void fetchFeed()
-      .then((feed) => {
+    async function load() {
+      try {
+        const feed = await fetchFeed();
         if (stop) return;
         const seenAt = readFeedSeen(readStorage(localStorage, FEED_SEEN_KEY));
         const live = buildRecap(feed.photos.map(sourceFromFeed), seenAt);
         if (!live) return;
         setDeck(live);
         setSource("live");
-      })
-      .catch(() => undefined);
+      } catch {
+        /* a quiet visit keeps the sample story */
+      }
+    }
+    loadRef.current = load;
+    void load();
     return () => {
       stop = true;
     };
   }, []);
 
-  return <FeedRecap key={source} deck={deck} source={source} onDismiss={() => onDismissRef.current()} />;
+  return (
+    <PullRefresh scroll={false} onRefresh={() => loadRef.current()}>
+      <FeedRecap key={source} deck={deck} source={source} onDismiss={() => onDismissRef.current()} />
+    </PullRefresh>
+  );
 }
