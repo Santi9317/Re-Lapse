@@ -5,7 +5,9 @@
  * Keep public/release.json in step with this list, and keep its version equal to APP_VERSION.
  */
 export const RELEASE_NOTES = [
-  "A wrong gate key stays limited. A new browser does not start that count over.",
+  "Darkroom is the thin button at the top again.",
+  "Swipe left deletes that photo. Swipe right posts it to the Feed.",
+  "Skip a caption with one tap. Undo puts the last photo back.",
 ] as const;
 
 export type PublishedRelease = {

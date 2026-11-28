@@ -442,6 +442,21 @@ export async function publishPhoto(id: string): Promise<{ publishedAt: number }>
   return request(`/api/photos/${id}/publish`, { method: "POST", headers: await headers(false) });
 }
 
+export type SwipeOp = "pass" | "feed" | "undo-pass" | "undo-feed" | "caption";
+
+/** Land a develop swipe, or take that swipe back. */
+export async function postSwipe(
+  id: string,
+  op: SwipeOp,
+  caption?: string,
+): Promise<{ ok?: boolean; publishedAt?: number; caption?: string }> {
+  return request(`/api/photos/${id}/swipe`, {
+    method: "POST",
+    headers: await headers(true),
+    body: JSON.stringify(caption == null ? { op } : { op, caption }),
+  });
+}
+
 export async function deletePhoto(id: string): Promise<{ ok: boolean }> {
   return request(`/api/photos/${id}`, { method: "DELETE", headers: await headers(false) });
 }

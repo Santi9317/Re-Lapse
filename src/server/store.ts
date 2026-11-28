@@ -86,6 +86,13 @@ async function runReclaim(preserveToken?: string): Promise<void> {
        and developed_at is null
        and created_at < now() - interval '48 hours'`,
   );
+  // A left swipe hides the frame immediately. Undo can still put it back.
+  // Once that chance is gone, the picture itself goes.
+  await sql(
+    `delete from photos
+     where discarded_at is not null
+       and discarded_at < now() - interval '2 hours'`,
+  );
   await sql(
     `delete from photos
      where event_id is null
@@ -646,6 +653,7 @@ export async function listLab(token: string): Promise<LabItem[]> {
      from photos p
      left join events e on e.id = p.event_id
      where p.shooter_token = $1
+       and p.discarded_at is null
        and (
          (p.event_id is null and p.published_at is null)
          or (p.event_id is not null and e.reveal_at > now())
@@ -946,6 +954,143 @@ export async function publishPhoto(id: string, token: string): Promise<{ publish
   const row = rows[0];
   if (!row) throw new HttpError(409, "That frame isn't ready to share.");
   return { publishedAt: num(row.published_ms) };
+}
+
+/**
+ * A left swipe removes the frame from the darkroom at once.
+ * The row stays only so undo can put that same frame back.
+ */
+export async function discardPhoto(id: string, token: string): Promise<void> {
+  const frames = await sql<{
+    shooter_token: string;
+    event_id: string | null;
+    published_at: string | null;
+    developed_at: string | null;
+    discarded_at: string | null;
+  }>(
+    `select shooter_token, event_id, published_at, developed_at, discarded_at from photos where id = $1`,
+    [id],
+  );
+  const frame = frames[0];
+  if (!frame) throw new HttpError(404, "That frame is already gone.");
+  if (frame.shooter_token !== token) throw new HttpError(403, "Only the person who shot it can delete it.");
+  if (frame.discarded_at) return;
+  if (frame.event_id || frame.published_at || frame.developed_at == null) {
+    throw new HttpError(409, "That frame stayed put.");
+  }
+  const rows = await sql<{ id: string }>(
+    `update photos
+     set discarded_at = now()
+     where id = $1
+       and shooter_token = $2
+       and event_id is null
+       and published_at is null
+       and developed_at is not null
+       and discarded_at is null
+     returning id`,
+    [id, token],
+  );
+  if (!rows[0]) throw new HttpError(409, "That frame stayed put.");
+}
+
+/** Undo of a left swipe. The frame is back in the darkroom. */
+export async function restorePhoto(id: string, token: string): Promise<void> {
+  const frames = await sql<{ shooter_token: string; discarded_at: string | null }>(
+    `select shooter_token, discarded_at from photos where id = $1`,
+    [id],
+  );
+  const frame = frames[0];
+  if (!frame) throw new HttpError(404, "That frame is already gone.");
+  if (frame.shooter_token !== token) throw new HttpError(403, "Only the person who shot it can delete it.");
+  if (!frame.discarded_at) return;
+  const rows = await sql<{ id: string }>(
+    `update photos set discarded_at = null where id = $1 and shooter_token = $2 and discarded_at is not null returning id`,
+    [id, token],
+  );
+  if (!rows[0]) throw new HttpError(404, "That frame is already gone.");
+}
+
+/**
+ * Undo of a right swipe. The frame leaves the feed and waits in the darkroom again.
+ * A gallery it joined on that post waits with it, the way it did before the swipe.
+ */
+export async function unpublishPhoto(id: string, token: string): Promise<void> {
+  const frames = await sql<{
+    shooter_token: string;
+    event_id: string | null;
+    developed_at: string | null;
+    published_at: string | null;
+    discarded_at: string | null;
+  }>(
+    `select shooter_token, event_id, developed_at, published_at, discarded_at from photos where id = $1`,
+    [id],
+  );
+  const frame = frames[0];
+  if (!frame) throw new HttpError(404, "That frame is already gone.");
+  if (frame.shooter_token !== token) throw new HttpError(403, "Only the person who shot it can take it down.");
+  if (frame.discarded_at || frame.event_id || frame.developed_at == null) {
+    throw new HttpError(409, "That frame isn't on the feed.");
+  }
+  if (frame.published_at == null) return;
+  const rows = await sql<{ album_id: string | null }>(
+    `update photos
+     set published_at = null,
+         for_album_id = coalesce(for_album_id, album_id),
+         album_id = null
+     where id = $1
+       and shooter_token = $2
+       and event_id is null
+       and developed_at is not null
+       and published_at is not null
+       and discarded_at is null
+     returning for_album_id as album_id`,
+    [id, token],
+  );
+  const restored = text(rows[0]?.album_id);
+  if (!rows[0]) throw new HttpError(409, "That frame isn't on the feed.");
+  if (!restored) return;
+  await sql(`delete from album_photos where album_id = $1 and photo_id = $2`, [restored, id]);
+  await sql(`update albums set cover_photo_id = null where id = $1 and cover_photo_id = $2`, [restored, id]);
+}
+
+/**
+ * The caption on a frame that just went to the feed.
+ * After that short window the line stays, the same as any other post.
+ */
+export async function captionPostedPhoto(id: string, token: string, caption: string): Promise<{ caption: string }> {
+  const frames = await sql<{ shooter_token: string; fresh: boolean; published_at: string | null }>(
+    `select
+       shooter_token,
+       (
+         event_id is null
+         and discarded_at is null
+         and published_at is not null
+         and published_at > now() - interval '30 minutes'
+       ) as fresh,
+       published_at
+     from photos
+     where id = $1`,
+    [id],
+  );
+  const frame = frames[0];
+  if (!frame) throw new HttpError(404, "That frame is gone.");
+  if (frame.shooter_token !== token) throw new HttpError(403, "Only the person who shot it can caption it.");
+  if (!flag(frame.fresh)) throw new HttpError(409, "That caption is locked.");
+  const rows = await sql<{ caption: string }>(
+    `update photos
+     set caption = $3
+     where id = $1
+       and shooter_token = $2
+       and event_id is null
+       and discarded_at is null
+       and published_at is not null
+       and published_at > now() - interval '30 minutes'
+     returning caption`,
+    [id, token, caption],
+  );
+  const row = rows[0];
+  if (!row) throw new HttpError(409, "That caption is locked.");
+  return { caption: row.caption };
 }
 
 export async function deletePhoto(id: string, token: string): Promise<void> {

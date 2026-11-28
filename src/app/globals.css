@@ -2927,14 +2927,27 @@ button.byline .byline-name { text-decoration: underline; text-underline-offset: 
 .lab-caption-prompt .primary { margin-top: 0; }
 .lab-undo-mini {
   align-self: center;
-  margin-top: 10px;
-  padding: 4px 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: max-content;
+  max-width: 100%;
+  margin: 12px auto 0;
+  padding: 8px 14px;
   border: 0;
+  border-radius: 999px;
   background: transparent;
   color: var(--muted);
   font-size: 12px;
-  letter-spacing: 0.12em;
+  font-weight: 600;
+  line-height: 1;
   text-transform: uppercase;
+}
+.lab-undo-mini span {
+  display: block;
+  line-height: 1;
+  letter-spacing: 0.14em;
+  margin-right: -0.14em;
 }
 .lab-swipe-well .lab-swipe-pending {
   position: absolute;
