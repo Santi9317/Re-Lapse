@@ -11,7 +11,7 @@
  * public/release.json "icon" and "previousIcon" match src/lib/icon-prompt.ts.
  * The Home Screen prompt shows only when those digests differ.
  */
-export const APP_VERSION = "1.84.3";
+export const APP_VERSION = "1.84.4";
 
 export type Release = {
   version: string;

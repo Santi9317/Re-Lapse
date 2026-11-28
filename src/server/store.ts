@@ -1048,8 +1048,8 @@ export async function setSticker(photoId: string, token: string, emoji: string):
   if (!isEmoji(emoji)) throw new HttpError(400, "Pick an emoji.");
   const profile = await readOwnProfile(token);
   if (!profile) throw new HttpError(409, "Name yourself first.");
-  const frame = await requireFeedFrame(photoId);
-  if (frame.shooter_token === token) throw new HttpError(403, "Stick a frame that isn't yours.");
+  // The person who shot the frame can stick it, the same as anyone else on the feed.
+  await requireFeedFrame(photoId);
   const placed = await sql<{ x: number | null; y: number | null }>(
     `select x, y from stickers where photo_id = $1 order by created_at, id`,
     [photoId],

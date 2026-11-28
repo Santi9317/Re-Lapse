@@ -27,6 +27,12 @@ test("only the person who placed an emoji, or the frame's owner, can move it", (
   assert.equal(canMoveSticker({ onFeed: true, stickerMine: false, frameMine: false }), false);
   assert.equal(canMoveSticker({ onFeed: false, stickerMine: true, frameMine: true }), false);
   const print = readFileSync(new URL("../components/Print.tsx", import.meta.url), "utf8");
+  const feed = readFileSync(new URL("../components/Feed.tsx", import.meta.url), "utf8");
+  const gallery = readFileSync(new URL("../components/Gallery.tsx", import.meta.url), "utf8");
   assert.match(print, /canMoveSticker/);
   assert.match(print, /data-can-move=\{movable \? "true" : "false"\}/);
+  assert.match(print, /const reactable = Boolean\(onStickers\);/);
+  assert.equal(print.includes("Boolean(onStickers) && !item.mine"), false);
+  assert.match(feed, /onStickers=\{onStickers\}/);
+  assert.equal(gallery.includes("onStickers"), false);
 });
