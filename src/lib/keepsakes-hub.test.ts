@@ -3,15 +3,15 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { keepsakesHubOpen } from "./keepsakes-hub.ts";
 
-test("the landing stays closed unless the address asks for it", () => {
-  assert.equal(keepsakesHubOpen(""), false);
-  assert.equal(keepsakesHubOpen("?join=ABC123"), false);
-  assert.equal(keepsakesHubOpen("?keepsakes=list"), false);
+test("opening keepsakes is the two halves, with or without a query", () => {
+  assert.equal(keepsakesHubOpen(""), true);
+  assert.equal(keepsakesHubOpen("?join=ABC123"), true);
+  assert.equal(keepsakesHubOpen("?keepsakes=list"), true);
   assert.equal(keepsakesHubOpen("?keepsakes=hub"), true);
   assert.equal(keepsakesHubOpen("?join=ABC123&keepsakes=hub"), true);
 });
 
-test("the tab still opens the combined keepsakes list, and the hub is two halves", () => {
+test("the tab opens the hub, and the hub is two halves", () => {
   const app = readFileSync(new URL("../components/App.tsx", import.meta.url), "utf8");
   const rolls = readFileSync(new URL("../components/Rolls.tsx", import.meta.url), "utf8");
   const hub = readFileSync(new URL("../components/KeepsakesHub.tsx", import.meta.url), "utf8");

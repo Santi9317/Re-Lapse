@@ -183,11 +183,11 @@ export function Gallery({
   }
 
   async function removePhoto(photoId: string) {
-    if (busy) return;
+    if (!detail || busy) return;
     setBusy(true);
     setError("");
     try {
-      await filePhoto(photoId, null);
+      await filePhoto(photoId, detail.album.id, true);
       reload();
     } catch (err) {
       setError(err instanceof Error ? err.message : "That photo stayed in.");

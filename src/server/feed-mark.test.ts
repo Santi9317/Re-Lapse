@@ -139,4 +139,19 @@ test("another emoji stays beside the ones already on the frame", async () => {
   assert.equal(onBea.some((sticker) => sticker.emoji === "🌙"), true);
   const parked = onBea.find((sticker) => sticker.id === moon?.id);
   assert.ok(parked && moon && Math.abs(parked.pinnedAt - moon.pinnedAt) < 1_500);
+
+  const cam = randomUUID();
+  const camId = randomUUID();
+  await sql(`insert into cameras (token, created_at) values ($1, now())`, [cam]);
+  await sql(
+    `insert into profiles (id, shooter_token, username, emoji_1, emoji_2, emoji_3, carousel)
+     values ($1, $2, 'Cam', '📷', '✨', '🌈', '[]')`,
+    [camId, cam],
+  );
+  await assert.rejects(
+    () => moveSticker(beaPhoto, cam, moon?.id ?? "", 20, 30),
+    (err: unknown) => err instanceof HttpError && err.status === 403,
+  );
+  const byPlacer = await moveSticker(beaPhoto, ada, moon?.id ?? "", 22, 30);
+  assert.equal(byPlacer.find((sticker) => sticker.id === moon?.id)?.x, 22);
 });

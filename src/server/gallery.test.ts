@@ -101,3 +101,44 @@ test("a gallery is the owner's photos, with a cover, and delete keeps those phot
   assert.equal(await getAlbum(made.id, ada), null);
   assert.equal((await readPublicProfile(adaId))?.galleries.length, 0);
 });
+
+test("adding a photo to a second gallery leaves it in the first", async () => {
+  const ada = randomUUID();
+  const adaId = randomUUID();
+  const shot = randomUUID();
+  const proof = await cameraProof(ada);
+  await camera(ada);
+  await sql(
+    `insert into profiles (id, shooter_token, username, emoji_1, emoji_2, emoji_3, carousel)
+     values ($1, $2, 'Ada', '📷', '✨', '🌈', '[]')`,
+    [adaId, ada],
+  );
+  await sql(
+    `insert into photos (id, shooter_token, caption, image_b64, created_at, ready_at, developed_at, published_at)
+     values ($1, $2, 'Shared', $3, now() - interval '4 minutes', now(), now(), now() - interval '4 minutes')`,
+    [shot, ada, image],
+  );
+  const first = await createAlbum("Sunday", ada, proof);
+  const second = await createAlbum("Monday", ada, proof);
+  await filePhoto(shot, ada, first.id);
+  await filePhoto(shot, ada, second.id);
+
+  const sunday = await getAlbum(first.id, ada);
+  const monday = await getAlbum(second.id, ada);
+  assert.equal(sunday?.photos.some((photo) => photo.id === shot), true);
+  assert.equal(monday?.photos.some((photo) => photo.id === shot), true);
+  assert.equal(sunday?.photos.find((photo) => photo.id === shot)?.albumId, first.id);
+  const ids = sunday?.photos.find((photo) => photo.id === shot)?.albumIds ?? [];
+  assert.equal(ids.includes(first.id), true);
+  assert.equal(ids.includes(second.id), true);
+  assert.equal(sunday?.album.frameCount, 1);
+  assert.equal(monday?.album.frameCount, 1);
+
+  await filePhoto(shot, ada, second.id, true);
+  const stillSunday = await getAlbum(first.id, ada);
+  const afterMonday = await getAlbum(second.id, ada);
+  assert.equal(stillSunday?.photos.some((photo) => photo.id === shot), true);
+  assert.equal(afterMonday?.photos.some((photo) => photo.id === shot), false);
+  const row = await sql<{ album_id: string | null }>(`select album_id from photos where id = $1`, [shot]);
+  assert.equal(row[0]?.album_id, first.id);
+});

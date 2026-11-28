@@ -43,10 +43,14 @@ export function Profile({
   revision,
   refresh = 0,
   onShootGallery,
+  onFeatureWalk,
+  onProfileCreated,
 }: {
   revision: number;
   refresh?: number;
   onShootGallery?: (gallery: GalleryRoll) => void;
+  onFeatureWalk?: () => void;
+  onProfileCreated?: () => void;
 }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [draft, setDraft] = useState<Profile>(emptyProfile);
@@ -95,6 +99,7 @@ export function Profile({
           setGalleries(created.galleries ?? []);
           saved = withCameraPortrait(profileFromServer(created), local);
           saveProfile(saved);
+          onProfileCreated?.();
         } else if (remote) {
           storeCameraProfile(saved);
         }
@@ -202,6 +207,7 @@ export function Profile({
   async function persist(next: Profile, replaceRemoved = false): Promise<Profile | null> {
     const ticket = write.current + 1;
     write.current = ticket;
+    const creating = !profile || !profileReady(profile);
     const remoteProfile = await saveOwnProfile(profilePatch(next, profile), { replaceRemoved });
     if (ticket !== write.current) return null;
     setGalleries(remoteProfile.galleries ?? []);
@@ -214,6 +220,7 @@ export function Profile({
     const saved = withCameraPortrait(remote, { ...next, avatarDataUrl: bytes });
     saveProfile(saved);
     setProfile(saved);
+    if (creating && profileReady(saved)) onProfileCreated?.();
     return saved;
   }
 
@@ -299,7 +306,7 @@ export function Profile({
   if (!profile || !mode) {
     return (
       <div className="profile-screen" data-screen="profile">
-        <Sleeve />
+        <Sleeve onFeatureWalk={onFeatureWalk} />
         <PullRefresh onRefresh={refreshYou}>{null}</PullRefresh>
       </div>
     );
@@ -311,7 +318,7 @@ export function Profile({
 
   return (
     <div className="profile-screen" data-screen="profile" data-mode={mode}>
-      <Sleeve />
+      <Sleeve onFeatureWalk={onFeatureWalk} />
       <PullRefresh onRefresh={refreshYou}>
       {formError ? <p className="error">{formError}</p> : null}
       {mode === "page" ? (

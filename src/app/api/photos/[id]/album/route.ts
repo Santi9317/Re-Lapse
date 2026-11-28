@@ -14,7 +14,7 @@ export async function PATCH(request: Request, ctx: Ctx) {
     const photoId = requireUuid(id, "That frame is gone.");
     const body = asRecord(await readJson(request));
     const token = await requireMember(request);
-    await filePhoto(photoId, token, optionalUuid(body.albumId));
+    await filePhoto(photoId, token, optionalUuid(body.albumId), body.remove === true);
     return json({ ok: true });
   } catch (error) {
     return toErrorResponse(error);

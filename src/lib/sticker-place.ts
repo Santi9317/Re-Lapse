@@ -59,6 +59,12 @@ export function nextStickerSpot(taken: readonly { x: number; y: number }[]): { x
   return stickerSpot(taken.length);
 }
 
+/** The person who placed the emoji, and the person who shot the frame, can drag it. */
+export function canMoveSticker(input: { onFeed: boolean; stickerMine: boolean; frameMine: boolean }): boolean {
+  if (!input.onFeed) return false;
+  return input.stickerMine || input.frameMine;
+}
+
 /** Keep a dragged sticker on the photo. */
 export function clampStickerPoint(x: number, y: number): { x: number; y: number } {
   const clamp = (value: number) => Math.min(100 - EDGE, Math.max(EDGE, value));

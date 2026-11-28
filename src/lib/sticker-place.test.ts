@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
-import { clampStickerPoint, nextStickerSpot, readStickerSpot, stickerSpot, stickerTilt } from "./sticker-place.ts";
+import { canMoveSticker, clampStickerPoint, nextStickerSpot, readStickerSpot, stickerSpot, stickerTilt } from "./sticker-place.ts";
 
 test("a sticker keeps an edge spot and a small tilt", () => {
   assert.deepEqual(stickerSpot(0), { x: 12, y: 10 });
@@ -18,4 +19,14 @@ test("the next sticker takes an open edge, and a drag stays on the photo", () =>
   assert.deepEqual(nextStickerSpot(crowded), stickerSpot(24));
   assert.deepEqual(clampStickerPoint(-4, 140), { x: 8, y: 92 });
   assert.deepEqual(clampStickerPoint(40.04, 60.06), { x: 40, y: 60.1 });
+});
+
+test("only the person who placed an emoji, or the frame's owner, can move it", () => {
+  assert.equal(canMoveSticker({ onFeed: true, stickerMine: true, frameMine: false }), true);
+  assert.equal(canMoveSticker({ onFeed: true, stickerMine: false, frameMine: true }), true);
+  assert.equal(canMoveSticker({ onFeed: true, stickerMine: false, frameMine: false }), false);
+  assert.equal(canMoveSticker({ onFeed: false, stickerMine: true, frameMine: true }), false);
+  const print = readFileSync(new URL("../components/Print.tsx", import.meta.url), "utf8");
+  assert.match(print, /canMoveSticker/);
+  assert.match(print, /data-can-move=\{movable \? "true" : "false"\}/);
 });

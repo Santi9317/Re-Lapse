@@ -2796,7 +2796,7 @@ button.byline .byline-name { text-decoration: underline; text-underline-offset: 
   text-align: center;
 }
 
-/* Lab swipe preview. The live lab is unchanged. */
+/* Lab swipe. The live lab uses this deck. Soup opens the chemistry list. */
 .lab-swipe {
   flex: 1;
   min-height: 0;
@@ -2875,10 +2875,13 @@ button.byline .byline-name { text-decoration: underline; text-underline-offset: 
   overflow: hidden;
   background: #d9cbb8;
 }
-.lab-swipe-photo svg {
+.lab-swipe[data-live="true"] { padding-bottom: 8px; }
+.lab-swipe-photo svg,
+.lab-swipe-photo img {
   display: block;
   width: 100%;
   height: 100%;
+  object-fit: cover;
 }
 .lab-swipe-grain {
   position: absolute;
@@ -3074,4 +3077,48 @@ button.byline .byline-name { text-decoration: underline; text-underline-offset: 
 }
 @media (prefers-reduced-motion: reduce) {
   .lab-swipe-card { transition: none; }
+}
+
+.feature-walk {
+  position: absolute;
+  inset: 0;
+  z-index: 28;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: calc(18px + var(--safe-top)) 16px calc(18px + var(--safe-bottom));
+  background:
+    radial-gradient(ellipse at 50% 30%, rgba(180, 75, 255, 0.2), transparent 46%),
+    rgba(7, 6, 15, 0.96);
+  overflow: auto;
+}
+.feature-walk h2 {
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: 28px;
+  line-height: 1.2;
+  margin: 0;
+}
+.feature-walk-frame {
+  display: grid;
+  place-items: center;
+  width: min(100%, 320px);
+  aspect-ratio: 4 / 5;
+  margin: 4px auto;
+  padding: 16px;
+  border-radius: 18px;
+  background: var(--paper);
+  color: #7a3b22;
+  overflow: hidden;
+}
+.feature-walk-frame img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 12px;
+}
+.feature-walk-frame .frame-note-text {
+  font-size: 28px;
+  line-height: 1.25;
+  text-align: center;
 }

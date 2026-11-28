@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { blobToBase64, chooseChemistry, developPhoto, deletePhoto, fetchLab, fetchLatent, fetchPrivateImage, publishPhoto, updateCaption } from "@/lib/api";
 import { CaptionField } from "@/components/CaptionField";
 import { developBath, heldChemistry, isExtraChemistry, nextChemistry, type ExtraChemistry } from "@/lib/chemistry";
@@ -11,7 +11,6 @@ import { lapseQuip } from "@/lib/quips";
 import { ensurePhotoFile, iosPhotosTarget, readyPhotoFile, rememberPhotoBlob, shareOrSave } from "@/lib/save";
 import type { Chemistry, LabItem, LabState } from "@/lib/types";
 import { PullRefresh } from "@/components/PullRefresh";
-import { useWalk, WalkMark, WalkTip } from "@/components/Walkthrough";
 
 const EXTRA_BATHS: { id: ExtraChemistry; label: string }[] = [
   { id: "daylight", label: "Daylight" },
@@ -29,11 +28,13 @@ export function Lab({
   refresh = 0,
   onPublished,
   onDeleted,
+  leading = null,
 }: {
   revision: number;
   refresh?: number;
   onPublished: () => void;
   onDeleted?: () => void;
+  leading?: ReactNode;
 }) {
   const [items, setItems] = useState<LabItem[]>([]);
   const [now, setNow] = useState(() => Date.now());
@@ -249,11 +250,9 @@ export function Lab({
     }
   }
 
-  const firstDeveloped = items.find((item) => cardState(item, now) === "developed")?.id ?? null;
-  const labWalk = useWalk("lab", firstDeveloped !== null);
-
   return (
     <PullRefresh data-screen="lab" onRefresh={() => loadRef.current()}>
+      {leading}
       {error ? <p className="error">{error}</p> : null}
       <label className="stamp-toggle" data-date-stamp={stamp ? "on" : "off"}>
         <input
@@ -363,10 +362,6 @@ export function Lab({
                     ) : null}
                   </>
                 )}
-                {item.id === firstDeveloped && labWalk.visible ? (
-                  <WalkTip id="lab" onDismiss={labWalk.dismiss} onSkip={labWalk.skip} onLater={labWalk.later} />
-                ) : null}
-                {item.id === firstDeveloped && labWalk.mark ? <WalkMark id="lab" onOpen={labWalk.revisit} /> : null}
                 <div className="lab-actions">
                   {state === "developed" ? (
                     <button

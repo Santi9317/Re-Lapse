@@ -1,8 +1,6 @@
 /**
- * Workshop landing for Keepsakes. The tab still opens the combined list
- * until the address asks for this screen.
+ * Keepsakes opens on the two halves. The address does not pick a different landing.
  */
-export function keepsakesHubOpen(search: string): boolean {
-  const query = search.startsWith("?") ? search.slice(1) : search;
-  return new URLSearchParams(query).get("keepsakes") === "hub";
+export function keepsakesHubOpen(_search = ""): boolean {
+  return true;
 }

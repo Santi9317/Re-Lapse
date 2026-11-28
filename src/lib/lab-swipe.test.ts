@@ -80,18 +80,19 @@ test("preview poses are the workshop stills", () => {
   assert.equal(poseOffset("delete"), -156);
 });
 
-test("the swipe preview is not wired into the live lab", () => {
+test("the lab tab is the swipe, and soup opens the chemistry list", () => {
   const app = readFileSync(new URL("../components/App.tsx", import.meta.url), "utf8");
   const lab = readFileSync(new URL("../components/Lab.tsx", import.meta.url), "utf8");
+  const deck = readFileSync(new URL("../components/LabDeck.tsx", import.meta.url), "utf8");
   const page = readFileSync(new URL("../app/preview/lab/page.tsx", import.meta.url), "utf8");
-  assert.match(app, /from "@\/components\/Lab"/);
-  assert.doesNotMatch(app, /LabSwipe/);
-  assert.doesNotMatch(lab, /lab-swipe/);
+  assert.match(app, /LabDeck/);
+  assert.doesNotMatch(app, /<Lab[\s>]/);
+  assert.match(deck, /data-screen="lab"/);
+  assert.match(deck, /data-open-soup/);
+  assert.match(deck, /data-close-soup/);
+  assert.match(deck, /<Lab/);
+  assert.match(deck, /Swipe right to keep, swipe left to delete/);
+  assert.match(lab, /Additional chemistry/);
   assert.match(page, /LabSwipePreview/);
   assert.match(page, /robots: \{ index: false, follow: false \}/);
-  const swipe = readFileSync(new URL("../components/LabSwipe.tsx", import.meta.url), "utf8");
-  assert.match(swipe, /data-open-soup/);
-  assert.match(swipe, /data-lab-swipe="soup"/);
-  assert.match(swipe, /nextChemistry/);
-  assert.match(swipe, /Additional chemistry/);
 });
