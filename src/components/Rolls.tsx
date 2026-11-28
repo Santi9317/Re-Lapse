@@ -15,6 +15,7 @@ import {
 } from "@/lib/api";
 import { CaptionField } from "@/components/CaptionField";
 import { Gallery, GalleryCardButton } from "@/components/Gallery";
+import { KeepsakesHub } from "@/components/KeepsakesHub";
 import { PhotoStrip, StripShot } from "@/components/PhotoStrip";
 import { capsuleWindow, EVENT_START_AHEAD_MS, EVENT_START_SKEW_MS } from "@/lib/clock";
 import { clockLabel, dateTimeLocalMs, dateTimeLocalValue, frames, longRemain } from "@/lib/format";
@@ -72,6 +73,7 @@ function inviteLink(code: string): string {
 }
 
 export function Rolls({
+  hub = false,
   revision,
   refresh = 0,
   focusEventId,
@@ -81,6 +83,7 @@ export function Rolls({
   onShared,
   onFocusConsumed,
 }: {
+  hub?: boolean;
   revision: number;
   refresh?: number;
   focusEventId?: string | null;
@@ -104,6 +107,7 @@ export function Rolls({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [now, setNow] = useState(() => Date.now());
+  const [lane, setLane] = useState<"all" | "hub" | "galleries" | "capsules">(hub ? "hub" : "all");
   const [galleryId, setGalleryId] = useState<string | null>(null);
   const [eventDetail, setEventDetail] = useState<EventDetail | null>(null);
   const [open, setOpen] = useState<FeedItem | null>(null);
@@ -391,6 +395,7 @@ export function Rolls({
         id={galleryId}
         refresh={refresh + revision}
         place="keepsakes"
+        backLabel={lane === "galleries" ? "Galleries" : "Keepsakes"}
         onBack={() => {
           setGalleryId(null);
           setTick((value) => value + 1);
@@ -416,7 +421,7 @@ export function Rolls({
             setTick((value) => value + 1);
           }}
         >
-          ← Keepsakes
+          ← {lane === "capsules" ? "Time Capsules" : "Keepsakes"}
         </button>
         <span className="pill" data-status={eventDetail.status}>{line}</span>
         <h2 className="word" style={{ fontSize: 40, marginTop: 10 }}>{eventDetail.name}</h2>
@@ -593,12 +598,8 @@ export function Rolls({
   const preview = capsuleWindow(Math.max(chosen ?? now, now), hours);
   const openFor = hours === 1 ? "1 hour" : `${hours} hours`;
 
-  return (
-    <div className="scroll" data-screen="keepsakes">
-      <p className="fine">
-        Keepsakes are galleries of your photos. Pick when a timecapsule opens. It stays open for 1 to 24 hours, then the whole album seals for a day. Invite people onto it, and pick what hits the feed.
-      </p>
-      {error || joinNotice ? <p className="error">{error || joinNotice}</p> : null}
+  const galleriesPane = (
+    <>
       <h2 className="section">Galleries</h2>
       <div className="row">
         <input
@@ -627,6 +628,11 @@ export function Rolls({
           ))}
         </div>
       )}
+    </>
+  );
+
+  const capsulesPane = (
+    <>
       <h2 className="section">Timecapsules</h2>
       <input
         className="field"
@@ -722,6 +728,44 @@ export function Rolls({
           </button>
         ))
       )}
+    </>
+  );
+
+  if (lane === "hub") {
+    return (
+      <KeepsakesHub
+        onGalleries={() => {
+          setError("");
+          setLane("galleries");
+        }}
+        onCapsules={() => {
+          setError("");
+          setLane("capsules");
+        }}
+      />
+    );
+  }
+
+  if (lane === "galleries" || lane === "capsules") {
+    return (
+      <div className="scroll" data-screen={lane === "galleries" ? "keepsakes-galleries" : "keepsakes-capsules"}>
+        <button className="ghost back" type="button" onClick={() => setLane("hub")}>
+          ← Keepsakes
+        </button>
+        {error || joinNotice ? <p className="error">{error || joinNotice}</p> : null}
+        {lane === "galleries" ? galleriesPane : capsulesPane}
+      </div>
+    );
+  }
+
+  return (
+    <div className="scroll" data-screen="keepsakes">
+      <p className="fine">
+        Keepsakes are galleries of your photos. Pick when a timecapsule opens. It stays open for 1 to 24 hours, then the whole album seals for a day. Invite people onto it, and pick what hits the feed.
+      </p>
+      {error || joinNotice ? <p className="error">{error || joinNotice}</p> : null}
+      {galleriesPane}
+      {capsulesPane}
     </div>
   );
 }

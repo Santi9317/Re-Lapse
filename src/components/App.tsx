@@ -12,6 +12,7 @@ import {
   watchIosBadgePermission,
 } from "@/lib/badge";
 import { bannerOpensQuote } from "@/lib/banner-quote";
+import { keepsakesHubOpen } from "@/lib/keepsakes-hub";
 import { noteFeedLook } from "@/lib/feed-mark";
 import { recallNotes } from "@/lib/note-seen";
 import { recallStickers } from "@/lib/sticker-seen";
@@ -32,7 +33,7 @@ import { Shoot } from "@/components/Shoot";
 const lede: Record<Exclude<MainTab, "shoot">, string> = {
   lab: "Let them lapse. Develop when the clock hits zero, tinker with the bath. 🧪",
   feed: "Everyone with this link. A frame stays up for a week, then it lapses. ✨",
-  rolls: "Your galleries, and timecapsules that open, then seal. 🎞️",
+  rolls: "Your galleries, and timecapsules that open, then seal.",
   you: "Set your name, photo, and three emojis. They show on the frames you share.",
 };
 
@@ -114,6 +115,7 @@ function catchFeed(photos: FeedItem[], feedVisible: boolean): number {
 
 function CameraDesk() {
   const [tab, setTab] = useState<MainTab>("shoot");
+  const [keepsakesHub] = useState(() => keepsakesHubOpen(window.location.search));
   const [landed, setLanded] = useState(0);
   const tabNow = useRef<MainTab>("shoot");
   tabNow.current = tab;
@@ -346,6 +348,7 @@ function CameraDesk() {
               {tab === "you" ? <Profile revision={feedRevision} refresh={landed} /> : null}
               {tab === "rolls" ? (
                 <Rolls
+                  hub={keepsakesHub}
                   revision={feedRevision}
                   refresh={landed}
                   focusEventId={focusEventId}
