@@ -2196,9 +2196,124 @@ button.byline .byline-name { text-decoration: underline; text-underline-offset: 
   .drag-handle { display: none; }
 }
 
+.recap {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 16px 8px;
+}
+.phone.pin-tabs .recap {
+  padding-bottom: calc(8px + var(--tabbar));
+}
+.recap-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.recap-step {
+  color: var(--faint);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-size: 11px;
+}
+.recap-stage {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  touch-action: pan-y;
+  overflow: hidden;
+}
+.recap-card {
+  width: 100%;
+  min-width: 0;
+  max-height: 100%;
+}
+.recap-card[data-settle="in"] {
+  animation: recap-in 180ms ease-out;
+}
+@keyframes recap-in {
+  from { opacity: 0.35; transform: translateX(22px); }
+  to { opacity: 1; transform: none; }
+}
+.recap-print {
+  margin: 0;
+  max-height: 100%;
+  transform: rotate(-0.55deg);
+}
+.recap-print .frame {
+  position: relative;
+}
+.recap-print img {
+  width: 100%;
+  height: auto;
+  max-height: min(46dvh, 440px);
+  aspect-ratio: 4 / 5;
+  object-fit: cover;
+  pointer-events: none;
+  user-select: none;
+}
+.recap .sticker { pointer-events: none; }
+.recap-hint { margin: 0 4px; }
+.recap-wrap {
+  background: var(--paper);
+  color: var(--paper-ink);
+  border-radius: 18px;
+  padding: 22px 16px 16px;
+  transform: rotate(0.4deg);
+  box-shadow: 0 16px 32px rgba(0, 0, 0, 0.22);
+}
+.recap-wrap .kicker { color: #7a3b22; }
+.recap-wrap h2 {
+  font-family: var(--display);
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  font-size: 32px;
+  line-height: 1.05;
+  margin: 8px 0 16px;
+}
+.recap-stats {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.recap-stats li {
+  background: rgba(255, 253, 248, 0.78);
+  border-radius: 14px;
+  padding: 12px 10px 11px;
+}
+.recap-num {
+  display: block;
+  font-family: var(--display);
+  font-size: 42px;
+  line-height: 1;
+  color: #1a1028;
+}
+.recap-label {
+  display: block;
+  margin-top: 6px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 11px;
+  line-height: 1.3;
+  color: #7a3b22;
+}
+.recap-wrap .fine {
+  display: block;
+  margin: 14px 2px 0;
+  color: #7a3b22;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .thread .print, .tape, .identity { transform: none; }
-  .safelight, .flash { animation: none; }
+  .thread .print, .tape, .identity, .recap-print, .recap-wrap { transform: none; }
+  .safelight, .flash, .recap-card { animation: none; }
   .carousel-track { scroll-behavior: auto; }
 }
 
