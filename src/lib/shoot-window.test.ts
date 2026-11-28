@@ -39,6 +39,10 @@ test("the live window is the 4 by 5 cover the shutter saves", () => {
   assert.match(shoot, /className="shoot-window"/);
   assert.match(shoot, /className="shoot-print"/);
   assert.match(shoot, /className="viewfinder"/);
+  assert.match(shoot, /ref=\{shootRef\}/);
+  assert.match(shoot, /root\.addEventListener\("touchend", onEnd/);
+  const finder = shoot.slice(shoot.indexOf('className="viewfinder"'), shoot.indexOf('className="shoot-sizer"'));
+  assert.equal(finder.includes("onDoubleClick"), false);
   assert.match(shoot, /className="shutter"/);
   assert.match(shoot, /aria-label=\{lamp \? "Flash on" : "Flash off"\}/);
   assert.match(shoot, /captureFrame\(/);
