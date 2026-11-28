@@ -33,7 +33,7 @@ import { Shoot } from "@/components/Shoot";
 const lede: Record<Exclude<MainTab, "shoot">, string> = {
   lab: "Let them lapse. Develop when the clock hits zero, tinker with the bath. 🧪",
   feed: "Everyone with this link. A frame stays up for a week, then it lapses. ✨",
-  rolls: "Your galleries, and timecapsules that open, then seal. 🎞️",
+  rolls: "Your galleries, and timecapsules that open, then seal.",
   you: "Set your name, photo, and three emojis. They show on the frames you share.",
 };
 
