@@ -1,10 +1,14 @@
 export type FrameSticker = {
+  id: string;
   emoji: string;
   profileId: string;
   profileName: string;
   mine: boolean;
-  /** When this emoji was pinned. Changing the emoji moves it. */
+  /** When this emoji was pinned. */
   pinnedAt: number;
+  /** Center of this sticker, as a percent of the photo. */
+  x: number;
+  y: number;
 };
 
 export type FrameComment = {

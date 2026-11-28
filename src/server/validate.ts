@@ -1,6 +1,7 @@
 import { EVENT_START_AHEAD_MS, EVENT_START_SKEW_MS } from "@/lib/clock";
 import { FRAME_NOTE_LIMIT } from "@/lib/frame-note";
 import { CAROUSEL_LIMIT, isEmoji } from "@/lib/profile";
+import { clampStickerPoint } from "@/lib/sticker-place";
 import type { Chemistry, ProfilePatch } from "@/lib/types";
 import { cameraAuthFromCookie } from "@/server/camera-auth";
 import { HttpError } from "@/server/http";
@@ -42,6 +43,13 @@ export function cleanName(value: unknown): string {
 export function cleanStickerEmoji(value: unknown): string {
   if (typeof value !== "string" || !isEmoji(value)) throw new HttpError(400, "Pick an emoji.");
   return value;
+}
+
+export function cleanStickerPoint(x: unknown, y: unknown): { x: number; y: number } {
+  if (typeof x !== "number" || typeof y !== "number" || !Number.isFinite(x) || !Number.isFinite(y)) {
+    throw new HttpError(400, "That sticker stayed put.");
+  }
+  return clampStickerPoint(x, y);
 }
 
 export function cleanFrameNote(value: unknown): string {
