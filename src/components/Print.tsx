@@ -630,7 +630,8 @@ function FrameFace({
   const [noteRev, setNoteRev] = useState(0);
   const [quick, setQuick] = useState<string[]>([]);
   const quickRef = useRef<string[]>([]);
-  const reactable = Boolean(onStickers) && !item.mine;
+  // The feed passes onStickers for every frame, including one this camera shot.
+  const reactable = Boolean(onStickers);
   const ownPhoto = photoBackOpens(item.mine);
   const canOpenNotes = notes === "owner" ? ownPhoto : true;
   // The feed lets the person who shot the frame sign it, the same as anyone else.

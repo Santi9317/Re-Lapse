@@ -44,7 +44,7 @@ test("this publish carries the same notes the camera can show", () => {
   assert.deepEqual(
     [...RELEASE_NOTES],
     [
-      "A wrong gate key counts for this browser. Another visitor does not use up those tries.",
+      "Double-tap a photo you shot to place an emoji on it.",
     ],
   );
   const notes = RELEASE_NOTES.join("\n");
@@ -111,6 +111,7 @@ test("this publish carries the same notes the camera can show", () => {
     "Frames you can develop come first. Tap one, then swipe to keep or discard, and add a caption while you swipe.",
     "Darkroom keeps the countdown and the chemistry. A photo you just took shows up there.",
     "You can write and sign the back of a frame you shot, from the Feed.",
+    "A wrong gate key counts for this browser. Another visitor does not use up those tries.",
   ]) {
     assert.equal(notes.includes(older), false);
   }

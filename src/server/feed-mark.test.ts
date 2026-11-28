@@ -123,10 +123,9 @@ test("another emoji stays beside the ones already on the frame", async () => {
     () => removeSticker(beaPhoto, bea, held?.id ?? ""),
     (err: unknown) => err instanceof HttpError && err.status === 404,
   );
-  await assert.rejects(
-    () => setSticker(adaPhoto, ada, "🔥"),
-    (err: unknown) => err instanceof HttpError && err.status === 403,
-  );
+  const own = await setSticker(adaPhoto, ada, "🔥");
+  const fire = own.find((sticker) => sticker.emoji === "🔥");
+  assert.equal(fire?.mine, true);
   const peeled = await removeSticker(beaPhoto, ada, added?.id ?? "");
   assert.equal(peeled.some((sticker) => sticker.id === added?.id), false);
   assert.equal(peeled.filter((sticker) => sticker.mine).length, 2);
@@ -154,4 +153,16 @@ test("another emoji stays beside the ones already on the frame", async () => {
   );
   const byPlacer = await moveSticker(beaPhoto, ada, moon?.id ?? "", 22, 30);
   assert.equal(byPlacer.find((sticker) => sticker.id === moon?.id)?.x, 22);
+
+  const nudgedOwn = await moveSticker(adaPhoto, ada, fire?.id ?? "", 18, 70);
+  assert.equal(nudgedOwn.find((sticker) => sticker.id === fire?.id)?.x, 18);
+  assert.equal(nudgedOwn.find((sticker) => sticker.id === fire?.id)?.y, 70);
+  await assert.rejects(
+    () => moveSticker(adaPhoto, bea, fire?.id ?? "", 30, 40),
+    (err: unknown) => err instanceof HttpError && err.status === 403,
+  );
+  await assert.rejects(
+    () => moveSticker(adaPhoto, cam, fire?.id ?? "", 30, 40),
+    (err: unknown) => err instanceof HttpError && err.status === 403,
+  );
 });

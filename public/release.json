@@ -1,7 +1,7 @@
 {
-  "version": "1.84.3",
+  "version": "1.84.4",
   "notes": [
-    "A wrong gate key counts for this browser. Another visitor does not use up those tries."
+    "Double-tap a photo you shot to place an emoji on it."
   ],
   "icon": "0e6210f1bd3191d086e7c4deb1bb920768940cbf227f6f962125f415635d7665",
   "previousIcon": "0e6210f1bd3191d086e7c4deb1bb920768940cbf227f6f962125f415635d7665"
