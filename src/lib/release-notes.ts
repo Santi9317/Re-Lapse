@@ -19,6 +19,7 @@ export const RELEASE_NOTES = [
   "The Feed opens with a swipe recap of new frames, then a wrap-up of new notes and reactions.",
   "One print at a time. Swipe right keeps, swipe left deletes, and undo lasts until you leave the tab. Soup opens the chemistry list.",
   "A gallery has a Shoot button. Those photos still develop, and keeping one files it in that gallery. The marker matches a time capsule.",
+  "Every tab can be pulled down to refresh, and the tab shows Release, then Refreshing.",
 ] as const;
 
 export type PublishedRelease = {
