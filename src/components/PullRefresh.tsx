@@ -17,8 +17,8 @@ const FIELD = "input, textarea, select, [contenteditable='true']";
 type Phase = "idle" | "pulling" | "refreshing";
 
 function wordFor(phase: Phase, pulled: number): string {
-  if (phase === "refreshing") return "Refreshing";
-  if (phase === "pulling" && pullCommits(pulled)) return "Release";
+  if (phase === "refreshing") return "In the soup";
+  if (phase === "pulling" && pullCommits(pulled)) return "A little more";
   return "Pull";
 }
 
