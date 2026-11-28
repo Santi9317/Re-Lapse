@@ -44,9 +44,8 @@ test("this publish carries the same notes the camera can show", () => {
   assert.deepEqual(
     [...RELEASE_NOTES],
     [
-      "Darkroom is the thin button at the top again.",
-      "Swipe left deletes that photo. Swipe right posts it to the Feed.",
-      "Skip a caption with one tap. Undo puts the last photo back.",
+      "A photo you swipe left cannot be posted until undo brings it back.",
+      "The walk says the Feed, emojis, and signatures once each.",
     ],
   );
   const notes = RELEASE_NOTES.join("\n");

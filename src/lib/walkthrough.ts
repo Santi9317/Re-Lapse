@@ -31,7 +31,7 @@ export const FEATURE_WALK: readonly FeatureWalkStep[] = [
     id: "signatures",
     kicker: "Signatures",
     title: "On the back",
-    line: "Tap once to flip the frame and write on the back. Frames with new unopened signatures glow blue. Frames glow blue when they have unread signatures. When you leave, the sample is gone.",
+    line: "Tap once to flip the frame and write on the back. Frames glow blue for new unopened signatures and for unread signatures. When you leave, the sample is gone.",
   },
 ];
 

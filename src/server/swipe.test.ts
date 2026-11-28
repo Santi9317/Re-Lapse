@@ -110,6 +110,42 @@ test("undo of a gallery post files it back where it was waiting", async () => {
   assert.equal((await listLab(token)).some((photo) => photo.id === id), true);
 });
 
+test("a left swipe closes the older publish route until undo", async () => {
+  const owner = randomUUID();
+  const other = randomUUID();
+  const proof = await cameraProof(owner);
+  await camera(owner);
+  await camera(other);
+  const album = await createAlbum("Sunday", owner, proof);
+  const id = await developed(owner, proof, album.id);
+
+  await discardPhoto(id, owner);
+  await assert.rejects(publishPhoto(id, owner), (error: unknown) => {
+    assert.ok(error instanceof HttpError);
+    assert.equal(error.status, 409);
+    return true;
+  });
+  await assert.rejects(publishPhoto(id, other), (error: unknown) => {
+    assert.ok(error instanceof HttpError);
+    assert.equal(error.status, 409);
+    return true;
+  });
+  assert.equal((await listFeed(owner)).some((photo) => photo.id === id), false);
+  assert.equal((await listLab(owner)).some((photo) => photo.id === id), false);
+  assert.equal((await getAlbum(album.id, owner))?.photos.some((photo) => photo.id === id), false);
+  const held = await sql<{ published_at: string | null; discarded_at: string | null }>(
+    `select published_at, discarded_at from photos where id = $1`,
+    [id],
+  );
+  assert.equal(held[0]?.published_at, null);
+  assert.ok(held[0]?.discarded_at);
+
+  await restorePhoto(id, owner);
+  await publishPhoto(id, owner);
+  assert.equal((await listFeed(owner)).some((photo) => photo.id === id), true);
+  assert.equal((await getAlbum(album.id, owner))?.photos.some((photo) => photo.id === id), true);
+});
+
 test("a fresh caption locks after the post settles, and only the shooter can take the swipe back", async () => {
   const owner = randomUUID();
   const other = randomUUID();

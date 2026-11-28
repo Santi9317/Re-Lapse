@@ -21,10 +21,17 @@ test("the walk is the feed, then emojis, then signatures", () => {
   assert.equal(/flip|signature|\bback\b/i.test(emoji?.line ?? ""), false);
 
   assert.match(signatures?.line ?? "", /Tap once to flip the frame and write on the back/);
-  assert.match(signatures?.line ?? "", /new unopened signatures glow blue/i);
-  assert.match(signatures?.line ?? "", /Frames glow blue when they have unread signatures/);
+  assert.match(signatures?.line ?? "", /Frames glow blue for new unopened signatures and for unread signatures/);
+  assert.equal((signatures?.line ?? "").match(/glow blue/gi)?.length, 1);
   assert.match(signatures?.line ?? "", /sample is gone/);
   assert.equal(/emoji|Double-tap|drag|Remove/i.test(signatures?.line ?? ""), false);
+  const sentences = FEATURE_WALK.flatMap((step) =>
+    step.line
+      .split(/(?<=\.)\s+/)
+      .map((sentence) => sentence.trim())
+      .filter((sentence) => sentence.length > 0),
+  );
+  assert.equal(new Set(sentences).size, sentences.length);
   assert.equal(FEATURE_WALK_KEY, "relapse.featureWalk");
 });
 
