@@ -2,8 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import { LabFrame, type FrameScene } from "@/components/LabSwipeFrames";
+import { isExtraChemistry, nextChemistry, type ExtraChemistry } from "@/lib/chemistry";
+import { countdown } from "@/lib/format";
 import { lapseQuip } from "@/lib/quips";
 import type { MainTab } from "@/lib/refresh";
+import type { Chemistry } from "@/lib/types";
 import {
   commitSwipe,
   poseOffset,
@@ -131,6 +134,18 @@ export function LabSwipePreview({ pose }: { pose: LabPose | null }) {
   };
   const board = scripted ?? live;
   const onLab = scripted ? true : tab === "lab";
+  const [soupOpen, setSoupOpen] = useState(false);
+  const showSoup = pose === "soup" || (pose === null && soupOpen);
+
+  function openSoup() {
+    if (scripted) return;
+    setSoupOpen(true);
+  }
+
+  function closeSoup() {
+    if (scripted) return;
+    setSoupOpen(false);
+  }
 
   return (
     <div className="desk">
@@ -140,12 +155,15 @@ export function LabSwipePreview({ pose }: { pose: LabPose | null }) {
           <p className="lede">Right keeps the print. Left lets it go.</p>
         </header>
         <div className="stage">
-          {onLab ? (
+          {onLab && showSoup ? (
+            <SoupList onClose={closeSoup} />
+          ) : onLab ? (
             <LabBoard
               board={board}
               posed={Boolean(scripted)}
               onCommit={commit}
               onUndo={undoSwipe}
+              onSoup={openSoup}
               settleRef={settleRef}
             />
           ) : (
@@ -178,12 +196,14 @@ function LabBoard({
   posed,
   onCommit,
   onUndo,
+  onSoup,
   settleRef,
 }: {
   board: Board;
   posed: boolean;
   onCommit: (verdict: SwipeVerdict) => void;
   onUndo: () => void;
+  onSoup: () => void;
   settleRef: { current: (() => void) | null };
 }) {
   if (!board.frame) {
@@ -198,7 +218,7 @@ function LabBoard({
       {posed ? (
         <>
           <Print frame={board.frame} next={board.next} dx={board.dx} dragging={board.dragging} flight={false} width={360} />
-          <Tray developing={board.developing} dx={board.dx} undo={board.undo} onUndo={onUndo} />
+          <Tray developing={board.developing} dx={board.dx} undo={board.undo} onUndo={onUndo} onSoup={onSoup} />
         </>
       ) : (
         <LivePrint
@@ -208,6 +228,7 @@ function LabBoard({
           undo={board.undo}
           onCommit={onCommit}
           onUndo={onUndo}
+          onSoup={onSoup}
           settleRef={settleRef}
         />
       )}
@@ -222,6 +243,7 @@ function LivePrint({
   undo,
   onCommit,
   onUndo,
+  onSoup,
   settleRef,
 }: {
   frame: PreviewFrame;
@@ -230,6 +252,7 @@ function LivePrint({
   undo: Board["undo"];
   onCommit: (verdict: SwipeVerdict) => void;
   onUndo: () => void;
+  onSoup: () => void;
   settleRef: { current: (() => void) | null };
 }) {
   const wellRef = useRef<HTMLDivElement>(null);
@@ -334,7 +357,7 @@ function LivePrint({
           }
         }}
       />
-      <Tray developing={developing} dx={shown} undo={undo} onUndo={onUndo} />
+      <Tray developing={developing} dx={shown} undo={undo} onUndo={onUndo} onSoup={onSoup} />
     </>
   );
 }
@@ -424,11 +447,13 @@ function Tray({
   dx,
   undo,
   onUndo,
+  onSoup,
 }: {
   developing: number;
   dx: number;
   undo: Board["undo"];
   onUndo: () => void;
+  onSoup: () => void;
 }) {
   const hint = 1 - Math.min(1, Math.abs(dx) / 84);
   return (
@@ -444,6 +469,9 @@ function Tray({
           </span>
         </p>
       ) : null}
+      <button type="button" className="lab-swipe-soup-btn" data-open-soup onClick={onSoup}>
+        Soup
+      </button>
       {undo ? (
         <div className="lab-swipe-undo" data-undo={undo.verdict}>
           <span className="lab-swipe-undo-thumb" aria-hidden="true">
@@ -479,6 +507,95 @@ function Soup({ count }: { count: number }) {
         <p className="lab-swipe-countword">developing</p>
         <p className="lab-swipe-quip">{count > 0 ? SOUP_QUIP : "Shoot a frame and let it lapse."}</p>
       </div>
+    </div>
+  );
+}
+
+const EXTRA_BATHS: { id: ExtraChemistry; label: string }[] = [
+  { id: "daylight", label: "Daylight" },
+  { id: "night", label: "Night" },
+];
+
+const SOUP_FRAMES: { id: string; remain: number; chemistry: Chemistry | null }[] = [
+  { id: "soup-pier", remain: 12 * 60_000 + 40_000, chemistry: "daylight" },
+  { id: "soup-night", remain: 48 * 60_000, chemistry: null },
+  { id: "soup-window", remain: 3 * 60_000 + 12_000, chemistry: "night" },
+];
+
+function SoupList({ onClose }: { onClose: () => void }) {
+  const [frames, setFrames] = useState(SOUP_FRAMES);
+
+  function pick(id: string, tapped: ExtraChemistry) {
+    setFrames((current) =>
+      current.map((frame) => (frame.id === id ? { ...frame, chemistry: nextChemistry(frame.chemistry, tapped) } : frame)),
+    );
+  }
+
+  return (
+    <div className="scroll" data-lab-swipe="soup">
+      <button type="button" className="lab-swipe-soup-btn" data-close-soup onClick={onClose}>
+        Print
+      </button>
+      {frames.map((frame) => (
+        <article className="lab-card" key={frame.id} data-lab-state="developing">
+          <div className="thumb sealed-thumb" data-hidden-frame={frame.id}>
+            <div className="safelight" />
+            <span>In the soup 🧪</span>
+          </div>
+          <div>
+            <div className="kicker">Developing 🌀</div>
+            <div className="time" data-countdown={frame.id}>
+              {countdown(frame.remain)}
+            </div>
+            <p>{lapseQuip(frame.id)}</p>
+            <SoupBath chemistry={frame.chemistry} id={frame.id} onPick={(bath) => pick(frame.id, bath)} />
+            <p>The bath waits with the frame.</p>
+          </div>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function SoupBath({
+  chemistry,
+  id,
+  onPick,
+}: {
+  chemistry: Chemistry | null;
+  id: string;
+  onPick: (chemistry: ExtraChemistry) => void;
+}) {
+  const chosen = isExtraChemistry(chemistry);
+  const [open, setOpen] = useState(chosen);
+
+  useEffect(() => {
+    if (chosen) setOpen(true);
+  }, [chosen]);
+
+  if (!open) {
+    return (
+      <div className="bath" role="group" aria-label="Chemistry" data-bath={id} data-selected={chemistry ?? "unset"}>
+        <button type="button" data-additional-chemistry={id} onClick={() => setOpen(true)}>
+          Additional chemistry
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bath" role="group" aria-label="Chemistry" data-bath={id} data-selected={chemistry ?? "unset"}>
+      {EXTRA_BATHS.map((bath) => (
+        <button
+          key={bath.id}
+          type="button"
+          data-chemistry={bath.id}
+          aria-pressed={chemistry === bath.id}
+          onClick={() => onPick(bath.id)}
+        >
+          {bath.label}
+        </button>
+      ))}
     </div>
   );
 }

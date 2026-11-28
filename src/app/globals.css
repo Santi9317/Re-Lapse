@@ -2843,6 +2843,19 @@ button.byline .byline-name { text-decoration: underline; text-underline-offset: 
 }
 .lab-swipe-hint span:first-child { color: var(--leak); }
 .lab-swipe-hint span:last-child { color: var(--blue); }
+.lab-swipe-soup-btn {
+  align-self: center;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(180, 150, 255, 0.35);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--amber);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-size: 11px;
+  font-weight: 600;
+}
+.scroll > .lab-swipe-soup-btn { align-self: auto; margin: 0 0 12px; }
 .lab-swipe-undo {
   display: grid;
   grid-template-columns: auto 1fr auto;

@@ -11,10 +11,17 @@ export type SwipeUndo = {
   verdict: SwipeVerdict;
 };
 
-export type LabPose = "developing" | "ready" | "keep" | "delete" | "undo";
+export type LabPose = "developing" | "ready" | "keep" | "delete" | "undo" | "soup";
 
 export function labPose(value: string | null | undefined): LabPose | null {
-  if (value === "developing" || value === "ready" || value === "keep" || value === "delete" || value === "undo") {
+  if (
+    value === "developing" ||
+    value === "ready" ||
+    value === "keep" ||
+    value === "delete" ||
+    value === "undo" ||
+    value === "soup"
+  ) {
     return value;
   }
   return null;

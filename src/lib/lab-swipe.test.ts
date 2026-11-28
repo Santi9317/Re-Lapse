@@ -74,6 +74,7 @@ test("preview poses are the workshop stills", () => {
   assert.equal(labPose("live"), null);
   assert.equal(labPose("ready"), "ready");
   assert.equal(labPose("undo"), "undo");
+  assert.equal(labPose("soup"), "soup");
   assert.equal(poseOffset("keep"), 156);
   assert.ok(poseOffset("keep") > SWIPE_COMMIT_PX);
   assert.equal(poseOffset("delete"), -156);
@@ -88,4 +89,9 @@ test("the swipe preview is not wired into the live lab", () => {
   assert.doesNotMatch(lab, /lab-swipe/);
   assert.match(page, /LabSwipePreview/);
   assert.match(page, /robots: \{ index: false, follow: false \}/);
+  const swipe = readFileSync(new URL("../components/LabSwipe.tsx", import.meta.url), "utf8");
+  assert.match(swipe, /data-open-soup/);
+  assert.match(swipe, /data-lab-swipe="soup"/);
+  assert.match(swipe, /nextChemistry/);
+  assert.match(swipe, /Additional chemistry/);
 });
