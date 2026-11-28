@@ -17,6 +17,7 @@ export const RELEASE_NOTES = [
   "First-use tips can be dismissed, skipped, or brought back.",
   "A tap adds another emoji, and you can remove just that one.",
   "The Feed opens with a swipe recap of new frames, then a wrap-up of new notes and reactions.",
+  "One print at a time. Swipe right keeps, swipe left deletes, and undo lasts until you leave the tab. Soup opens the chemistry list.",
 ] as const;
 
 export type PublishedRelease = {
