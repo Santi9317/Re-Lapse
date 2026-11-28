@@ -12,6 +12,7 @@ export const RELEASE_NOTES = [
   "An emoji you did not place keeps a cyan ring until that look ends.",
   "A frame with a note you did not write keeps that cyan outline until you open the back. Scrolling past the front leaves it.",
   "Keepsakes does not get a mark for these.",
+  "The Shoot preview is the same paper print the shutter saves.",
 ] as const;
 
 export type PublishedRelease = {
