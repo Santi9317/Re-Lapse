@@ -2,8 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import { deletePhoto, fetchFeed } from "@/lib/api";
+import { pickWalk } from "@/lib/walkthrough";
 import type { FeedItem, FrameComment, FrameSticker } from "@/lib/types";
 import { PrintView } from "@/components/Print";
+import { useWalk, WalkMark, WalkTip } from "@/components/Walkthrough";
 
 export function Feed({
   revision,
@@ -56,6 +58,16 @@ export function Feed({
     setPhotos((current) => current.map((photo) => (photo.id === id ? { ...photo, comments } : photo)));
   }
 
+  const feedWalk = useWalk("feed", true);
+  const flipWalk = useWalk("flip", photos.length > 0);
+  // Closing the feed tip does not start the frame tip in the same open.
+  const feedTookThisOpen = useRef(false);
+  if (feedWalk.visible) feedTookThisOpen.current = true;
+  const picked = pickWalk({
+    feed: feedWalk.visible,
+    flip: flipWalk.visible && !feedTookThisOpen.current,
+  });
+
   async function onDelete(id: string) {
     const previous = photos;
     removed.current.add(id);
@@ -74,6 +86,18 @@ export function Feed({
   return (
     <div className="scroll" data-screen="feed">
       {error ? <p className="error">{error}</p> : null}
+      {picked === "feed" ? (
+        <WalkTip id="feed" onDismiss={feedWalk.dismiss} onSkip={feedWalk.skip} onLater={feedWalk.later} />
+      ) : null}
+      {picked === "flip" ? (
+        <WalkTip id="flip" onDismiss={flipWalk.dismiss} onSkip={flipWalk.skip} onLater={flipWalk.later} />
+      ) : null}
+      {picked === null && (feedWalk.mark || flipWalk.mark) ? (
+        <div className="walk-marks">
+          {feedWalk.mark ? <WalkMark id="feed" onOpen={feedWalk.revisit} /> : null}
+          {flipWalk.mark ? <WalkMark id="flip" onOpen={flipWalk.revisit} /> : null}
+        </div>
+      ) : null}
       {photos.length === 0 ? (
         <div className="empty">
           <h2>Nothing back yet. 🌈</h2>

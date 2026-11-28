@@ -2354,6 +2354,70 @@ button.byline .byline-name { text-decoration: underline; text-underline-offset: 
   color: #ffb0a0;
 }
 
+.walk-tip {
+  margin: 0 0 12px;
+  padding: 10px 12px 8px;
+  border-radius: 18px;
+  background:
+    radial-gradient(ellipse at 0% 0%, rgba(255, 140, 190, 0.16), transparent 55%),
+    #140e22;
+  border: 1px solid rgba(255, 176, 200, 0.38);
+  box-shadow: 0 0 28px rgba(160, 90, 255, 0.14);
+}
+.walk-tip .kicker { display: block; margin: 0; }
+.walk-tip p,
+.lab-card .walk-tip p,
+.lab-card[data-lab-state="developed"] .walk-tip p {
+  margin: 4px 0 8px;
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.35;
+}
+.walk-actions {
+  display: flex;
+  gap: 6px;
+}
+.walk-actions button {
+  flex: 1;
+  border: 0;
+  border-radius: 999px;
+  padding: 7px 8px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+.walk-actions button[data-walk-dismiss] {
+  background: linear-gradient(120deg, #ffc27a, #ffb0d4);
+  color: #1a0820;
+}
+.walk-actions button[data-walk-skip],
+.walk-actions button[data-walk-later] {
+  color: var(--amber);
+  background: rgba(255, 176, 106, 0.12);
+}
+.walk-marks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 12px;
+}
+.walk-mark {
+  color: var(--amber);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 7px 12px;
+  border-radius: 999px;
+  background: rgba(255, 176, 106, 0.1);
+}
+.lab-card[data-lab-state="developed"] .walk-mark {
+  color: #7a3b22;
+  background: rgba(122, 59, 34, 0.08);
+}
+
 .recovery-box {
   margin-top: 22px;
   padding: 16px;
