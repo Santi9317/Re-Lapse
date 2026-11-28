@@ -273,6 +273,8 @@ export async function decideRequest(id: string, status: "accepted" | "declined")
 }
 
 const GUESS_WINDOW_MS = 15 * 60_000;
+/** Misses with no issued cookie share this row. Inventing an id does not start over. */
+const ANONYMOUS_GATE = "anonymous";
 
 function guessFlag(value: unknown): boolean {
   return value === true || value === "t" || value === "true" || value === 1;
@@ -287,9 +289,10 @@ export type GateAttempt = {
 
 /**
  * A matching key is decided before any miss is counted, so another browser
- * cannot hold the gate shut. Each visitor keeps their own misses. Someone
- * who is not signed in gets a row of their own, so visitors do not share one
- * count. Someone who is already signed in stays on the row issued for them.
+ * cannot hold the gate shut. A cookie this server already stored keeps its
+ * own misses. A missing cookie, or an id that was never stored, shares one
+ * count, so dropping the cookie or inventing an id does not start over.
+ * The right key still seals that browser onto its own row.
  * The key itself is not written.
  */
 export async function takeGateGuess(clientId: string, given: string, secret: string): Promise<GateAttempt> {
@@ -309,12 +312,18 @@ export async function takeGateGuess(clientId: string, given: string, secret: str
   }
 
   return withTransaction(async (q) => {
-    const id = presented || randomUUID();
-    await q(
-      `insert into gate_client (id, window_start, n) values ($1, now(), 0) on conflict (id) do nothing`,
-      [id],
-    );
-    await q(`select id from gate_client where id = $1 for update`, [id]);
+    let id = ANONYMOUS_GATE;
+    if (presented) {
+      const found = await q<{ id: string }>(`select id from gate_client where id = $1 for update`, [presented]);
+      if (found[0]) id = presented;
+    }
+    if (id === ANONYMOUS_GATE) {
+      await q(
+        `insert into gate_client (id, window_start, n) values ($1, now(), 0) on conflict (id) do nothing`,
+        [ANONYMOUS_GATE],
+      );
+      await q(`select id from gate_client where id = $1 for update`, [ANONYMOUS_GATE]);
+    }
     const slot = await q<{ n: number; fresh: boolean | string | number }>(
       `select n,
               window_start <= now() - ($2::int * interval '1 millisecond') as fresh
@@ -334,7 +343,7 @@ export async function takeGateGuess(clientId: string, given: string, secret: str
         [id, fresh ? 1 : recent + 1, fresh],
       );
     }
-    return { result: decision, clientId: id };
+    return { result: decision, clientId: id === ANONYMOUS_GATE ? "" : id };
   });
 }
 

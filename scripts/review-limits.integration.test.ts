@@ -43,35 +43,39 @@ function cameraRequest(token: string, proof: string, booth = ""): Request {
 
 test("a new browser cannot mint booths or joins, and the right gate key still opens", async () => {
   const secret = "kept-on-the-server";
-  const unsigned = randomUUID();
   for (let i = 0; i < GATE_GUESS_LIMIT; i += 1) {
-    const miss = await takeGateGuess(unsigned, `nope-${i}`, secret);
+    const miss = await takeGateGuess("", `nope-${i}`, secret);
     assert.equal(miss.result, "wrong");
-    assert.equal(miss.clientId, unsigned);
+    assert.equal(miss.clientId, "");
   }
-  const blocked = await takeGateGuess(unsigned, "still-nope", secret);
+  const blocked = await takeGateGuess("", "still-nope", secret);
   assert.equal(blocked.result, "blocked");
-  assert.equal(blocked.clientId, unsigned);
-  const otherVisitor = randomUUID();
-  const otherMiss = await takeGateGuess(otherVisitor, "still-nope", secret);
-  assert.equal(otherMiss.result, "wrong");
-  assert.equal(otherMiss.clientId, otherVisitor);
-  const unsealed = await takeGateGuess("", "no-cookie", secret);
-  assert.equal(unsealed.result, "wrong");
-  assert.match(unsealed.clientId, /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
-  assert.notEqual(unsealed.clientId, unsigned);
-  const unsealedAgain = await takeGateGuess(unsealed.clientId, "no-cookie-2", secret);
-  assert.equal(unsealedAgain.result, "wrong");
-  assert.equal(unsealedAgain.clientId, unsealed.clientId);
-  const opened = await takeGateGuess("", secret, secret);
-  assert.equal(opened.result, "ok");
+  assert.equal(blocked.clientId, "");
   const stranger = randomUUID();
   const strangerMiss = await takeGateGuess(stranger, "again", secret);
-  assert.equal(strangerMiss.result, "wrong");
-  assert.equal(strangerMiss.clientId, stranger);
+  assert.equal(strangerMiss.result, "blocked");
+  assert.equal(strangerMiss.clientId, "");
+  const planted = await sql<{ id: string }>(`select id from gate_client where id = $1`, [stranger]);
+  assert.equal(planted.length, 0);
+  const unsealedAgain = await takeGateGuess("", "no-cookie-2", secret);
+  assert.equal(unsealedAgain.result, "blocked");
+  assert.equal(unsealedAgain.clientId, "");
+  const opened = await takeGateGuess("", secret, secret);
+  assert.equal(opened.result, "ok");
+  assert.match(opened.clientId, /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
   const own = await takeGateGuess(opened.clientId, "typo", secret);
   assert.equal(own.result, "wrong");
   assert.equal(own.clientId, opened.clientId);
+  const named = randomUUID();
+  const namedOpen = await takeGateGuess(named, secret, secret);
+  assert.equal(namedOpen.result, "ok");
+  assert.equal(namedOpen.clientId, named);
+  const namedMiss = await takeGateGuess(named, "typo", secret);
+  assert.equal(namedMiss.result, "wrong");
+  assert.equal(namedMiss.clientId, named);
+  const stillShared = await takeGateGuess(randomUUID(), "later", secret);
+  assert.equal(stillShared.result, "blocked");
+  assert.equal(stillShared.clientId, "");
 
   const invented = randomUUID();
   await assert.rejects(() => issueCamera(null, null, invented), (error: unknown) => {
