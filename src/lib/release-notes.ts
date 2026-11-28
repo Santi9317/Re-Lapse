@@ -5,7 +5,8 @@
  * Keep public/release.json in step with this list, and keep its version equal to APP_VERSION.
  */
 export const RELEASE_NOTES = [
-  "Tap Feed while it is already open to return home and scroll back to the top.",
+  "The walk opens on the Feed, then emojis, then signatures. The sample photo is not saved.",
+  "New emojis glow blue. Frames glow blue when they have unread signatures.",
 ] as const;
 
 export type PublishedRelease = {

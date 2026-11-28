@@ -43,8 +43,9 @@ test("this publish carries the same notes the camera can show", () => {
   assert.deepEqual(publishedReleaseFromJson(release), { version: APP_VERSION, notes: [...RELEASE_NOTES] });
   assert.deepEqual(
     [...RELEASE_NOTES],
-      [
-      "Tap Feed while it is already open to return home and scroll back to the top.",
+    [
+      "The walk opens on the Feed, then emojis, then signatures. The sample photo is not saved.",
+      "New emojis glow blue. Frames glow blue when they have unread signatures.",
     ],
   );
   const notes = RELEASE_NOTES.join("\n");
@@ -113,6 +114,7 @@ test("this publish carries the same notes the camera can show", () => {
     "You can write and sign the back of a frame you shot, from the Feed.",
     "A wrong gate key counts for this browser. Another visitor does not use up those tries.",
     "Double-tap a photo you shot to place an emoji on it.",
+    "Tap Feed while it is already open to return home and scroll back to the top.",
   ]) {
     assert.equal(notes.includes(older), false);
   }
