@@ -58,7 +58,7 @@ test("this publish carries the same notes the camera can show", () => {
       "The Feed opens with a swipe recap of new frames, then a wrap-up of new notes and reactions.",
       "One print at a time. Swipe right keeps, swipe left deletes, and undo lasts until you leave the tab. Soup opens the chemistry list.",
       "A gallery has a Shoot button. Those photos still develop, and keeping one files it in that gallery. The marker matches a time capsule.",
-      "Every tab can be pulled down to refresh, and the tab shows A little more, then In the soup.",
+      "Pull down to refresh on Feed, Keepsakes, You, and where frames develop. The tab shows A little more, then In the soup.",
     ],
   );
   const notes = RELEASE_NOTES.join("\n");
@@ -96,6 +96,7 @@ test("this publish carries the same notes the camera can show", () => {
     "A caption shows up on a photo after you send it to the feed.",
     "The shutter sends the frame on, and the next shot is ready right away.",
     "Pick when a timecapsule opens. It stays open for the hours you chose, and you can see it a day after it closes.",
+    "Every tab can be pulled down to refresh, and the tab shows A little more, then In the soup.",
   ]) {
     assert.equal(notes.includes(older), false);
   }
