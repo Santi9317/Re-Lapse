@@ -5,21 +5,14 @@
  * Keep public/release.json in step with this list, and keep its version equal to APP_VERSION.
  */
 export const RELEASE_NOTES = [
-  "Sign the back of a gallery photo you shot.",
-  "Save a changed album title, or leave if unchanged, and return to Keepsakes. A blank title or a failed save stays and shows the error.",
-  "The Feed dot and the Home Screen count include someone else's new photo, a note you did not write, or a pin you did not place.",
-  "The new photo, note, and pin leave the Feed dot and the Home Screen count once the Feed list has loaded, and stay off while Feed is open.",
-  "An emoji you did not place keeps a cyan ring until that look ends.",
-  "A frame with a note you did not write keeps that cyan outline until you open the back. Scrolling past the front leaves it.",
-  "Keepsakes does not get a mark for these.",
-  "The Shoot preview is the same paper print the shutter saves.",
-  "Keepsakes opens on Galleries and Time Capsules.",
-  "First-use tips can be dismissed, skipped, or brought back.",
-  "A tap adds another emoji, and you can remove just that one.",
-  "The Feed opens with a swipe recap of new frames, then a wrap-up of new notes and reactions.",
-  "One print at a time. Swipe right keeps, swipe left deletes, and undo lasts until you leave the tab. Soup opens the chemistry list.",
-  "A gallery has a Shoot button. Those photos still develop, and keeping one files it in that gallery. The marker matches a time capsule.",
-  "Pull down to refresh on Feed, Keepsakes, You, and where frames develop. The tab shows A little more, then In the soup.",
+  "Swipe one print at a time. Right keeps it, left deletes it, and Soup opens the chemistry list.",
+  "Keepsakes opens as two halves: Galleries, and Time Capsules.",
+  "When the Feed has new frames, it opens on a swipe recap and then the new notes and reactions.",
+  "A sample photo shows the Feed and the notes on the back of a frame, then that sample is gone.",
+  "Feature Walkthrough in You starts the sample again, and so does making a profile.",
+  "A photo can belong to more than one gallery. Adding it to another leaves the first one.",
+  "The Feed does not show a gallery name on a frame.",
+  "An emoji can be moved by the person who placed it, and by the one who shot the frame.",
 ] as const;
 
 export type PublishedRelease = {

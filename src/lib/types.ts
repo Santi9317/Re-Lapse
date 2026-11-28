@@ -32,6 +32,8 @@ export type FeedItem = {
   /** When this frame landed on the feed. A timecapsule pick can be later than sortAt. */
   addedAt: number;
   albumId: string | null;
+  /** Every gallery this photo sits in. Absent on older rows that only know albumId. */
+  albumIds?: readonly string[];
   albumName: string | null;
   eventId: string | null;
   eventName: string | null;

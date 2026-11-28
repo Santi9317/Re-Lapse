@@ -21,7 +21,7 @@ import {
 import { pickQuickStickers } from "@/lib/quick-stickers";
 import { frameHasUnseenNote, noteNotesViewed } from "@/lib/note-seen";
 import { noteStickerViewed, stickerUnseen } from "@/lib/sticker-seen";
-import { clampStickerPoint, stickerTilt } from "@/lib/sticker-place";
+import { canMoveSticker, clampStickerPoint, stickerTilt } from "@/lib/sticker-place";
 import {
   ensurePhotoFile,
   fileFromImage,
@@ -268,6 +268,11 @@ function StickerLayer({
         const spot = placed[sticker.id] ?? { x: sticker.x, y: sticker.y };
         const style = stickerStyle(spot, index);
         const fresh = unseen.has(sticker.id);
+        const movable = canMoveSticker({
+          onFeed: Boolean(onMove),
+          stickerMine: sticker.mine,
+          frameMine: item.mine,
+        });
         return (
           <li key={sticker.id}>
             <button
@@ -279,12 +284,13 @@ function StickerLayer({
               data-profile-id={sticker.profileId}
               data-sticker-preview={sticker.id}
               data-mine={sticker.mine ? "true" : "false"}
+              data-can-move={movable ? "true" : "false"}
               data-unseen={fresh ? "true" : undefined}
               data-dragging={draggingId === sticker.id ? "true" : undefined}
               title={sticker.profileName}
               aria-label={`${sticker.profileName} stuck ${sticker.emoji}`}
               onPointerDown={(event) => {
-                if (event.button !== 0 || !onMoveRef.current) return;
+                if (event.button !== 0 || !movable) return;
                 event.stopPropagation();
                 event.preventDefault();
                 event.currentTarget.setPointerCapture(event.pointerId);
@@ -1022,7 +1028,7 @@ function ProfileLink({ item, onOpenProfile }: { item: FeedItem; onOpenProfile?: 
 }
 
 function place(item: FeedItem): string {
-  return item.eventName || item.albumName || "";
+  return item.eventName || "";
 }
 
 function FrameActions({

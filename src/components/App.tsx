@@ -14,16 +14,18 @@ import {
 import { bannerOpensQuote } from "@/lib/banner-quote";
 import { keepsakesHubOpen } from "@/lib/keepsakes-hub";
 import { noteFeedLook } from "@/lib/feed-mark";
-import { recapWorkshopStored } from "@/lib/feed-recap";
 import { recallNotes } from "@/lib/note-seen";
 import { recallStickers } from "@/lib/sticker-seen";
 import { restorePhone } from "@/lib/identity";
+import { readStorage, writeStorage } from "@/lib/shell";
+import { FEATURE_WALK_KEY, featureWalkSeen } from "@/lib/walkthrough";
 import { drawInspiration, type Quote } from "@/lib/quotes";
 import { shouldReloadOnPageSignal, shouldReloadOnTabChange, type MainTab } from "@/lib/refresh";
 import type { EventRoll, FeedItem, GalleryRoll } from "@/lib/types";
 import { Feed } from "@/components/Feed";
-import { FeedRecapWorkshop } from "@/components/FeedRecap";
-import { Lab } from "@/components/Lab";
+import { FeedRecapLive } from "@/components/FeedRecap";
+import { FeatureWalk } from "@/components/FeatureWalk";
+import { LabDeck } from "@/components/LabDeck";
 import { GuestProfile, Profile } from "@/components/Profile";
 import { QuoteDialog } from "@/components/QuoteDialog";
 import { Rolls } from "@/components/Rolls";
@@ -143,8 +145,8 @@ function CameraDesk() {
   const [joinNotice, setJoinNotice] = useState("");
   const [bannerQuote, setBannerQuote] = useState<Quote | null>(null);
   const bannerRef = useRef<HTMLButtonElement>(null);
-  const [recapOn, setRecapOn] = useState(false);
   const [recapDone, setRecapDone] = useState(false);
+  const [walkOpen, setWalkOpen] = useState(false);
 
   function openBannerQuote() {
     setBannerQuote(drawInspiration(localStorage));
@@ -161,7 +163,13 @@ function CameraDesk() {
     // the effect, or iOS treats the reopen as unprompted.
     if (next === "shoot" && tabNow.current !== "shoot") openCameraFromTap();
     if (shouldReloadOnTabChange(tabNow.current, next)) setLanded((value) => value + 1);
+    if (next !== "feed") setRecapDone(false);
     setTab(next);
+  }
+
+  function finishWalk() {
+    writeStorage(localStorage, FEATURE_WALK_KEY, "seen");
+    setWalkOpen(false);
   }
 
   useEffect(() => {
@@ -198,7 +206,7 @@ function CameraDesk() {
   }, [tab]);
 
   useEffect(() => {
-    setRecapOn(recapWorkshopStored());
+    if (!featureWalkSeen(readStorage(localStorage, FEATURE_WALK_KEY))) setWalkOpen(true);
   }, []);
 
   useEffect(() => {
@@ -341,7 +349,7 @@ function CameraDesk() {
             />
           </div>
           {tab === "lab" ? (
-            <Lab
+            <LabDeck
               revision={labRevision}
               refresh={landed}
               onPublished={() => {
@@ -365,10 +373,8 @@ function CameraDesk() {
             />
           ) : (
             <>
-              {tab === "feed" && recapOn && !recapDone ? (
-                <FeedRecapWorkshop onDismiss={() => setRecapDone(true)} />
-              ) : null}
-              {tab === "feed" && (!recapOn || recapDone) ? (
+              {tab === "feed" && !recapDone ? <FeedRecapLive onDismiss={() => setRecapDone(true)} /> : null}
+              {tab === "feed" && recapDone ? (
                 <Feed revision={feedRevision} refresh={landed} onOpenProfile={setGuestId} onSeen={sawFeed} />
               ) : null}
               {tab === "you" ? (
@@ -380,6 +386,8 @@ function CameraDesk() {
                     setGalleryRoll(gallery);
                     chooseTab("shoot");
                   }}
+                  onFeatureWalk={() => setWalkOpen(true)}
+                  onProfileCreated={() => setWalkOpen(true)}
                 />
               ) : null}
               {tab === "rolls" ? (
@@ -427,6 +435,7 @@ function CameraDesk() {
           ))}
         </nav>
         {bannerQuote ? <QuoteDialog quote={bannerQuote} onClose={closeBannerQuote} /> : null}
+        {walkOpen ? <FeatureWalk onDone={finishWalk} /> : null}
         <ShellPrompts />
       </div>
     </div>

@@ -80,3 +80,30 @@ test("save stores a new title and leaves, and a blank title stays", () => {
   const failure = save.slice(save.indexOf("} catch"));
   assert.equal(failure.includes("onBack"), false);
 });
+
+test("one photo can sit in two galleries, and the feed names no gallery", () => {
+  const otherId = "22222222-2222-4222-8222-222222222222";
+  const shared = { id: "shared", albumId, albumIds: [albumId, otherId] };
+  const here = galleryView({ albumId, photos: [shared, leaked], library: [shared, spare, other] });
+  const there = galleryView({ albumId: otherId, photos: [shared], library: [shared, spare, other] });
+  assert.deepEqual(
+    here.photos.map((photo) => photo.id),
+    ["shared"],
+  );
+  assert.deepEqual(
+    there.photos.map((photo) => photo.id),
+    ["shared"],
+  );
+  assert.equal(
+    here.addable.some((photo) => photo.id === "shared"),
+    false,
+  );
+  assert.equal(
+    there.addable.some((photo) => photo.id === "other"),
+    false,
+  );
+  const print = readFileSync(new URL("../components/Print.tsx", import.meta.url), "utf8");
+  const place = print.slice(print.lastIndexOf("function place("), print.lastIndexOf("function place(") + 160);
+  assert.equal(place.includes("albumName"), false);
+  assert.match(place, /eventName/);
+});

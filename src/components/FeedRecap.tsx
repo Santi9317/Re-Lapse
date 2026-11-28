@@ -234,3 +234,41 @@ export function FeedRecapWorkshop({ onDismiss }: { onDismiss: () => void }) {
     </PullRefresh>
   );
 }
+
+/** The real Feed. New frames open the recap. A quiet visit goes straight to the list. */
+export function FeedRecapLive({ onDismiss }: { onDismiss: () => void }) {
+  const [deck, setDeck] = useState<RecapDeck | null>(null);
+  const onDismissRef = useRef(onDismiss);
+  onDismissRef.current = onDismiss;
+  const loadRef = useRef<() => Promise<void>>(async () => {});
+
+  useEffect(() => {
+    let stop = false;
+    async function load() {
+      try {
+        const feed = await fetchFeed();
+        if (stop) return;
+        const seenAt = readFeedSeen(readStorage(localStorage, FEED_SEEN_KEY));
+        const live = buildRecap(feed.photos.map(sourceFromFeed), seenAt);
+        if (!live) {
+          onDismissRef.current();
+          return;
+        }
+        setDeck(live);
+      } catch {
+        if (!stop) onDismissRef.current();
+      }
+    }
+    loadRef.current = load;
+    void load();
+    return () => {
+      stop = true;
+    };
+  }, []);
+
+  return (
+    <PullRefresh scroll={false} onRefresh={() => loadRef.current()} data-screen="feed-recap">
+      {deck ? <FeedRecap deck={deck} source="live" onDismiss={() => onDismissRef.current()} /> : null}
+    </PullRefresh>
+  );
+}

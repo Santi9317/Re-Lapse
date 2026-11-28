@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { buildRecap, recapTally, workshopDeck, type RecapSource } from "./feed-recap.ts";
 
@@ -115,4 +116,16 @@ test("the workshop story is two new frames, three notes, and four reactions", ()
   assert.equal(deck.notes, 3);
   assert.equal(deck.reactions, 4);
   assert.ok(deck.photos[0] && deck.photos[0].addedAt < now - hour);
+});
+
+test("the feed opens the live recap, not the workshop flag", () => {
+  const app = readFileSync(new URL("../components/App.tsx", import.meta.url), "utf8");
+  const live = readFileSync(new URL("../components/FeedRecap.tsx", import.meta.url), "utf8");
+  assert.match(app, /FeedRecapLive/);
+  assert.equal(app.includes("recapWorkshopStored"), false);
+  assert.equal(app.includes("FeedRecapWorkshop"), false);
+  assert.match(live, /export function FeedRecapLive/);
+  assert.equal(live.includes("workshopDeck"), true);
+  const liveBody = live.slice(live.indexOf("export function FeedRecapLive"));
+  assert.equal(liveBody.includes("workshopDeck"), false);
 });

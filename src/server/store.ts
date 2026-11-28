@@ -40,6 +40,30 @@ const liveOnFeed = `(
   or (${liveEvent})
 )`;
 
+/** First gallery on the photo, or a later gallery in album_photos. */
+function inThisGallery(album: string): string {
+  return `(
+    p.album_id = ${album}
+    or exists (
+      select 1 from album_photos ap
+      where ap.photo_id = p.id and ap.album_id = ${album}
+    )
+  )`;
+}
+
+function albumIdsFrom(value: unknown): string[] {
+  let parsed = value;
+  if (typeof value === "string") {
+    try {
+      parsed = JSON.parse(value);
+    } catch {
+      return [];
+    }
+  }
+  if (!Array.isArray(parsed)) return [];
+  return parsed.filter((id): id is string => typeof id === "string" && id.length > 0);
+}
+
 function num(value: unknown): number {
   const n = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(n)) return 0;
@@ -85,7 +109,7 @@ async function runReclaim(preserveToken?: string): Promise<void> {
      where a.created_at < now() - interval '7 days'
        and not exists (
          select 1 from photos p
-         where p.album_id = a.id and p.event_id is null and p.developed_at is not null
+         where ${inThisGallery("a.id")} and p.event_id is null and p.developed_at is not null
        )`,
   );
   // Unpublished shots on a day-one camera are cleared so a fresh id cannot
@@ -212,7 +236,16 @@ async function dropOwnAlbum(token: string): Promise<boolean> {
   );
   const id = oldest[0]?.id;
   if (!id) return false;
-  await sql(`update photos set album_id = null where album_id = $1`, [id]);
+  await sql(
+    `update photos p
+     set album_id = (
+       select ap.album_id from album_photos ap
+       where ap.photo_id = p.id and ap.album_id <> $1
+       limit 1
+     )
+     where p.album_id = $1`,
+    [id],
+  );
   const dropped = await sql<{ id: string }>(
     `delete from albums where id = $1 and owner_token = $2 returning id`,
     [id, token],
@@ -343,7 +376,16 @@ async function trimOwnAlbums(token: string): Promise<void> {
     );
     const id = oldest[0]?.id;
     if (!id) return;
-    await sql(`update photos set album_id = null where album_id = $1`, [id]);
+    await sql(
+      `update photos p
+       set album_id = (
+         select ap.album_id from album_photos ap
+         where ap.photo_id = p.id and ap.album_id <> $1
+         limit 1
+       )
+       where p.album_id = $1`,
+      [id],
+    );
     await sql(`delete from albums where id = $1 and owner_token = $2`, [id, token]);
   }
 }
@@ -386,6 +428,7 @@ function feedItem(row: Record<string, unknown>): FeedItem {
     sortAt: num(row.sort_ms),
     addedAt: num(row.added_ms),
     albumId: text(row.album_id),
+    albumIds: albumIdsFrom(row.album_ids),
     albumName: text(row.album_name),
     eventId: text(row.event_id),
     eventName: text(row.event_name),
@@ -415,6 +458,15 @@ const feedSelect = `
       else e.reveal_at
     end) * 1000) as added_ms,
     p.album_id,
+    coalesce((
+      select json_agg(distinct member.album_id)
+      from (
+        select p.album_id as album_id
+        union
+        select ap.album_id from album_photos ap where ap.photo_id = p.id
+      ) member
+      where member.album_id is not null
+    ), '[]'::json) as album_ids,
     a.name as album_name,
     p.event_id,
     e.name as event_name,
@@ -860,6 +912,16 @@ export async function setCaption(id: string, token: string, caption: string): Pr
 
 export async function publishPhoto(id: string, token: string): Promise<{ publishedAt: number }> {
   // Keeping a developed frame sends it to the feed. One shot for a gallery joins that gallery then.
+  // A second gallery is added. It does not take the frame out of a gallery it already has.
+  await sql(
+    `insert into album_photos (album_id, photo_id)
+     select a.id, p.id
+     from photos p
+     join albums a on a.id = p.for_album_id and a.owner_token = p.shooter_token
+     where p.id = $1 and p.shooter_token = $2
+     on conflict do nothing`,
+    [id, token],
+  );
   const rows = await sql<{ published_ms: number }>(
     `update photos
      set published_at = now(),
@@ -901,7 +963,7 @@ export async function deletePhoto(id: string, token: string): Promise<void> {
   if (!removed[0]) throw new HttpError(404, "That frame is already gone.");
 }
 
-export async function filePhoto(id: string, token: string, albumId: string | null): Promise<void> {
+export async function filePhoto(id: string, token: string, albumId: string | null, remove = false): Promise<void> {
   const frames = await sql<{ shooter_token: string; event_id: string | null; published_at: string | null; album_id: string | null }>(
     `select shooter_token, event_id, published_at, album_id from photos where id = $1`,
     [id],
@@ -919,18 +981,52 @@ export async function filePhoto(id: string, token: string, albumId: string | nul
     if (!album) throw new HttpError(409, "That gallery is gone.");
     if (album.owner_token !== token) throw new HttpError(403, "Only the person who made this gallery can change it.");
   }
+  if (remove) {
+    const target = albumId ?? text(frame.album_id);
+    if (!target) return;
+    await sql(`delete from album_photos where album_id = $1 and photo_id = $2`, [target, id]);
+    await sql(`update albums set cover_photo_id = null where id = $1 and cover_photo_id = $2`, [target, id]);
+    await sql(
+      `update photos p
+       set album_id = (
+         select ap.album_id from album_photos ap
+         where ap.photo_id = p.id
+         limit 1
+       )
+       where p.id = $1 and p.shooter_token = $2 and p.album_id = $3`,
+      [id, token, target],
+    );
+    return;
+  }
+  if (!albumId) {
+    const previous = text(frame.album_id);
+    if (!previous) return;
+    await sql(`delete from album_photos where album_id = $1 and photo_id = $2`, [previous, id]);
+    await sql(`update albums set cover_photo_id = null where id = $1 and cover_photo_id = $2`, [previous, id]);
+    await sql(
+      `update photos p
+       set album_id = (
+         select ap.album_id from album_photos ap
+         where ap.photo_id = p.id
+         limit 1
+       )
+       where p.id = $1 and p.shooter_token = $2`,
+      [id, token],
+    );
+    return;
+  }
+  await sql(
+    `insert into album_photos (album_id, photo_id) values ($1, $2) on conflict do nothing`,
+    [albumId, id],
+  );
   const rows = await sql<{ id: string }>(
     `update photos
-     set album_id = $1
+     set album_id = coalesce(album_id, $1)
      where id = $2 and shooter_token = $3
      returning id`,
     [albumId, id, token],
   );
   if (!rows[0]) throw new HttpError(409, "That photo can't be added to a gallery.");
-  const previous = text(frame.album_id);
-  if (previous && previous !== albumId) {
-    await sql(`update albums set cover_photo_id = null where id = $1 and cover_photo_id = $2`, [previous, id]);
-  }
 }
 
 async function requireFeedFrame(photoId: string): Promise<{ shooter_token: string }> {
@@ -991,6 +1087,18 @@ export async function moveSticker(
 ): Promise<FrameSticker[]> {
   await requireFeedFrame(photoId);
   if (!(await readOwnProfile(token))) throw new HttpError(409, "Name yourself first.");
+  const stickers = await sql<{ shooter_token: string; frame_owner: string }>(
+    `select s.shooter_token, p.shooter_token as frame_owner
+     from stickers s
+     join photos p on p.id = s.photo_id
+     where s.id = $1 and s.photo_id = $2`,
+    [stickerId, photoId],
+  );
+  const sticker = stickers[0];
+  if (!sticker) throw new HttpError(404, "That sticker is gone.");
+  if (sticker.shooter_token !== token && sticker.frame_owner !== token) {
+    throw new HttpError(403, "Only the person who placed that emoji, or the one who shot the frame, can move it.");
+  }
   const moved = await sql<{ id: string }>(
     `update stickers
      set x = $3, y = $4
@@ -1145,7 +1253,7 @@ const galleryColumns = `
   (extract(epoch from a.created_at) * 1000) as created_ms,
   (
     select count(*)::int from photos p
-    where p.album_id = a.id
+    where ${inThisGallery("a.id")}
       and p.shooter_token = a.owner_token
       and ${livePersonal}
   ) as frame_count,
@@ -1153,13 +1261,13 @@ const galleryColumns = `
     (
       select p.id from photos p
       where p.id = a.cover_photo_id
-        and p.album_id = a.id
+        and ${inThisGallery("a.id")}
         and p.shooter_token = a.owner_token
         and ${livePersonal}
     ),
     (
       select p.id from photos p
-      where p.album_id = a.id
+      where ${inThisGallery("a.id")}
         and p.shooter_token = a.owner_token
         and ${livePersonal}
       order by p.published_at asc, p.created_at asc
@@ -1253,7 +1361,7 @@ export async function getAlbum(id: string, viewer: string): Promise<AlbumDetail 
   const album = albumFrom(row, viewer);
   const photos = await sql(
     `${feedSelect}
-     where p.album_id = $2
+     where ${inThisGallery("$2")}
        and p.shooter_token = $3
        and ${livePersonal}
      order by p.published_at asc, p.created_at asc
@@ -1300,7 +1408,7 @@ export async function updateAlbum(
         `select p.id
          from photos p
          where p.id = $1
-           and p.album_id = $2
+           and ${inThisGallery("$2")}
            and p.shooter_token = $3
            and ${livePersonal}`,
         [patch.coverPhotoId, id, token],
@@ -1317,7 +1425,7 @@ export async function updateAlbum(
 export async function deleteAlbum(id: string, token: string): Promise<void> {
   await ownAlbum(id, token);
   await withTransaction(async (q) => {
-    // A photo lives on the camera roll. Gallery membership is album_id.
+    // A photo lives on the camera roll. Dropping a gallery leaves its other galleries.
     // Only a row with no image of its own would leave with the gallery, and the
     // photo check does not allow that row.
     await q(
@@ -1330,7 +1438,16 @@ export async function deleteAlbum(id: string, token: string): Promise<void> {
          and char_length(coalesce(image_b64, '')) < 100`,
       [id, token],
     );
-    await q(`update photos set album_id = null where album_id = $1`, [id]);
+    await q(
+      `update photos p
+       set album_id = (
+         select ap.album_id from album_photos ap
+         where ap.photo_id = p.id and ap.album_id <> $1
+         limit 1
+       )
+       where p.album_id = $1`,
+      [id],
+    );
     const dropped = await q<{ id: string }>(
       `delete from albums where id = $1 and owner_token = $2 returning id`,
       [id, token],

@@ -491,11 +491,11 @@ export async function removeFrameNote(id: string, noteId: string): Promise<{ com
   });
 }
 
-export async function filePhoto(id: string, albumId: string | null): Promise<{ ok: boolean }> {
+export async function filePhoto(id: string, albumId: string | null, remove = false): Promise<{ ok: boolean }> {
   return request(`/api/photos/${id}/album`, {
     method: "PATCH",
     headers: await headers(true),
-    body: JSON.stringify({ albumId }),
+    body: JSON.stringify({ albumId, remove }),
   });
 }
 

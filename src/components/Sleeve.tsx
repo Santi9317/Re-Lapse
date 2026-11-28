@@ -11,7 +11,7 @@ import { groupedPin, RecoveryPinPanel } from "@/components/RecoveryPin";
 
 type Panel = "menu" | "version" | "general" | "howto" | "inspiration" | "recovery" | "account";
 
-export function Sleeve() {
+export function Sleeve({ onFeatureWalk }: { onFeatureWalk?: () => void }) {
   const [panel, setPanel] = useState<Panel | null>(null);
   const [quote, setQuote] = useState<Quote | null>(null);
   const [recoverySet, setRecoverySet] = useState(false);
@@ -98,6 +98,17 @@ export function Sleeve() {
           <button type="button" data-sleeve-item="howto" onClick={() => setPanel("howto")}>
             <strong>How To</strong>
             <span>A short tour of the camera.</span>
+          </button>
+          <button
+            type="button"
+            data-sleeve-item="feature-walk"
+            onClick={() => {
+              setPanel(null);
+              onFeatureWalk?.();
+            }}
+          >
+            <strong>Feature Walkthrough</strong>
+            <span>A sample photo, then it goes away.</span>
           </button>
           <button type="button" data-sleeve-item="inspiration" onClick={() => setPanel("inspiration")}>
             <strong>Inspiration</strong>
