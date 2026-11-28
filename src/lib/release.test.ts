@@ -43,12 +43,7 @@ test("this publish carries the same notes the camera can show", () => {
   assert.deepEqual(publishedReleaseFromJson(release), { version: APP_VERSION, notes: [...RELEASE_NOTES] });
   assert.deepEqual(
     [...RELEASE_NOTES],
-    [
-      "When photos are ready, one large frame shows how many, and Develop opens them.",
-      "Swipe right to send a photo to the Feed. Skip the caption with one tap, or write one.",
-      "A small undo sits with that swipe.",
-      "Darkroom still lists each photo, including ones that are ready, with a bath for each.",
-    ],
+    ["A wrong gate key stays limited. A new browser does not start that count over."],
   );
   const notes = RELEASE_NOTES.join("\n");
   const lower = notes.toLowerCase();
@@ -119,6 +114,10 @@ test("this publish carries the same notes the camera can show", () => {
     "Tap Feed while it is already open to return home and scroll back to the top.",
     "The walk opens on the Feed, then emojis, then signatures. The sample photo is not saved.",
     "New emojis glow blue. Frames glow blue when they have unread signatures.",
+    "When photos are ready, one large frame shows how many, and Develop opens them.",
+    "Swipe right to send a photo to the Feed. Skip the caption with one tap, or write one.",
+    "A small undo sits with that swipe.",
+    "Darkroom still lists each photo, including ones that are ready, with a bath for each.",
   ]) {
     assert.equal(notes.includes(older), false);
   }
