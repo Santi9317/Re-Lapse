@@ -7,7 +7,8 @@
     "The new photo, note, and pin leave the Feed dot and the Home Screen count once the Feed list has loaded, and stay off while Feed is open.",
     "An emoji you did not place keeps a cyan ring until that look ends.",
     "A frame with a note you did not write keeps that cyan outline until you open the back. Scrolling past the front leaves it.",
-    "Keepsakes does not get a mark for these."
+    "Keepsakes does not get a mark for these.",
+    "The Shoot preview is the same paper print the shutter saves."
   ],
   "icon": "0e6210f1bd3191d086e7c4deb1bb920768940cbf227f6f962125f415635d7665",
   "previousIcon": "0e6210f1bd3191d086e7c4deb1bb920768940cbf227f6f962125f415635d7665"
