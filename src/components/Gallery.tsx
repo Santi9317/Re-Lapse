@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { deleteAlbum, deletePhoto, fetchAlbum, filePhoto, updateAlbum } from "@/lib/api";
 import { frames } from "@/lib/format";
 import { galleryTitleSave, galleryView, type GalleryPlace } from "@/lib/gallery-view";
-import type { AlbumDetail, FeedItem, FrameComment, GalleryCard } from "@/lib/types";
+import type { AlbumDetail, FeedItem, FrameComment, GalleryCard, GalleryRoll } from "@/lib/types";
 import { PhotoStrip, StripShot } from "@/components/PhotoStrip";
 import { Lightbox, PrintView } from "@/components/Print";
 
@@ -62,6 +62,7 @@ export function Gallery({
   backLabel = "Keepsakes",
   onOpenProfile,
   onChanged,
+  onShoot,
 }: {
   id: string;
   refresh?: number;
@@ -70,6 +71,7 @@ export function Gallery({
   backLabel?: string;
   onOpenProfile?: (id: string) => void;
   onChanged?: () => void;
+  onShoot?: (gallery: GalleryRoll) => void;
 }) {
   const [detail, setDetail] = useState<AlbumDetail | null>(null);
   const [title, setTitle] = useState("");
@@ -277,7 +279,21 @@ export function Gallery({
       ) : (
         <h2 className="word" style={{ fontSize: 36 }}>{detail.album.name}</h2>
       )}
-      <p className="fine">{frames(detail.album.frameCount)}</p>
+      <div className="gallery-meta">
+        <p className="fine">{frames(detail.album.frameCount)}</p>
+        {owner && onShoot ? (
+          <button
+            className="gallery-camera"
+            type="button"
+            data-shoot-gallery={detail.album.id}
+            aria-label={`Shoot for ${detail.album.name}`}
+            onClick={() => onShoot({ id: detail.album.id, name: detail.album.name })}
+          >
+            <span aria-hidden="true">📸</span>
+            Shoot
+          </button>
+        ) : null}
+      </div>
       {error ? <p className="error">{error}</p> : null}
       {view.photos.length === 0 ? (
         <div className="empty">

@@ -1542,6 +1542,31 @@ figure.print .print-actions button[data-delete]:hover:not(:disabled) {
   min-width: 0;
 }
 .gallery-label { display: block; margin: 4px 0 6px; }
+.gallery-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 2px;
+}
+.gallery-meta .fine { margin: 0; }
+.gallery-camera {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 40px;
+  padding: 0 14px 0 12px;
+  border-radius: 999px;
+  background: linear-gradient(120deg, #ffc27a, #ffb0d4);
+  color: #1a0820;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  box-shadow: 0 8px 22px rgba(255, 150, 190, 0.22);
+}
+.gallery-camera:active { transform: translateY(1px); }
 .gallery-cover {
   display: block;
   width: 100%;

@@ -109,6 +109,12 @@ export type GalleryCard = {
   coverPhotoId: string | null;
 };
 
+/** Shoot is aimed at this gallery until the marker is cleared. */
+export type GalleryRoll = {
+  id: string;
+  name: string;
+};
+
 export type AlbumDetail = {
   album: Album;
   photos: FeedItem[];

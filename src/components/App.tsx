@@ -20,7 +20,7 @@ import { recallStickers } from "@/lib/sticker-seen";
 import { restorePhone } from "@/lib/identity";
 import { drawInspiration, type Quote } from "@/lib/quotes";
 import { shouldReloadOnPageSignal, shouldReloadOnTabChange, type MainTab } from "@/lib/refresh";
-import type { EventRoll, FeedItem } from "@/lib/types";
+import type { EventRoll, FeedItem, GalleryRoll } from "@/lib/types";
 import { Feed } from "@/components/Feed";
 import { FeedRecapWorkshop } from "@/components/FeedRecap";
 import { Lab } from "@/components/Lab";
@@ -123,6 +123,7 @@ function CameraDesk() {
   const tabNow = useRef<MainTab>("shoot");
   tabNow.current = tab;
   const [armed, setArmed] = useState<EventRoll | null>(null);
+  const [galleryRoll, setGalleryRoll] = useState<GalleryRoll | null>(null);
   const [labRevision, setLabRevision] = useState(0);
   const [feedRevision, setFeedRevision] = useState(0);
   const [labCount, setLabCount] = useState(0);
@@ -330,7 +331,9 @@ function CameraDesk() {
             <Shoot
               active={tab === "shoot"}
               armed={armed}
+              gallery={galleryRoll}
               onDisarm={() => setArmed(null)}
+              onLeaveGallery={() => setGalleryRoll(null)}
               onSent={() => {
                 setLabRevision((value) => value + 1);
                 setLabCount((count) => count + 1);
@@ -350,7 +353,16 @@ function CameraDesk() {
             />
           ) : null}
           {guestId ? (
-            <GuestProfile id={guestId} refresh={landed} onBack={() => setGuestId(null)} />
+            <GuestProfile
+              id={guestId}
+              refresh={landed}
+              onBack={() => setGuestId(null)}
+              onShootGallery={(gallery) => {
+                setArmed(null);
+                setGalleryRoll(gallery);
+                chooseTab("shoot");
+              }}
+            />
           ) : (
             <>
               {tab === "feed" && recapOn && !recapDone ? (
@@ -359,7 +371,17 @@ function CameraDesk() {
               {tab === "feed" && (!recapOn || recapDone) ? (
                 <Feed revision={feedRevision} refresh={landed} onOpenProfile={setGuestId} onSeen={sawFeed} />
               ) : null}
-              {tab === "you" ? <Profile revision={feedRevision} refresh={landed} /> : null}
+              {tab === "you" ? (
+                <Profile
+                  revision={feedRevision}
+                  refresh={landed}
+                  onShootGallery={(gallery) => {
+                    setArmed(null);
+                    setGalleryRoll(gallery);
+                    chooseTab("shoot");
+                  }}
+                />
+              ) : null}
               {tab === "rolls" ? (
                 <Rolls
                   hub={keepsakesHub}
@@ -368,7 +390,13 @@ function CameraDesk() {
                   focusEventId={focusEventId}
                   joinNotice={joinNotice}
                   onArm={(event) => {
+                    setGalleryRoll(null);
                     setArmed(event);
+                    chooseTab("shoot");
+                  }}
+                  onShootGallery={(gallery) => {
+                    setArmed(null);
+                    setGalleryRoll(gallery);
                     chooseTab("shoot");
                   }}
                   onOpenProfile={setGuestId}

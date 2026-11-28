@@ -29,7 +29,7 @@ import {
   withCameraPortrait,
   type Profile,
 } from "@/lib/profile";
-import type { FeedItem, GalleryCard, SharedProfile } from "@/lib/types";
+import type { FeedItem, GalleryCard, GalleryRoll, SharedProfile } from "@/lib/types";
 
 type Mode = "page" | "edit" | "arrange";
 
@@ -38,7 +38,15 @@ function captionFor(id: string, photos: FeedItem[]): string {
   return caption || "Frame";
 }
 
-export function Profile({ revision, refresh = 0 }: { revision: number; refresh?: number }) {
+export function Profile({
+  revision,
+  refresh = 0,
+  onShootGallery,
+}: {
+  revision: number;
+  refresh?: number;
+  onShootGallery?: (gallery: GalleryRoll) => void;
+}) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [draft, setDraft] = useState<Profile>(emptyProfile);
   const [mode, setMode] = useState<Mode | null>(null);
@@ -272,6 +280,7 @@ export function Profile({ revision, refresh = 0 }: { revision: number; refresh?:
           onChanged={() => {
             void fetchOwnProfile().then((remote) => setGalleries(remote?.galleries ?? []));
           }}
+          onShoot={onShootGallery}
         />
       </div>
     );
@@ -992,11 +1001,13 @@ export function GuestProfile({
   onBack,
   refresh = 0,
   load = fetchPublicProfile,
+  onShootGallery,
 }: {
   id: string;
   onBack: () => void;
   refresh?: number;
   load?: (id: string) => Promise<SharedProfile>;
+  onShootGallery?: (gallery: GalleryRoll) => void;
 }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [galleries, setGalleries] = useState<GalleryCard[]>([]);
@@ -1056,6 +1067,7 @@ export function GuestProfile({
             setGalleries(row.galleries ?? []);
           });
         }}
+        onShoot={onShootGallery}
       />
     );
   }

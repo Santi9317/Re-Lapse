@@ -618,12 +618,21 @@ export async function listLab(token: string): Promise<LabItem[]> {
   }));
 }
 
+async function galleryDestination(albumId: string, token: string): Promise<string> {
+  const albums = await sql<{ owner_token: string | null }>(`select owner_token from albums where id = $1`, [albumId]);
+  const album = albums[0];
+  if (!album) throw new HttpError(409, "That gallery is gone.");
+  if (album.owner_token !== token) throw new HttpError(403, "Only the person who made this gallery can change it.");
+  return albumId;
+}
+
 export async function createPhoto(input: {
   token: string;
   proof: string | null;
   caption: string;
   imageBase64: unknown;
   eventId: string | null;
+  albumId?: string | null;
   dev: boolean;
   dateStamp: boolean;
   capturedAt: number | null;
@@ -670,6 +679,9 @@ export async function createPhoto(input: {
     labState = "sealed";
   }
 
+  // The gallery is remembered here. album_id stays empty until the developed frame is kept.
+  const forAlbum = input.eventId || !input.albumId ? null : await galleryDestination(input.albumId, input.token);
+
   await reclaimNow();
   await fitPhotos(input.token);
   await claimCamera(input.token, input.proof);
@@ -678,9 +690,9 @@ export async function createPhoto(input: {
   const graded = input.eventId != null;
   const rows = await sql<{ created_ms: number; ready_ms: number }>(
     `insert into photos (
-       id, shooter_token, caption, image_b64, ready_at, event_id, date_stamp, captured_at, graded, chemistry
+       id, shooter_token, caption, image_b64, ready_at, event_id, date_stamp, captured_at, graded, chemistry, for_album_id
      )
-     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
      returning
        (extract(epoch from created_at) * 1000) as created_ms,
        (extract(epoch from ready_at) * 1000) as ready_ms`,
@@ -695,6 +707,7 @@ export async function createPhoto(input: {
       input.capturedAt == null ? null : new Date(input.capturedAt).toISOString(),
       graded,
       graded ? "default" : null,
+      forAlbum,
     ],
   );
   const row = rows[0];
@@ -846,9 +859,20 @@ export async function setCaption(id: string, token: string, caption: string): Pr
 }
 
 export async function publishPhoto(id: string, token: string): Promise<{ publishedAt: number }> {
+  // Keeping a developed frame sends it to the feed. One shot for a gallery joins that gallery then.
   const rows = await sql<{ published_ms: number }>(
     `update photos
-     set published_at = now()
+     set published_at = now(),
+         album_id = coalesce(
+           album_id,
+           (
+             select a.id
+             from albums a
+             where a.id = photos.for_album_id
+               and a.owner_token = photos.shooter_token
+           )
+         ),
+         for_album_id = null
      where id = $1
        and shooter_token = $2
        and event_id is null
