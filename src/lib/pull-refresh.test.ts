@@ -43,7 +43,7 @@ test("downward travel pulls, and a sideways or upward move cancels", () => {
   assert.equal(shouldHoldPull({ dx: 0, dy: 12, scrollTop: 8 }), false);
 });
 
-test("every main tab pulls to refresh, and a pull does not stop the camera", () => {
+test("pull to refresh stays off Shoot and on the other tabs, and a pull does not stop the camera", () => {
   const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
   const shoot = read("../components/Shoot.tsx");
   const lab = read("../components/Lab.tsx");
@@ -53,7 +53,10 @@ test("every main tab pulls to refresh, and a pull does not stop the camera", () 
   const gallery = read("../components/Gallery.tsx");
   const recap = read("../components/FeedRecap.tsx");
   const app = read("../components/App.tsx");
-  for (const source of [shoot, lab, feed, rolls, profile, gallery, recap]) {
+  assert.equal(shoot.includes("PullRefresh"), false);
+  assert.equal(shoot.includes("onRefresh="), false);
+  assert.equal(/function refreshShoot/.test(shoot), false);
+  for (const source of [lab, feed, rolls, profile, gallery, recap]) {
     assert.match(source, /PullRefresh/);
     assert.match(source, /onRefresh=/);
   }
@@ -64,10 +67,6 @@ test("every main tab pulls to refresh, and a pull does not stop the camera", () 
   assert.match(rolls, /KeepsakesHub/);
   assert.match(profile, /data-screen="profile"/);
   assert.match(profile, /data-screen="guest-profile"/);
-  const refreshShoot = /async function refreshShoot\(\) \{[\s\S]*?\n  \}/.exec(shoot)?.[0] ?? "";
-  assert.match(refreshShoot, /relapse\.frames/);
-  assert.match(refreshShoot, /peekCamera/);
-  assert.equal(refreshShoot.includes("releaseCamera"), false);
   assert.equal(app.includes("releaseCamera"), false);
   assert.equal(app.includes("getUserMedia"), false);
   assert.equal(app.includes("skipWaiting"), false);

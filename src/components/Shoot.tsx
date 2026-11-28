@@ -16,7 +16,6 @@ import { shouldFlipOnDoubleTap } from "@/lib/tap";
 import { isIosDevice, setTorch, SHUTTER_BLINK_MS, wait } from "@/lib/flash";
 import { renderDisposable, renderLatent } from "@/lib/filter";
 import { shotDestination } from "@/lib/gallery-shoot";
-import { PullRefresh } from "@/components/PullRefresh";
 import type { EventRoll, GalleryRoll } from "@/lib/types";
 import {
   captureFrame,
@@ -479,46 +478,14 @@ export function Shoot({
   }
   flipRef.current = flipCamera;
 
-  async function refreshShoot() {
-    const stored = Number(localStorage.getItem("relapse.frames") || 0);
-    if (Number.isFinite(stored)) {
-      framesRef.current = stored;
-      setFrames(stored);
-    }
-    if (!activeRef.current) return;
-    const facingNow = facingRef.current;
-    const ready = peekCamera(facingNow);
-    if (ready && streamRef.current === ready) return;
-    if (ready) {
-      attachStream(ready);
-      return;
-    }
-    const generation = ++attempt.current;
-    engineRef.current?.adopt(null);
-    if (modeRef.current !== "live") setMode("opening");
-    const stream = await openCamera(facingNow);
-    if (generation !== attempt.current || !activeRef.current || facingRef.current !== facingNow) return;
-    if (!stream) {
-      if (!peekCamera(facingNow)) {
-        streamRef.current = null;
-        engineRef.current?.adopt(null);
-        setMode("fallback");
-      }
-      return;
-    }
-    attachStream(stream);
-  }
-
   const eventClosed = armed != null && (now < armed.startsAt || now >= armed.endsAt);
   const preview = previewScale(optical, zoom);
   const lensStyle = lensTransform(facing === "user", preview);
 
   return (
-    <PullRefresh
-      scroll={false}
+    <div
       className="shoot"
       data-screen="shoot"
-      onRefresh={() => refreshShoot()}
       onDragOver={(event) => event.preventDefault()}
       onDrop={(event) => {
         event.preventDefault();
@@ -656,6 +623,6 @@ export function Shoot({
           event.target.value = "";
         }}
       />
-    </PullRefresh>
+    </div>
   );
 }
