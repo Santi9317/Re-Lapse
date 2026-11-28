@@ -15,7 +15,8 @@ import { readDateStamp } from "@/lib/date-stamp";
 import { shouldFlipOnDoubleTap } from "@/lib/tap";
 import { isIosDevice, setTorch, SHUTTER_BLINK_MS, wait } from "@/lib/flash";
 import { renderDisposable, renderLatent } from "@/lib/filter";
-import type { EventRoll } from "@/lib/types";
+import { shotDestination } from "@/lib/gallery-shoot";
+import type { EventRoll, GalleryRoll } from "@/lib/types";
 import {
   captureFrame,
   createViewfinderZoom,
@@ -60,12 +61,16 @@ function clickSound() {
 export function Shoot({
   active,
   armed,
+  gallery,
   onDisarm,
+  onLeaveGallery,
   onSent,
 }: {
   active: boolean;
   armed: EventRoll | null;
+  gallery: GalleryRoll | null;
   onDisarm: () => void;
+  onLeaveGallery: () => void;
   onSent: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -85,9 +90,11 @@ export function Shoot({
   const framesRef = useRef(0);
   const onSentRef = useRef(onSent);
   const armedRef = useRef(armed);
+  const galleryRef = useRef(gallery);
   framesRef.current = frames;
   onSentRef.current = onSent;
   armedRef.current = armed;
+  galleryRef.current = gallery;
   const [zoom, setZoom] = useState(1);
   const [optical, setOptical] = useState(false);
   // A fast camera switch can leave mode on "live", so this tells the preview to attach the new stream.
@@ -334,8 +341,8 @@ export function Shoot({
   // The shutter hands this frame to the lab and leaves the finder live for the next shot.
   async function handoff(bitmap: ImageBitmap, capturedAt: number) {
     try {
-      const roll = armedRef.current;
-      const openEvent = roll != null && capturedAt >= roll.startsAt && capturedAt < roll.endsAt;
+      const destination = shotDestination(capturedAt, armedRef.current, galleryRef.current?.id ?? null);
+      const openEvent = destination.eventId != null;
       const stamp = openEvent && readDateStamp();
       const blob = openEvent
         ? await renderDisposable(bitmap, {
@@ -347,7 +354,8 @@ export function Shoot({
       await sendPhoto({
         imageBase64: await blobToBase64(blob),
         caption: "",
-        eventId: openEvent && roll ? roll.id : null,
+        eventId: destination.eventId,
+        albumId: destination.albumId,
         dateStamp: stamp,
         capturedAt,
       });
@@ -490,6 +498,13 @@ export function Shoot({
         <div className="tape">
           {armed.name} · {eventClosed ? "closed" : "open"}
           <button type="button" onClick={onDisarm} aria-label="Stop shooting this timecapsule">
+            ×
+          </button>
+        </div>
+      ) : gallery ? (
+        <div className="tape" data-gallery-roll={gallery.id}>
+          {gallery.name} · gallery
+          <button type="button" onClick={onLeaveGallery} aria-label="Stop shooting for this gallery">
             ×
           </button>
         </div>

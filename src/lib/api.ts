@@ -387,6 +387,7 @@ export async function sendPhoto(input: {
   imageBase64: string;
   caption: string;
   eventId: string | null;
+  albumId?: string | null;
   dateStamp?: boolean;
   capturedAt?: number | null;
 }): Promise<{ id: string; readyAt: number; createdAt: number; labState: string; eventId: string | null }> {

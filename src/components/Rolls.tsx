@@ -19,7 +19,7 @@ import { KeepsakesHub } from "@/components/KeepsakesHub";
 import { PhotoStrip, StripShot } from "@/components/PhotoStrip";
 import { capsuleWindow, EVENT_START_AHEAD_MS, EVENT_START_SKEW_MS } from "@/lib/clock";
 import { clockLabel, dateTimeLocalMs, dateTimeLocalValue, frames, longRemain } from "@/lib/format";
-import type { Album, EventDetail, EventRoll, EventStatus, FeedItem } from "@/lib/types";
+import type { Album, EventDetail, EventRoll, EventStatus, FeedItem, GalleryRoll } from "@/lib/types";
 import { Lightbox, PrintView } from "@/components/Print";
 
 function statusLine(event: EventRoll, now: number): string {
@@ -79,6 +79,7 @@ export function Rolls({
   focusEventId,
   joinNotice,
   onArm,
+  onShootGallery,
   onOpenProfile,
   onShared,
   onFocusConsumed,
@@ -89,6 +90,7 @@ export function Rolls({
   focusEventId?: string | null;
   joinNotice?: string;
   onArm: (event: EventRoll) => void;
+  onShootGallery: (gallery: GalleryRoll) => void;
   onOpenProfile: (id: string) => void;
   onShared?: () => void;
   onFocusConsumed?: () => void;
@@ -402,6 +404,7 @@ export function Rolls({
         }}
         onOpenProfile={onOpenProfile}
         onChanged={() => setTick((value) => value + 1)}
+        onShoot={onShootGallery}
       />
     );
   }

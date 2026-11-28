@@ -16,6 +16,7 @@ export async function POST(request: Request) {
       caption: cleanCaption(body.caption),
       imageBase64: body.imageBase64,
       eventId: optionalUuid(body.eventId),
+      albumId: optionalUuid(body.albumId),
       dev: wantsDevClock(request.headers.get("x-relapse-dev")),
       dateStamp: body.dateStamp === true,
       capturedAt: cleanCapturedAt(body.capturedAt),
