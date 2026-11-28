@@ -10,6 +10,7 @@ import { renderDisposable } from "@/lib/filter";
 import { lapseQuip } from "@/lib/quips";
 import { ensurePhotoFile, iosPhotosTarget, readyPhotoFile, rememberPhotoBlob, shareOrSave } from "@/lib/save";
 import type { Chemistry, LabItem, LabState } from "@/lib/types";
+import { useWalk, WalkMark, WalkTip } from "@/components/Walkthrough";
 
 const EXTRA_BATHS: { id: ExtraChemistry; label: string }[] = [
   { id: "daylight", label: "Daylight" },
@@ -244,6 +245,9 @@ export function Lab({
     }
   }
 
+  const firstDeveloped = items.find((item) => cardState(item, now) === "developed")?.id ?? null;
+  const labWalk = useWalk("lab", firstDeveloped !== null);
+
   return (
     <div className="scroll" data-screen="lab">
       {error ? <p className="error">{error}</p> : null}
@@ -355,6 +359,10 @@ export function Lab({
                     ) : null}
                   </>
                 )}
+                {item.id === firstDeveloped && labWalk.visible ? (
+                  <WalkTip id="lab" onDismiss={labWalk.dismiss} onSkip={labWalk.skip} onLater={labWalk.later} />
+                ) : null}
+                {item.id === firstDeveloped && labWalk.mark ? <WalkMark id="lab" onOpen={labWalk.revisit} /> : null}
                 <div className="lab-actions">
                   {state === "developed" ? (
                     <button
