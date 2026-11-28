@@ -457,7 +457,43 @@ export function Shoot({
   const lensStyle = lensTransform(facing === "user", preview);
 
   return (
-    <div className="shoot" data-screen="shoot">
+    <div
+      className="shoot"
+      data-screen="shoot"
+      onDragOver={(event) => event.preventDefault()}
+      onDrop={(event) => {
+        event.preventDefault();
+        void takeFile(event.dataTransfer.files?.[0]);
+      }}
+    >
+      <div className="vf-top">
+        <div>
+          <div className="brand">Re-Lapse ✨</div>
+          <div className="stock">DISPOSABLE 💿</div>
+        </div>
+        <div className="vf-meta">
+          <div className="counter">400 · {String(frames).padStart(2, "0")}</div>
+          {ios && mode === "live" ? (
+            <button
+              className="lamp"
+              type="button"
+              aria-pressed={lamp}
+              aria-label={lamp ? "Flash on" : "Flash off"}
+              onClick={() => setLamp((on) => !on)}
+            >
+              <FlashMark on={lamp} />
+            </button>
+          ) : null}
+        </div>
+      </div>
+      {armed ? (
+        <div className="tape">
+          {armed.name} · {eventClosed ? "closed" : "open"}
+          <button type="button" onClick={onDisarm} aria-label="Stop shooting this timecapsule">
+            ×
+          </button>
+        </div>
+      ) : null}
       <div
         ref={finderRef}
         className="viewfinder"
@@ -475,81 +511,58 @@ export function Shoot({
           event.preventDefault();
           event.stopPropagation();
         }}
-        onDragOver={(event) => event.preventDefault()}
-        onDrop={(event) => {
-          event.preventDefault();
-          void takeFile(event.dataTransfer.files?.[0]);
-        }}
       >
-        {mode === "live" ? (
-          <video
-            ref={videoRef}
-            className={["lens", facing === "user" ? "mirror" : ""].filter(Boolean).join(" ")}
-            data-facing={facing}
-            style={lensStyle ? { transform: lensStyle } : undefined}
-            playsInline
-            muted
-            autoPlay
-          />
-        ) : (
-          <div className="empty-lens">
-            <h2>{mode === "opening" ? "Opening the lens… 📸" : "Lens cap on 😎"}</h2>
-            <p>
-              {mode === "opening"
-                ? "Asking the camera."
-                : "Allow the camera, or load a frame from your roll."}
-            </p>
+        <div className="shoot-sizer">
+          {/* 4:5 paper print. The shutter's cover crop is this same frame. */}
+          <div className="shoot-window" data-shoot-window>
+          <div className="shoot-print">
+            {mode === "live" ? (
+              <video
+                ref={videoRef}
+                className={["lens", facing === "user" ? "mirror" : ""].filter(Boolean).join(" ")}
+                data-facing={facing}
+                style={lensStyle ? { transform: lensStyle } : undefined}
+                playsInline
+                muted
+                autoPlay
+              />
+            ) : (
+              <div className="empty-lens">
+                <h2>{mode === "opening" ? "Opening the lens… 📸" : "Lens cap on 😎"}</h2>
+                <p>
+                  {mode === "opening"
+                    ? "Asking the camera."
+                    : "Allow the camera, or load a frame from your roll."}
+                </p>
+              </div>
+            )}
+            <div className="sprockets left" />
+            <div className="sprockets right" />
+            <div className="vignette" />
+            <div className="grain" />
+            {blink > 0 ? (
+              <div key={blink} className="flash" style={{ animationDuration: `${SHUTTER_BLINK_MS}ms` }} />
+            ) : null}
+            {screenFlash ? <div className="screen-flash" /> : null}
+            {mode === "live" && !zoomIsRest(zoom) ? <div className="zoom-readout">{formatZoom(zoom)}</div> : null}
           </div>
-        )}
-        <div className="sprockets left" />
-        <div className="sprockets right" />
-        <div className="vignette" />
-        <div className="grain" />
-        {blink > 0 ? (
-          <div key={blink} className="flash" style={{ animationDuration: `${SHUTTER_BLINK_MS}ms` }} />
-        ) : null}
-        {screenFlash ? <div className="screen-flash" /> : null}
-        {mode === "live" && !zoomIsRest(zoom) ? <div className="zoom-readout">{formatZoom(zoom)}</div> : null}
-        <div className="vf-top">
-          <div>
-            <div className="brand">Re-Lapse ✨</div>
-            <div className="stock">DISPOSABLE 💿</div>
           </div>
-          <div className="counter">400 · {String(frames).padStart(2, "0")}</div>
         </div>
-        {ios && mode === "live" ? (
+      </div>
+      {error ? <p className="error shoot-error">{error}</p> : null}
+      <div className="vf-bottom">
+        <div className="shutter-housing">
           <button
-            className="lamp"
+            className="shutter"
             type="button"
-            aria-pressed={lamp}
-            aria-label={lamp ? "Flash on" : "Flash off"}
-            onClick={() => setLamp((on) => !on)}
-          >
-            <FlashMark on={lamp} />
-          </button>
-        ) : null}
-        {armed ? (
-          <div className="tape">
-            {armed.name} · {eventClosed ? "closed" : "open"}
-            <button type="button" onClick={onDisarm} aria-label="Stop shooting this timecapsule">
-              ×
-            </button>
-          </div>
-        ) : null}
-        <div className="vf-bottom">
-          <div className="shutter-housing">
-            <button
-              className="shutter"
-              type="button"
-              data-shutter
-              aria-label="Shutter"
-              onClick={() => void snap()}
-            />
-          </div>
-          <button className="ghost" type="button" onClick={() => rollInput.current?.click()}>
-            Load a frame
-          </button>
+            data-shutter
+            aria-label="Shutter"
+            onClick={() => void snap()}
+          />
         </div>
+        <button className="ghost" type="button" onClick={() => rollInput.current?.click()}>
+          Load a frame
+        </button>
         {mode === "live" ? (
           <button className="ghost flip" type="button" onClick={() => setFacing((side) => (side === "environment" ? "user" : "environment"))}>
             Flip
@@ -577,7 +590,6 @@ export function Shoot({
           event.target.value = "";
         }}
       />
-      {error ? <p className="error" style={{ position: "absolute", left: 16, right: 16, bottom: 8 }}>{error}</p> : null}
     </div>
   );
 }
