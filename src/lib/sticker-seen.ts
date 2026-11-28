@@ -5,6 +5,7 @@ export const STICKER_SEEN_KEY = "relapse.stickerSeen";
 
 export type StickerStamp = {
   photoId: string;
+  stickerId: string;
   profileId: string;
   pinnedAt: number;
   mine: boolean;
@@ -13,12 +14,12 @@ export type StickerStamp = {
 type StickerBook = {
   /** Pins at this moment or earlier were already on the feed at the first look. */
   baseline: number;
-  /** `photo:profile` -> the pin moment this camera has viewed. */
+  /** `photo:sticker` -> the pin moment this camera has viewed. */
   viewed: Record<string, number>;
 };
 
-function stickerKey(sticker: { photoId: string; profileId: string }): string {
-  return `${sticker.photoId}:${sticker.profileId}`;
+function stickerKey(sticker: { photoId: string; stickerId: string }): string {
+  return `${sticker.photoId}:${sticker.stickerId}`;
 }
 
 export function readStickerBook(raw: string | null): StickerBook | null {
@@ -77,7 +78,7 @@ export function recallStickers(input: {
 /** A pin this camera did not place, newer than the first look, and not viewed since. */
 export function stickerUnseen(storage: Storage, sticker: StickerStamp): boolean {
   if (sticker.mine) return false;
-  if (!sticker.photoId || !sticker.profileId || !Number.isFinite(sticker.pinnedAt)) return false;
+  if (!sticker.photoId || !sticker.stickerId || !Number.isFinite(sticker.pinnedAt)) return false;
   const book = readStickerBook(readStorage(storage, STICKER_SEEN_KEY));
   if (!book || !(sticker.pinnedAt > book.baseline)) return false;
   const seenAt = book.viewed[stickerKey(sticker)];
@@ -86,7 +87,7 @@ export function stickerUnseen(storage: Storage, sticker: StickerStamp): boolean 
 
 /** Remember that this emoji was on screen. Returns whether the book changed. */
 export function noteStickerViewed(storage: Storage, sticker: StickerStamp): boolean {
-  if (!sticker.photoId || !sticker.profileId || !Number.isFinite(sticker.pinnedAt)) return false;
+  if (!sticker.photoId || !sticker.stickerId || !Number.isFinite(sticker.pinnedAt)) return false;
   const book = readStickerBook(readStorage(storage, STICKER_SEEN_KEY));
   if (!book) return false;
   const key = stickerKey(sticker);

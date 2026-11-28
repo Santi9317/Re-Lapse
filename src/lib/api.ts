@@ -453,6 +453,27 @@ export async function setFrameSticker(id: string, emoji: string): Promise<{ stic
   });
 }
 
+export async function moveFrameSticker(
+  id: string,
+  stickerId: string,
+  x: number,
+  y: number,
+): Promise<{ stickers: FrameSticker[] }> {
+  return request(`/api/photos/${id}/sticker`, {
+    method: "PATCH",
+    headers: await headers(true),
+    body: JSON.stringify({ id: stickerId, x, y }),
+  });
+}
+
+export async function removeFrameSticker(id: string, stickerId: string): Promise<{ stickers: FrameSticker[] }> {
+  return request(`/api/photos/${id}/sticker`, {
+    method: "DELETE",
+    headers: await headers(true),
+    body: JSON.stringify({ id: stickerId }),
+  });
+}
+
 export async function setFrameNote(id: string, text: string): Promise<{ comments: FrameComment[] }> {
   return request(`/api/photos/${id}/note`, {
     method: "PUT",

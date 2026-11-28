@@ -34,8 +34,9 @@ function memory(): Storage {
   };
 }
 
-const pin = (profileId: string, pinnedAt: number, mine = false): StickerStamp => ({
+const pin = (profileId: string, pinnedAt: number, mine = false, stickerId = profileId): StickerStamp => ({
   photoId: "photo",
+  stickerId,
   profileId,
   pinnedAt,
   mine,
@@ -107,18 +108,37 @@ test("a broken book is replaced by the next look", () => {
   assert.equal(stickerUnseen(storage, pin("bea", 60)), true);
 });
 
+test("two pins from one person stay unread on their own", () => {
+  const storage = memory();
+  recallStickers({ storage, stickers: [], now: 100 });
+  const first = pin("ada", 150, false, "one");
+  const second = pin("ada", 160, false, "two");
+  const own = pin("ada", 170, true, "mine");
+  assert.equal(stickerUnseen(storage, first), true);
+  assert.equal(noteStickerViewed(storage, first), true);
+  assert.equal(stickerUnseen(storage, first), false);
+  assert.equal(stickerUnseen(storage, second), true);
+  assert.equal(stickerUnseen(storage, own), false);
+});
+
 test("an unseen pin keeps the sticker edge until it has been on screen", () => {
   const print = readFileSync(new URL("../components/Print.tsx", import.meta.url), "utf8");
   const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
   assert.match(print, /data-unseen=\{fresh \? "true" : undefined\}/);
+  assert.match(print, /data-sticker-id=\{sticker\.id\}/);
+  assert.match(print, /data-mine=\{sticker\.mine \? "true" : "false"\}/);
   assert.match(print, /shown=\{!turned\}/);
   assert.match(print, /noteStickerViewed/);
   assert.match(print, /IntersectionObserver/);
   assert.match(print, /intersectionRatio >= 0\.5/);
-  assert.match(print, /!entry\.isIntersecting && onScreen\.current\.has\(profileId\)/);
+  assert.match(print, /!entry\.isIntersecting && onScreen\.current\.has\(stickerId\)/);
   assert.match(print, /item\.onFeed/);
+  assert.match(print, /className="slip-name"[\s\S]{0,500}data-sticker-remove=\{sticker\.id\}/);
+  assert.match(print, /preview\.mine && item\.onFeed/);
   const unseenRule = css.match(/\.sticker\[data-unseen="true"\]\s*\{[^}]*\}/)?.[0] ?? "";
   assert.match(unseenRule, /0 0 0 5px var\(--signal\)/);
+  const mineRule = css.match(/\.sticker\[data-mine="true"\]\s*\{[^}]*\}/)?.[0] ?? "";
+  assert.match(mineRule, /#ffb06a/);
   assert.equal(unseenRule.includes("26, 16, 40"), false);
   assert.equal(css.includes("sticker-badge"), false);
   assert.equal(print.includes("Keepsakes"), false);

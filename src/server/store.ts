@@ -3,6 +3,7 @@ import { devClockRequested, eventTimes, FEED_DAYS, personalReadyAt } from "@/lib
 import { sql, withTransaction } from "@/lib/db";
 import { noteHand, pickNoteHand } from "@/lib/frame-note";
 import { CAROUSEL_LIMIT, isEmoji } from "@/lib/profile";
+import { nextStickerSpot, readStickerSpot } from "@/lib/sticker-place";
 import type { Album, AlbumDetail, Chemistry, EventDetail, EventRoll, EventStatus, FeedItem, FrameComment, FrameSticker, GalleryCard, LabItem, LabState, ProfilePatch, RollMember, SharedProfile } from "@/lib/types";
 import { HttpError } from "@/server/http";
 import { assertCreateAllowed, assertJoinAllowed, claimCamera, noteCreate } from "@/server/quota";
@@ -463,8 +464,11 @@ async function attachStickers(items: FeedItem[], viewer: string): Promise<FeedIt
   const marks = ids.map((_, index) => `$${index + 2}`).join(", ");
   const rows = await sql(
     `select
+       s.id,
        s.photo_id,
        s.emoji,
+       s.x,
+       s.y,
        pr.id as profile_id,
        pr.username as profile_name,
        (s.shooter_token = $1) as mine,
@@ -472,19 +476,23 @@ async function attachStickers(items: FeedItem[], viewer: string): Promise<FeedIt
      from stickers s
      join profiles pr on pr.shooter_token = s.shooter_token
      where s.photo_id in (${marks})
-     order by s.created_at, s.shooter_token`,
+     order by s.created_at, s.id`,
     [viewer, ...ids],
   );
   const grouped = new Map<string, FrameSticker[]>();
   for (const row of rows) {
     const id = String(row.photo_id);
     const list = grouped.get(id) ?? [];
+    const spot = readStickerSpot(row.x, row.y, list.length);
     list.push({
+      id: String(row.id),
       emoji: String(row.emoji),
       profileId: String(row.profile_id),
       profileName: String(row.profile_name ?? ""),
       mine: flag(row.mine),
       pinnedAt: num(row.pinned_ms),
+      x: spot.x,
+      y: spot.y,
     });
     grouped.set(id, list);
   }
@@ -901,11 +909,7 @@ export async function filePhoto(id: string, token: string, albumId: string | nul
   }
 }
 
-// One sticker per camera per frame. Picking again replaces that camera's emoji.
-export async function setSticker(photoId: string, token: string, emoji: string): Promise<FrameSticker[]> {
-  if (!isEmoji(emoji)) throw new HttpError(400, "Pick an emoji.");
-  const profile = await readOwnProfile(token);
-  if (!profile) throw new HttpError(409, "Name yourself first.");
+async function requireFeedFrame(photoId: string): Promise<{ shooter_token: string }> {
   const frames = await sql<{ shooter_token: string; on_feed: boolean }>(
     `select p.shooter_token, ${liveOnFeed} as on_feed
      from photos p
@@ -915,30 +919,62 @@ export async function setSticker(photoId: string, token: string, emoji: string):
   );
   const frame = frames[0];
   if (!frame) throw new HttpError(404, "That frame is gone.");
-  if (frame.shooter_token === token) throw new HttpError(403, "Stick a frame that isn't yours.");
   if (!flag(frame.on_feed)) throw new HttpError(409, "That frame isn't on the feed.");
-  const existing = await sql<{ photo_id: string }>(
-    `select photo_id from stickers where photo_id = $1 and shooter_token = $2`,
-    [photoId, token],
+  return frame;
+}
+
+// Each tap adds another sticker. A later tap does not replace the ones already there.
+export async function setSticker(photoId: string, token: string, emoji: string): Promise<FrameSticker[]> {
+  if (!isEmoji(emoji)) throw new HttpError(400, "Pick an emoji.");
+  const profile = await readOwnProfile(token);
+  if (!profile) throw new HttpError(409, "Name yourself first.");
+  const frame = await requireFeedFrame(photoId);
+  if (frame.shooter_token === token) throw new HttpError(403, "Stick a frame that isn't yours.");
+  const placed = await sql<{ x: number | null; y: number | null }>(
+    `select x, y from stickers where photo_id = $1 order by created_at, id`,
+    [photoId],
   );
-  if (!existing[0]) {
-    const counted = await sql<{ n: number }>(
-      `select count(*)::int as n from stickers where photo_id = $1`,
-      [photoId],
-    );
-    if (num(counted[0]?.n) >= STICKER_CAP) throw new HttpError(409, "This frame is covered.");
-  }
+  if (placed.length >= STICKER_CAP) throw new HttpError(409, "This frame is covered.");
+  const spot = nextStickerSpot(placed.map((row, index) => readStickerSpot(row.x, row.y, index)));
   await sql(
-    `insert into stickers (photo_id, shooter_token, emoji)
-     values ($1, $2, $3)
-     on conflict (photo_id, shooter_token) do update
-       set emoji = excluded.emoji,
-           updated_at = case
-             when stickers.emoji is distinct from excluded.emoji then now()
-             else stickers.updated_at
-           end`,
-    [photoId, token, emoji],
+    `insert into stickers (id, photo_id, shooter_token, emoji, x, y)
+     values ($1, $2, $3, $4, $5, $6)`,
+    [randomUUID(), photoId, token, emoji, spot.x, spot.y],
   );
+  return stickersFor(photoId, token);
+}
+
+/** The person who stuck it can take that one emoji back. The others stay. */
+export async function removeSticker(photoId: string, token: string, stickerId: string): Promise<FrameSticker[]> {
+  await requireFeedFrame(photoId);
+  const removed = await sql<{ id: string }>(
+    `delete from stickers
+     where id = $1 and photo_id = $2 and shooter_token = $3
+     returning id`,
+    [stickerId, photoId, token],
+  );
+  if (!removed[0]) throw new HttpError(404, "That sticker is gone.");
+  return stickersFor(photoId, token);
+}
+
+/** Slide one sticker aside. The pin time stays, so the move does not read as a new pin. */
+export async function moveSticker(
+  photoId: string,
+  token: string,
+  stickerId: string,
+  x: number,
+  y: number,
+): Promise<FrameSticker[]> {
+  await requireFeedFrame(photoId);
+  if (!(await readOwnProfile(token))) throw new HttpError(409, "Name yourself first.");
+  const moved = await sql<{ id: string }>(
+    `update stickers
+     set x = $3, y = $4
+     where id = $1 and photo_id = $2
+     returning id`,
+    [stickerId, photoId, x, y],
+  );
+  if (!moved[0]) throw new HttpError(404, "That sticker is gone.");
   return stickersFor(photoId, token);
 }
 

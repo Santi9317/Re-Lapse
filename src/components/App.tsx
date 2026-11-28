@@ -81,6 +81,7 @@ function catchFeed(photos: FeedItem[], feedVisible: boolean): number {
     stickers: photos.flatMap((photo) =>
       photo.stickers.map((sticker) => ({
         photoId: photo.id,
+        stickerId: sticker.id,
         profileId: sticker.profileId,
         pinnedAt: sticker.pinnedAt,
         mine: sticker.mine,

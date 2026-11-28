@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState, type RefObject } from "react";
-import { fetchOwnProfile, fetchPublicProfile, isProfileRemoved, removeFrameNote, saveOwnProfile, setFrameNote, setFrameSticker } from "@/lib/api";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from "react";
+import { fetchOwnProfile, fetchPublicProfile, isProfileRemoved, moveFrameSticker, removeFrameNote, removeFrameSticker, saveOwnProfile, setFrameNote, setFrameSticker } from "@/lib/api";
 import { CaptionField } from "@/components/CaptionField";
 import { FRAME_NOTE_LIMIT, photoBackOpens } from "@/lib/frame-note";
 import { ago, leavesIn } from "@/lib/format";
@@ -21,6 +21,7 @@ import {
 import { pickQuickStickers } from "@/lib/quick-stickers";
 import { frameHasUnseenNote, noteNotesViewed } from "@/lib/note-seen";
 import { noteStickerViewed, stickerUnseen } from "@/lib/sticker-seen";
+import { clampStickerPoint, stickerTilt } from "@/lib/sticker-place";
 import {
   ensurePhotoFile,
   fileFromImage,
@@ -31,38 +32,11 @@ import {
 } from "@/lib/save";
 import type { FeedItem, FrameComment, FrameSticker, SharedProfile } from "@/lib/types";
 
-const STICKER_SLOTS: [number, number][] = [
-  [10, 12],
-  [10, 88],
-  [24, 8],
-  [24, 92],
-  [76, 10],
-  [76, 90],
-  [90, 20],
-  [90, 80],
-  [48, 8],
-  [48, 92],
-  [36, 14],
-  [62, 86],
-  [36, 86],
-  [62, 14],
-  [90, 50],
-  [12, 50],
-  [50, 22],
-  [50, 78],
-  [20, 30],
-  [20, 70],
-  [80, 30],
-  [80, 70],
-  [32, 50],
-  [68, 50],
-];
-
-function stickerStyle(index: number): { top: string; left: string; "--tilt": string } {
-  const slot = STICKER_SLOTS[index % STICKER_SLOTS.length] ?? [12, 12];
-  const tilt = (index % 2 === 0 ? -1 : 1) * (6 + (index % 5) * 2);
-  return { top: `${slot[0]}%`, left: `${slot[1]}%`, "--tilt": `${tilt}deg` };
+function stickerStyle(spot: { x: number; y: number }, index: number): { top: string; left: string; "--tilt": string } {
+  return { top: `${spot.y}%`, left: `${spot.x}%`, "--tilt": `${stickerTilt(index)}deg` };
 }
+
+const DRAG_SLOP = 8;
 
 function useFrameTap(onSingle: (() => void) | null, onDouble: (() => void) | null) {
   const single = useRef(onSingle);
@@ -116,32 +90,53 @@ async function ensureStickerIdentity(typedName: string, naming: boolean): Promis
   saveProfile(profileFromServer(await saveOwnProfile(profileWrite(source))));
 }
 
+type Drag = {
+  id: string;
+  pointerId: number;
+  startX: number;
+  startY: number;
+  originX: number;
+  originY: number;
+  x: number;
+  y: number;
+  moved: boolean;
+};
+
 function StickerLayer({
   item,
   shown,
   onPreview,
+  onMove,
 }: {
   item: FeedItem;
   shown: boolean;
   onPreview: (sticker: FrameSticker) => void;
+  onMove: ((stickerId: string, x: number, y: number) => Promise<void>) | null;
 }) {
   const rootRef = useRef<HTMLUListElement>(null);
   const onScreen = useRef(new Set<string>());
   const stickersRef = useRef(item.stickers);
   const photoRef = useRef(item.id);
+  const dragRef = useRef<Drag | null>(null);
+  const onMoveRef = useRef(onMove);
+  const skipClick = useRef(false);
   stickersRef.current = item.stickers;
   photoRef.current = item.id;
+  onMoveRef.current = onMove;
   const [seenRev, setSeenRev] = useState(0);
   const [unseen, setUnseen] = useState<ReadonlySet<string>>(() => new Set());
+  const [placed, setPlaced] = useState<Record<string, { x: number; y: number }>>({});
+  const [draggingId, setDraggingId] = useState<string | null>(null);
 
-  function markViewed(profileIds: Iterable<string>): boolean {
+  function markViewed(stickerIds: Iterable<string>): boolean {
     let changed = false;
-    for (const profileId of profileIds) {
-      const sticker = stickersRef.current.find((mark) => mark.profileId === profileId);
+    for (const stickerId of stickerIds) {
+      const sticker = stickersRef.current.find((mark) => mark.id === stickerId);
       if (!sticker) continue;
       if (
         noteStickerViewed(localStorage, {
           photoId: photoRef.current,
+          stickerId: sticker.id,
           profileId: sticker.profileId,
           pinnedAt: sticker.pinnedAt,
           mine: sticker.mine,
@@ -156,6 +151,12 @@ function StickerLayer({
   const markRef = useRef(markViewed);
   markRef.current = markViewed;
 
+  function reveal(sticker: FrameSticker) {
+    onScreen.current.delete(sticker.id);
+    if (markViewed([sticker.id])) setSeenRev((value) => value + 1);
+    onPreview(sticker);
+  }
+
   useEffect(() => {
     const watching = onScreen.current;
     return () => {
@@ -167,18 +168,36 @@ function StickerLayer({
   }, []);
 
   useEffect(() => {
+    if (dragRef.current) return;
+    setPlaced((current) => {
+      let changed = false;
+      const next: Record<string, { x: number; y: number }> = {};
+      for (const [id, point] of Object.entries(current)) {
+        const sticker = item.stickers.find((mark) => mark.id === id);
+        if (!sticker || (Math.abs(sticker.x - point.x) < 0.15 && Math.abs(sticker.y - point.y) < 0.15)) {
+          changed = true;
+          continue;
+        }
+        next[id] = point;
+      }
+      return changed ? next : current;
+    });
+  }, [item.stickers]);
+
+  useEffect(() => {
     const next = new Set<string>();
     if (item.onFeed) {
       for (const sticker of item.stickers) {
         if (
           stickerUnseen(localStorage, {
             photoId: item.id,
+            stickerId: sticker.id,
             profileId: sticker.profileId,
             pinnedAt: sticker.pinnedAt,
             mine: sticker.mine,
           })
         ) {
-          next.add(sticker.profileId);
+          next.add(sticker.id);
         }
       }
     }
@@ -203,17 +222,17 @@ function StickerLayer({
       (entries) => {
         const left: string[] = [];
         for (const entry of entries) {
-          const profileId = (entry.target as HTMLElement).dataset.profileId;
-          if (!profileId) continue;
+          const stickerId = (entry.target as HTMLElement).dataset.stickerId;
+          if (!stickerId) continue;
           // The stronger edge stays while the emoji is on screen. It returns
           // to the usual sticker once that look ends.
           if (entry.isIntersecting && entry.intersectionRatio >= 0.5) {
-            onScreen.current.add(profileId);
+            onScreen.current.add(stickerId);
             continue;
           }
-          if (!entry.isIntersecting && onScreen.current.has(profileId)) {
-            onScreen.current.delete(profileId);
-            left.push(profileId);
+          if (!entry.isIntersecting && onScreen.current.has(stickerId)) {
+            onScreen.current.delete(stickerId);
+            left.push(stickerId);
           }
         }
         if (left.length > 0 && markRef.current(left)) setSeenRev((value) => value + 1);
@@ -224,31 +243,110 @@ function StickerLayer({
     return () => observer.disconnect();
   }, [shown, unseen, item.id]);
 
+  function pointOf(drag: Drag, event: ReactPointerEvent<HTMLButtonElement>): { x: number; y: number } {
+    const bounds = rootRef.current?.getBoundingClientRect();
+    if (!bounds || bounds.width < 1 || bounds.height < 1) return { x: drag.originX, y: drag.originY };
+    return clampStickerPoint(
+      drag.originX + ((event.clientX - drag.startX) / bounds.width) * 100,
+      drag.originY + ((event.clientY - drag.startY) / bounds.height) * 100,
+    );
+  }
+
+  function dropPlaced(id: string) {
+    setPlaced((current) => {
+      if (!current[id]) return current;
+      const next = { ...current };
+      delete next[id];
+      return next;
+    });
+  }
+
   if (item.stickers.length === 0) return null;
   return (
     <ul className="stickers" aria-label="Stickers on this frame" ref={rootRef}>
       {item.stickers.map((sticker, index) => {
-        const style = stickerStyle(index);
-        const fresh = unseen.has(sticker.profileId);
+        const spot = placed[sticker.id] ?? { x: sticker.x, y: sticker.y };
+        const style = stickerStyle(spot, index);
+        const fresh = unseen.has(sticker.id);
         return (
-          <li key={sticker.profileId}>
+          <li key={sticker.id}>
             <button
               className="sticker"
               style={style}
               type="button"
               data-sticker={sticker.emoji}
+              data-sticker-id={sticker.id}
               data-profile-id={sticker.profileId}
-              data-sticker-preview={sticker.profileId}
+              data-sticker-preview={sticker.id}
               data-mine={sticker.mine ? "true" : "false"}
               data-unseen={fresh ? "true" : undefined}
+              data-dragging={draggingId === sticker.id ? "true" : undefined}
               title={sticker.profileName}
               aria-label={`${sticker.profileName} stuck ${sticker.emoji}`}
+              onPointerDown={(event) => {
+                if (event.button !== 0 || !onMoveRef.current) return;
+                event.stopPropagation();
+                event.preventDefault();
+                event.currentTarget.setPointerCapture(event.pointerId);
+                dragRef.current = {
+                  id: sticker.id,
+                  pointerId: event.pointerId,
+                  startX: event.clientX,
+                  startY: event.clientY,
+                  originX: spot.x,
+                  originY: spot.y,
+                  x: spot.x,
+                  y: spot.y,
+                  moved: false,
+                };
+              }}
+              onPointerMove={(event) => {
+                const drag = dragRef.current;
+                if (!drag || drag.pointerId !== event.pointerId || drag.id !== sticker.id) return;
+                const travel = Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY);
+                if (!drag.moved && travel < DRAG_SLOP) return;
+                drag.moved = true;
+                const point = pointOf(drag, event);
+                drag.x = point.x;
+                drag.y = point.y;
+                setDraggingId(sticker.id);
+                setPlaced((current) => ({ ...current, [sticker.id]: point }));
+              }}
+              onPointerUp={(event) => {
+                const drag = dragRef.current;
+                if (!drag || drag.pointerId !== event.pointerId || drag.id !== sticker.id) return;
+                dragRef.current = null;
+                skipClick.current = true;
+                setDraggingId(null);
+                if (!drag.moved) {
+                  reveal(sticker);
+                  return;
+                }
+                const point = { x: drag.x, y: drag.y };
+                setPlaced((current) => ({ ...current, [sticker.id]: point }));
+                const save = onMoveRef.current;
+                if (!save) {
+                  dropPlaced(sticker.id);
+                  return;
+                }
+                void save(sticker.id, point.x, point.y).catch(() => dropPlaced(sticker.id));
+              }}
+              onPointerCancel={() => {
+                const drag = dragRef.current;
+                if (!drag || drag.id !== sticker.id) return;
+                dragRef.current = null;
+                skipClick.current = true;
+                setDraggingId(null);
+                dropPlaced(sticker.id);
+              }}
               onClick={(event) => {
                 event.stopPropagation();
                 event.preventDefault();
-                onScreen.current.delete(sticker.profileId);
-                if (markViewed([sticker.profileId])) setSeenRev((value) => value + 1);
-                onPreview(sticker);
+                if (skipClick.current) {
+                  skipClick.current = false;
+                  return;
+                }
+                reveal(sticker);
               }}
             >
               {sticker.emoji}
@@ -260,7 +358,19 @@ function StickerLayer({
   );
 }
 
-function StickerSlip({ sticker, onClose }: { sticker: FrameSticker; onClose: () => void }) {
+function StickerSlip({
+  sticker,
+  busy,
+  error,
+  onClose,
+  onRemove,
+}: {
+  sticker: FrameSticker;
+  busy: boolean;
+  error: string;
+  onClose: () => void;
+  onRemove: (() => void) | null;
+}) {
   const [profile, setProfile] = useState<SharedProfile | null>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
 
@@ -296,21 +406,39 @@ function StickerSlip({ sticker, onClose }: { sticker: FrameSticker; onClose: () 
       role="dialog"
       aria-modal="true"
       aria-label={`${name} stuck ${sticker.emoji}`}
-      data-sticker-preview={sticker.profileId}
+      data-sticker-preview={sticker.id}
     >
       <button className="sticker-slip-scrim" type="button" aria-label="Close" onClick={onClose} />
       <div className="sticker-slip-stack">
-        <figure className="sticker-slip-card">
+        <figure className="sticker-slip-card" data-mine={sticker.mine ? "true" : "false"}>
           {profile?.avatarUrl ? (
             <img className="slip-thumb" src={profile.avatarUrl} alt="" />
           ) : (
             <span className="slip-thumb slip-thumb-empty" aria-hidden="true" />
           )}
-          <p className="slip-name" data-preview-name={name}>
-            {name}
-          </p>
+          <div className="slip-who">
+            <p className="slip-name" data-preview-name={name}>
+              {name}
+            </p>
+            {onRemove ? (
+              <button
+                className="slip-remove"
+                type="button"
+                data-sticker-remove={sticker.id}
+                aria-label={`Remove your ${sticker.emoji}`}
+                disabled={busy}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onRemove();
+                }}
+              >
+                Remove
+              </button>
+            ) : null}
+          </div>
           <p className="slip-emoji">{sticker.emoji}</p>
         </figure>
+        {error ? <p className="error">{error}</p> : null}
         <button ref={closeRef} className="sticker-slip-close" type="button" onClick={onClose}>
           Close
         </button>
@@ -484,6 +612,8 @@ function FrameFace({
   const [composing, setComposing] = useState(false);
   const [back, setBack] = useState(false);
   const [preview, setPreview] = useState<FrameSticker | null>(null);
+  const [pins, setPins] = useState(item.stickers);
+  const [slipError, setSlipError] = useState("");
   const [name, setName] = useState(() => loadProfile().username);
   const [needsName, setNeedsName] = useState(() => !profileReady(loadProfile()));
   const [held, setHeld] = useState("");
@@ -509,7 +639,18 @@ function FrameFace({
   const noteFresh =
     noteSignal && item.onFeed && noteRev >= 0 && frameHasUnseenNote(localStorage, noteStamps);
   const nameId = `sticker-name-${item.id}`;
-  const mineEmoji = item.stickers.find((sticker) => sticker.mine)?.emoji ?? "";
+  const frame = { ...item, stickers: pins };
+
+  useEffect(() => {
+    setPins(item.stickers);
+  }, [item.id, item.stickers]);
+
+  useEffect(() => {
+    setPreview((current) => {
+      if (!current) return current;
+      return pins.some((sticker) => sticker.id === current.id) ? current : null;
+    });
+  }, [pins]);
 
   function closeKeyboard() {
     inputRef.current?.blur();
@@ -604,6 +745,7 @@ function FrameFace({
     try {
       await ensureStickerIdentity(name, needsName);
       const result = await setFrameSticker(item.id, emoji);
+      setPins(result.stickers);
       onStickers?.(item.id, result.stickers);
       closeKeyboard();
     } catch (err) {
@@ -641,6 +783,28 @@ function FrameFace({
       setError(err instanceof Error ? err.message : "That note didn't land.");
       setBusy(false);
     }
+  }
+
+  async function peel(sticker: FrameSticker) {
+    if (!sticker.mine || busy) return;
+    setBusy(true);
+    setSlipError("");
+    try {
+      const result = await removeFrameSticker(item.id, sticker.id);
+      setPins(result.stickers);
+      onStickers?.(item.id, result.stickers);
+      setPreview(null);
+      setBusy(false);
+    } catch (err) {
+      setSlipError(err instanceof Error ? err.message : "That sticker stayed put.");
+      setBusy(false);
+    }
+  }
+
+  async function nudge(stickerId: string, x: number, y: number) {
+    const result = await moveFrameSticker(item.id, stickerId, x, y);
+    setPins(result.stickers);
+    onStickers?.(item.id, result.stickers);
   }
 
   async function deleteNote(id: string) {
@@ -687,8 +851,27 @@ function FrameFace({
                 {image}
               </div>
             )}
-            <StickerLayer item={item} shown={!turned} onPreview={setPreview} />
-            {preview ? <StickerSlip sticker={preview} onClose={() => setPreview(null)} /> : null}
+            <StickerLayer
+              item={frame}
+              shown={!turned}
+              onPreview={(sticker) => {
+                setSlipError("");
+                setPreview(sticker);
+              }}
+              onMove={item.onFeed ? nudge : null}
+            />
+            {preview ? (
+              <StickerSlip
+                sticker={preview}
+                busy={busy}
+                error={slipError}
+                onClose={() => {
+                  setPreview(null);
+                  setSlipError("");
+                }}
+                onRemove={preview.mine && item.onFeed ? () => void peel(preview) : null}
+              />
+            ) : null}
           </div>
           {canOpenNotes ? (
             <div
@@ -781,9 +964,7 @@ function FrameFace({
               <span aria-hidden="true">+</span>
             </button>
           </div>
-          <p className="fine">
-            {mineEmoji ? `Yours is ${mineEmoji}. Pick again to change it.` : "One sticker. It stays on the frame."}
-          </p>
+          <p className="fine">Tap one to add it. Drag a sticker if it covers the photo.</p>
           {needsName ? (
             <>
               <label className="fine" htmlFor={nameId}>
