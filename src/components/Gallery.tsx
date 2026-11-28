@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { deleteAlbum, deletePhoto, fetchAlbum, filePhoto, updateAlbum } from "@/lib/api";
 import { frames } from "@/lib/format";
 import { galleryTitleSave, galleryView, type GalleryPlace } from "@/lib/gallery-view";
 import type { AlbumDetail, FeedItem, FrameComment, GalleryCard, GalleryRoll } from "@/lib/types";
 import { PhotoStrip, StripShot } from "@/components/PhotoStrip";
 import { Lightbox, PrintView } from "@/components/Print";
+import { PullRefresh } from "@/components/PullRefresh";
 
 function Cover({ id }: { id: string | null }) {
   const [dead, setDead] = useState(false);
@@ -80,6 +81,7 @@ export function Gallery({
   const [confirming, setConfirming] = useState(false);
   const [open, setOpen] = useState<FeedItem | null>(null);
   const [tick, setTick] = useState(0);
+  const loadRef = useRef<() => Promise<void>>(async () => {});
 
   useEffect(() => {
     if (!confirming) return;
@@ -93,9 +95,10 @@ export function Gallery({
 
   useEffect(() => {
     let stop = false;
-    setError("");
-    fetchAlbum(id)
-      .then((next) => {
+    async function load() {
+      setError("");
+      try {
+        const next = await fetchAlbum(id);
         if (stop) return;
         setDetail(next);
         setTitle(next.album.name);
@@ -107,10 +110,12 @@ export function Gallery({
             null
           );
         });
-      })
-      .catch((err: unknown) => {
+      } catch (err: unknown) {
         if (!stop) setError(err instanceof Error ? err.message : "That gallery is gone.");
-      });
+      }
+    }
+    loadRef.current = load;
+    void load();
     return () => {
       stop = true;
     };
@@ -217,12 +222,12 @@ export function Gallery({
 
   if (!detail) {
     return (
-      <div className="scroll" data-screen="gallery" data-place={place}>
+      <PullRefresh data-screen="gallery" data-place={place} onRefresh={() => loadRef.current()}>
         <button className="ghost back" type="button" onClick={onBack}>
           ← {backLabel}
         </button>
         {error ? <p className="error">{error}</p> : <p className="fine">Opening the gallery.</p>}
-      </div>
+      </PullRefresh>
     );
   }
 
@@ -239,12 +244,12 @@ export function Gallery({
   const coverId = detail.album.coverPhotoId;
 
   return (
-    <div
-      className="scroll"
+    <PullRefresh
       data-screen="gallery"
       data-place={place}
       data-owner={owner ? "yes" : "no"}
       data-editing={canEdit ? "yes" : "no"}
+      onRefresh={() => loadRef.current()}
     >
       <button className="ghost back" type="button" onClick={onBack}>
         ← {backLabel}
@@ -401,6 +406,6 @@ export function Gallery({
           notes="owner"
         />
       ) : null}
-    </div>
+    </PullRefresh>
   );
 }

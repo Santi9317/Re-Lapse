@@ -16,6 +16,7 @@ import { shouldFlipOnDoubleTap } from "@/lib/tap";
 import { isIosDevice, setTorch, SHUTTER_BLINK_MS, wait } from "@/lib/flash";
 import { renderDisposable, renderLatent } from "@/lib/filter";
 import { shotDestination } from "@/lib/gallery-shoot";
+import { PullRefresh } from "@/components/PullRefresh";
 import type { EventRoll, GalleryRoll } from "@/lib/types";
 import {
   captureFrame,
@@ -225,10 +226,16 @@ export function Shoot({
     let session: { distance: number; zoom: number; moved: boolean } | null = null;
     let lastTap: { x: number; y: number; at: number } | null = null;
     let pinchGesture = false;
+    let drag: { x: number; y: number } | null = null;
     const live = () => modeRef.current === "live";
 
     const onStart = (event: TouchEvent) => {
-      if (event.touches.length >= 2) pinchGesture = true;
+      if (event.touches.length >= 2) {
+        pinchGesture = true;
+        drag = null;
+      } else if (event.touches.length === 1 && event.touches[0]) {
+        drag = { x: event.touches[0].clientX, y: event.touches[0].clientY };
+      }
       if (!live() || event.touches.length !== 2) return;
       const distance = pinchDistance(event.touches[0], event.touches[1]);
       if (!(distance > 0)) return;
@@ -236,6 +243,10 @@ export function Shoot({
     };
 
     const onMove = (event: TouchEvent) => {
+      if (drag && event.touches.length === 1 && event.touches[0]) {
+        const touch = event.touches[0];
+        if (Math.hypot(touch.clientX - drag.x, touch.clientY - drag.y) > 12) drag = null;
+      }
       if (event.touches.length < 2) return;
       event.preventDefault();
       if (!session || !live()) return;
@@ -255,9 +266,14 @@ export function Shoot({
       }
       session = null;
       if (event.touches.length > 0) return;
+      const pulled = drag == null;
+      drag = null;
       const pinched = pinchGesture;
       pinchGesture = false;
-      if (pinched || !live()) return;
+      if (pinched || pulled || !live()) {
+        if (pulled) lastTap = null;
+        return;
+      }
       const touch = event.changedTouches[0];
       if (!touch) return;
       const onControl =
@@ -275,7 +291,10 @@ export function Shoot({
     const onCancel = (event: TouchEvent) => {
       if (event.touches.length >= 2) return;
       session = null;
-      if (event.touches.length === 0) pinchGesture = false;
+      if (event.touches.length === 0) {
+        pinchGesture = false;
+        drag = null;
+      }
     };
 
     const onWheel = (event: WheelEvent) => {
@@ -460,14 +479,46 @@ export function Shoot({
   }
   flipRef.current = flipCamera;
 
+  async function refreshShoot() {
+    const stored = Number(localStorage.getItem("relapse.frames") || 0);
+    if (Number.isFinite(stored)) {
+      framesRef.current = stored;
+      setFrames(stored);
+    }
+    if (!activeRef.current) return;
+    const facingNow = facingRef.current;
+    const ready = peekCamera(facingNow);
+    if (ready && streamRef.current === ready) return;
+    if (ready) {
+      attachStream(ready);
+      return;
+    }
+    const generation = ++attempt.current;
+    engineRef.current?.adopt(null);
+    if (modeRef.current !== "live") setMode("opening");
+    const stream = await openCamera(facingNow);
+    if (generation !== attempt.current || !activeRef.current || facingRef.current !== facingNow) return;
+    if (!stream) {
+      if (!peekCamera(facingNow)) {
+        streamRef.current = null;
+        engineRef.current?.adopt(null);
+        setMode("fallback");
+      }
+      return;
+    }
+    attachStream(stream);
+  }
+
   const eventClosed = armed != null && (now < armed.startsAt || now >= armed.endsAt);
   const preview = previewScale(optical, zoom);
   const lensStyle = lensTransform(facing === "user", preview);
 
   return (
-    <div
+    <PullRefresh
+      scroll={false}
       className="shoot"
       data-screen="shoot"
+      onRefresh={() => refreshShoot()}
       onDragOver={(event) => event.preventDefault()}
       onDrop={(event) => {
         event.preventDefault();
@@ -605,6 +656,6 @@ export function Shoot({
           event.target.value = "";
         }}
       />
-    </div>
+    </PullRefresh>
   );
 }

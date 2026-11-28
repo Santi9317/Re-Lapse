@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { Gallery, GalleryStrip } from "@/components/Gallery";
+import { PullRefresh } from "@/components/PullRefresh";
 import { Sleeve } from "@/components/Sleeve";
 import { fetchFeed, fetchOwnProfile, fetchPublicProfile, saveOwnProfile } from "@/lib/api";
 import {
@@ -74,6 +75,9 @@ export function Profile({
     };
   }, []);
 
+  const loadProfileRef = useRef<() => Promise<void>>(async () => {});
+  const loadFeedRef = useRef<() => Promise<void>>(async () => {});
+
   useEffect(() => {
     let stop = false;
     async function load() {
@@ -116,6 +120,7 @@ export function Profile({
         setMode(profileReady(local) ? "page" : "edit");
       }
     }
+    loadProfileRef.current = load;
     void load();
     return () => {
       stop = true;
@@ -139,6 +144,7 @@ export function Profile({
         if (!stop) setFeedError(err instanceof Error ? err.message : "The lab didn't answer.");
       }
     }
+    loadFeedRef.current = load;
     void load();
     const id = window.setInterval(() => void load(), 8000);
     return () => {
@@ -286,10 +292,15 @@ export function Profile({
     );
   }
 
+  async function refreshYou() {
+    await Promise.all([loadProfileRef.current(), loadFeedRef.current()]);
+  }
+
   if (!profile || !mode) {
     return (
       <div className="profile-screen" data-screen="profile">
         <Sleeve />
+        <PullRefresh onRefresh={refreshYou}>{null}</PullRefresh>
       </div>
     );
   }
@@ -301,7 +312,7 @@ export function Profile({
   return (
     <div className="profile-screen" data-screen="profile" data-mode={mode}>
       <Sleeve />
-      <div className="scroll">
+      <PullRefresh onRefresh={refreshYou}>
       {formError ? <p className="error">{formError}</p> : null}
       {mode === "page" ? (
         <ProfilePage
@@ -357,7 +368,7 @@ export function Profile({
         />
       ) : null}
       {openPhoto ? <FrameDialog photo={openPhoto} onClose={() => setOpenId(null)} /> : null}
-      </div>
+      </PullRefresh>
     </div>
   );
 }
@@ -1016,6 +1027,7 @@ export function GuestProfile({
   const [openId, setOpenId] = useState<string | null>(null);
   const [openGallery, setOpenGallery] = useState<string | null>(null);
   const seenId = useRef<string | null>(null);
+  const loadRef = useRef<() => Promise<void>>(async () => {});
 
   useEffect(() => {
     let stop = false;
@@ -1028,15 +1040,18 @@ export function GuestProfile({
       setError("");
       setIndex(0);
     }
-    load(id)
-      .then((row) => {
+    async function run() {
+      try {
+        const row = await load(id);
         if (stop) return;
         setProfile(profileFromServer(row));
         setGalleries(row.galleries ?? []);
-      })
-      .catch((err: unknown) => {
+      } catch (err: unknown) {
         if (!stop) setError(err instanceof Error ? err.message : "That profile is gone.");
-      });
+      }
+    }
+    loadRef.current = run;
+    void run();
     return () => {
       stop = true;
     };
@@ -1073,7 +1088,7 @@ export function GuestProfile({
   }
 
   return (
-    <div className="scroll" data-screen="guest-profile">
+    <PullRefresh data-screen="guest-profile" onRefresh={() => loadRef.current()}>
       <button className="ghost back" type="button" onClick={onBack}>
         ← Back
       </button>
@@ -1099,6 +1114,6 @@ export function GuestProfile({
         </>
       ) : null}
       {openPhoto ? <FrameDialog photo={openPhoto} onClose={() => setOpenId(null)} /> : null}
-    </div>
+    </PullRefresh>
   );
 }

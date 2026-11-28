@@ -5,6 +5,7 @@ import { deletePhoto, fetchFeed } from "@/lib/api";
 import { pickWalk } from "@/lib/walkthrough";
 import type { FeedItem, FrameComment, FrameSticker } from "@/lib/types";
 import { PrintView } from "@/components/Print";
+import { PullRefresh } from "@/components/PullRefresh";
 import { useWalk, WalkMark, WalkTip } from "@/components/Walkthrough";
 
 export function Feed({
@@ -24,6 +25,7 @@ export function Feed({
   const generation = useRef(0);
   const onSeenRef = useRef(onSeen);
   onSeenRef.current = onSeen;
+  const loadRef = useRef<() => Promise<void>>(async () => {});
 
   useEffect(() => {
     let stop = false;
@@ -40,6 +42,7 @@ export function Feed({
         if (!stop && ticket === generation.current) setError(err instanceof Error ? err.message : "The lab didn't answer.");
       }
     }
+    loadRef.current = load;
     void load();
     const id = window.setInterval(() => void load(), 8000);
     return () => {
@@ -84,7 +87,7 @@ export function Feed({
   }
 
   return (
-    <div className="scroll" data-screen="feed">
+    <PullRefresh data-screen="feed" onRefresh={() => loadRef.current()}>
       {error ? <p className="error">{error}</p> : null}
       {picked === "feed" ? (
         <WalkTip id="feed" onDismiss={feedWalk.dismiss} onSkip={feedWalk.skip} onLater={feedWalk.later} />
@@ -118,6 +121,6 @@ export function Feed({
           ))}
         </div>
       )}
-    </div>
+    </PullRefresh>
   );
 }
