@@ -3,23 +3,28 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { FEATURE_WALK, FEATURE_WALK_KEY, featureWalkDue, featureWalkSeen } from "./walkthrough.ts";
 
-test("the walk is the feed, a frame, and the notes on the back", () => {
+test("the walk is the feed, then emojis, then signatures", () => {
   assert.deepEqual(
     FEATURE_WALK.map((step) => step.id),
-    ["feed", "frame", "notes"],
+    ["feed", "emoji", "signatures"],
   );
-  const lines = FEATURE_WALK.map((step) => step.line).join(" ");
-  const titles = FEATURE_WALK.map((step) => step.title).join(" ");
-  assert.match(titles, /The Feed/);
-  assert.equal(titles.includes("Frames from this link"), false);
-  assert.match(lines, /show up here/);
-  assert.match(lines, /emoji/);
-  assert.match(lines, /glows blue/);
-  assert.match(lines, /signature/);
-  assert.match(lines, /on the back/);
-  assert.match(lines, /sample is gone/);
-  assert.equal(lines.includes("This sample is only"), false);
-  assert.equal(lines.includes("The front is the picture"), false);
+  const [feed, emoji, signatures] = FEATURE_WALK;
+  assert.equal(feed?.title, "The Feed");
+  assert.equal(feed?.title.includes("Frames from this link"), false);
+  assert.match(feed?.line ?? "", /show up here/);
+  assert.equal(/emoji|signature|flip|glow/i.test(feed?.line ?? ""), false);
+
+  assert.match(emoji?.line ?? "", /Double-tap a frame to add an emoji/);
+  assert.match(emoji?.line ?? "", /Hold it down to drag it/);
+  assert.match(emoji?.line ?? "", /Tap yours, then Remove, to take it off/);
+  assert.match(emoji?.line ?? "", /Newly added emojis glow blue/);
+  assert.equal(/flip|signature|\bback\b/i.test(emoji?.line ?? ""), false);
+
+  assert.match(signatures?.line ?? "", /Tap once to flip the frame and write on the back/);
+  assert.match(signatures?.line ?? "", /new unopened signatures glow blue/i);
+  assert.match(signatures?.line ?? "", /Frames glow blue when they have unread signatures/);
+  assert.match(signatures?.line ?? "", /sample is gone/);
+  assert.equal(/emoji|Double-tap|drag|Remove/i.test(signatures?.line ?? ""), false);
   assert.equal(FEATURE_WALK_KEY, "relapse.featureWalk");
 });
 
@@ -43,6 +48,12 @@ test("the walk is a sample, not a standing tip, and the menu can start it", () =
   assert.match(walk, /sample is not saved/);
   assert.match(feature, /data-sample-photo/);
   assert.match(feature, /step\.id !== "feed"/);
+  assert.match(feature, /data-sample-emoji/);
+  assert.match(feature, /data-sample-unread/);
+  assert.match(feature, /step\.id === "signatures"/);
+  assert.equal(feature.includes('step.id === "notes"'), false);
+  assert.equal(feature.includes("Tap to turn it over"), false);
+  assert.equal(feature.includes("localStorage"), false);
   assert.match(feature, /data-feature-walk/);
   assert.match(feature, /\/recap\/roof\.png/);
   assert.equal(feed.includes("WalkTip"), false);
@@ -60,4 +71,7 @@ test("the walk is a sample, not a standing tip, and the menu can start it", () =
   assert.match(app, /data-walk-step/);
   assert.match(css, /data-walk-step="feed"/);
   assert.match(css, /data-nav="feed"/);
+  assert.match(css, /\.feature-walk-frame\[data-sample-unread="true"\]/);
+  assert.match(css, /\.feature-walk-emoji/);
+  assert.match(css, /\.sheet-notes \{[^}]*overflow-y:\s*auto/);
 });

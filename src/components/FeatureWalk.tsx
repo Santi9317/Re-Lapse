@@ -13,14 +13,20 @@ export function FeatureWalk({
 }) {
   const [index, setIndex] = useState(0);
   const [back, setBack] = useState(false);
+  const [opened, setOpened] = useState(false);
   const step = FEATURE_WALK[index] ?? FEATURE_WALK[0];
   const last = index >= FEATURE_WALK.length - 1;
-  const showBack = back || step.id === "notes";
   const showSample = step.id !== "feed";
+  const showBack = step.id === "signatures" && back;
 
   useEffect(() => {
     onStep?.(step.id);
   }, [onStep, step.id]);
+
+  useEffect(() => {
+    setBack(false);
+    setOpened(false);
+  }, [step.id]);
 
   function next() {
     if (last) {
@@ -30,18 +36,32 @@ export function FeatureWalk({
     setIndex((current) => current + 1);
   }
 
+  function flipSample() {
+    setBack((open) => !open);
+    setOpened(true);
+  }
+
   return (
     <div className="feature-walk" data-feature-walk data-step={step.id} role="dialog" aria-modal="true" aria-label="Feature walkthrough">
       <p className="kicker">{step.kicker}</p>
       <h2>{step.title}</h2>
-      {showSample ? (
+      {showSample && step.id === "emoji" ? (
+        <div className="feature-walk-frame" data-sample-photo data-sample-back="false" data-sample-emoji="true">
+          <img src="/recap/roof.png" alt="" draggable={false} />
+          <span className="feature-walk-emoji" data-unseen="true" aria-hidden="true">
+            ✨
+          </span>
+        </div>
+      ) : null}
+      {showSample && step.id === "signatures" ? (
         <button
           type="button"
           className="feature-walk-frame"
           data-sample-photo
           data-sample-back={showBack ? "true" : "false"}
-          aria-label={showBack ? "Sample note on the back" : "Sample photo. Tap to turn it over."}
-          onClick={() => setBack((open) => !open)}
+          data-sample-unread={opened ? "false" : "true"}
+          aria-label={showBack ? "Sample signature on the back" : "Sample photo. Tap once to flip it and write on the back."}
+          onClick={flipSample}
         >
           {showBack ? (
             <p className="frame-note-text" data-hand="caveat">

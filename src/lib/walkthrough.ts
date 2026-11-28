@@ -1,5 +1,5 @@
 /**
- * One walk through the Feed.
+ * One walk through the Feed, then emojis, then signatures.
  * The first step is the Feed tab itself. The sample photo comes after that.
  * Everyone sees it on the next open. After that it waits for a new profile,
  * or for Feature Walkthrough in the You menu. The sample is not saved.
@@ -8,7 +8,7 @@
 export const FEATURE_WALK_KEY = "relapse.featureWalk";
 
 export type FeatureWalkStep = {
-  id: "feed" | "frame" | "notes";
+  id: "feed" | "emoji" | "signatures";
   kicker: string;
   title: string;
   line: string;
@@ -22,16 +22,16 @@ export const FEATURE_WALK: readonly FeatureWalkStep[] = [
     line: "Photos people develop show up here. A frame stays up for a week, then it lapses.",
   },
   {
-    id: "frame",
-    kicker: "A frame",
-    title: "On a photo",
-    line: "Add an emoji and drag it. Write on the back, and read the notes and signatures there. A new emoji glows blue, and so does a frame with a signature you have not opened, until you look. Those notes are on the back.",
+    id: "emoji",
+    kicker: "Emoji",
+    title: "On a frame",
+    line: "Double-tap a frame to add an emoji. Hold it down to drag it. Tap yours, then Remove, to take it off. Newly added emojis glow blue.",
   },
   {
-    id: "notes",
-    kicker: "Notes",
+    id: "signatures",
+    kicker: "Signatures",
     title: "On the back",
-    line: "Notes sit on the back, written out by hand. When you leave, the sample is gone.",
+    line: "Tap once to flip the frame and write on the back. Frames with new unopened signatures glow blue. Frames glow blue when they have unread signatures. When you leave, the sample is gone.",
   },
 ];
 
