@@ -52,6 +52,10 @@ test("this publish carries the same notes the camera can show", () => {
       "A frame with a note you did not write keeps that cyan outline until you open the back. Scrolling past the front leaves it.",
       "Keepsakes does not get a mark for these.",
       "The Shoot preview is the same paper print the shutter saves.",
+      "Keepsakes opens on Galleries and Time Capsules.",
+      "First-use tips can be dismissed, skipped, or brought back.",
+      "A tap adds another emoji, and you can remove just that one.",
+      "The Feed opens with a swipe recap of new frames, then a wrap-up of new notes and reactions.",
     ],
   );
   const notes = RELEASE_NOTES.join("\n");
