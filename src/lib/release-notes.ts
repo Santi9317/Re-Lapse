@@ -5,11 +5,7 @@
  * Keep public/release.json in step with this list, and keep its version equal to APP_VERSION.
  */
 export const RELEASE_NOTES = [
-  "The walk opens on the Feed tab. The sample photo comes next, for emojis, notes, and the blue glow, and it is not saved.",
-  "Tap the tab you are already on to return to its home. Keepsakes returns to Galleries and Time Capsules.",
-  "Frames you can develop come first. Tap one, then swipe to keep or discard, and add a caption while you swipe.",
-  "Darkroom keeps the countdown and the chemistry. A photo you just took shows up there.",
-  "You can write and sign the back of a frame you shot, from the Feed.",
+  "A wrong gate key counts for this browser. Another visitor does not use up those tries.",
 ] as const;
 
 export type PublishedRelease = {

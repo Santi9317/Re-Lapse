@@ -285,13 +285,12 @@ export type GateAttempt = {
   clientId: string;
 };
 
-const ANONYMOUS_GATE = "anonymous";
-
 /**
  * A matching key is decided before any miss is counted, so another browser
- * cannot hold the gate shut. Wrong keys use the row we already issued for
- * this browser. A cookie we have not issued shares one anonymous count, so
- * inventing an id does not start over. The key itself is not written.
+ * cannot hold the gate shut. Each visitor keeps their own misses. Someone
+ * who is not signed in gets a row of their own, so visitors do not share one
+ * count. Someone who is already signed in stays on the row issued for them.
+ * The key itself is not written.
  */
 export async function takeGateGuess(clientId: string, given: string, secret: string): Promise<GateAttempt> {
   const presented = isUuid(clientId) ? clientId.toLowerCase() : "";
@@ -310,18 +309,12 @@ export async function takeGateGuess(clientId: string, given: string, secret: str
   }
 
   return withTransaction(async (q) => {
-    let id = ANONYMOUS_GATE;
-    if (presented) {
-      const found = await q<{ id: string }>(`select id from gate_client where id = $1 for update`, [presented]);
-      if (found[0]) id = presented;
-    }
-    if (id === ANONYMOUS_GATE) {
-      await q(
-        `insert into gate_client (id, window_start, n) values ($1, now(), 0) on conflict (id) do nothing`,
-        [ANONYMOUS_GATE],
-      );
-      await q(`select id from gate_client where id = $1 for update`, [ANONYMOUS_GATE]);
-    }
+    const id = presented || randomUUID();
+    await q(
+      `insert into gate_client (id, window_start, n) values ($1, now(), 0) on conflict (id) do nothing`,
+      [id],
+    );
+    await q(`select id from gate_client where id = $1 for update`, [id]);
     const slot = await q<{ n: number; fresh: boolean | string | number }>(
       `select n,
               window_start <= now() - ($2::int * interval '1 millisecond') as fresh
@@ -341,7 +334,7 @@ export async function takeGateGuess(clientId: string, given: string, secret: str
         [id, fresh ? 1 : recent + 1, fresh],
       );
     }
-    return { result: decision, clientId: id === ANONYMOUS_GATE ? "" : id };
+    return { result: decision, clientId: id };
   });
 }
 

@@ -44,11 +44,7 @@ test("this publish carries the same notes the camera can show", () => {
   assert.deepEqual(
     [...RELEASE_NOTES],
     [
-      "The walk opens on the Feed tab. The sample photo comes next, for emojis, notes, and the blue glow, and it is not saved.",
-      "Tap the tab you are already on to return to its home. Keepsakes returns to Galleries and Time Capsules.",
-      "Frames you can develop come first. Tap one, then swipe to keep or discard, and add a caption while you swipe.",
-      "Darkroom keeps the countdown and the chemistry. A photo you just took shows up there.",
-      "You can write and sign the back of a frame you shot, from the Feed.",
+      "A wrong gate key counts for this browser. Another visitor does not use up those tries.",
     ],
   );
   const notes = RELEASE_NOTES.join("\n");
@@ -110,6 +106,11 @@ test("this publish carries the same notes the camera can show", () => {
     "A photo can belong to more than one gallery. Adding it to another leaves the first one.",
     "The Feed does not show a gallery name on a frame.",
     "An emoji can be moved by the person who placed it, and by the one who shot the frame.",
+    "The walk opens on the Feed tab. The sample photo comes next, for emojis, notes, and the blue glow, and it is not saved.",
+    "Tap the tab you are already on to return to its home. Keepsakes returns to Galleries and Time Capsules.",
+    "Frames you can develop come first. Tap one, then swipe to keep or discard, and add a caption while you swipe.",
+    "Darkroom keeps the countdown and the chemistry. A photo you just took shows up there.",
+    "You can write and sign the back of a frame you shot, from the Feed.",
   ]) {
     assert.equal(notes.includes(older), false);
   }

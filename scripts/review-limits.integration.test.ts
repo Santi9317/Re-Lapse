@@ -43,19 +43,35 @@ function cameraRequest(token: string, proof: string, booth = ""): Request {
 
 test("a new browser cannot mint booths or joins, and the right gate key still opens", async () => {
   const secret = "kept-on-the-server";
+  const unsigned = randomUUID();
   for (let i = 0; i < GATE_GUESS_LIMIT; i += 1) {
-    const miss = await takeGateGuess(randomUUID(), `nope-${i}`, secret);
+    const miss = await takeGateGuess(unsigned, `nope-${i}`, secret);
     assert.equal(miss.result, "wrong");
-    assert.equal(miss.clientId, "");
+    assert.equal(miss.clientId, unsigned);
   }
-  const blocked = await takeGateGuess(randomUUID(), "still-nope", secret);
+  const blocked = await takeGateGuess(unsigned, "still-nope", secret);
   assert.equal(blocked.result, "blocked");
+  assert.equal(blocked.clientId, unsigned);
+  const otherVisitor = randomUUID();
+  const otherMiss = await takeGateGuess(otherVisitor, "still-nope", secret);
+  assert.equal(otherMiss.result, "wrong");
+  assert.equal(otherMiss.clientId, otherVisitor);
+  const unsealed = await takeGateGuess("", "no-cookie", secret);
+  assert.equal(unsealed.result, "wrong");
+  assert.match(unsealed.clientId, /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+  assert.notEqual(unsealed.clientId, unsigned);
+  const unsealedAgain = await takeGateGuess(unsealed.clientId, "no-cookie-2", secret);
+  assert.equal(unsealedAgain.result, "wrong");
+  assert.equal(unsealedAgain.clientId, unsealed.clientId);
   const opened = await takeGateGuess("", secret, secret);
   assert.equal(opened.result, "ok");
-  const stranger = await takeGateGuess(randomUUID(), "again", secret);
-  assert.equal(stranger.result, "blocked");
+  const stranger = randomUUID();
+  const strangerMiss = await takeGateGuess(stranger, "again", secret);
+  assert.equal(strangerMiss.result, "wrong");
+  assert.equal(strangerMiss.clientId, stranger);
   const own = await takeGateGuess(opened.clientId, "typo", secret);
   assert.equal(own.result, "wrong");
+  assert.equal(own.clientId, opened.clientId);
 
   const invented = randomUUID();
   await assert.rejects(() => issueCamera(null, null, invented), (error: unknown) => {
