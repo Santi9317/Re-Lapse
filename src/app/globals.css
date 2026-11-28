@@ -2394,3 +2394,52 @@ button.byline .byline-name { text-decoration: underline; text-underline-offset: 
   letter-spacing: 0.18em;
   color: var(--amber);
 }
+
+.keepsakes-hub {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: 1fr 1fr;
+  gap: 12px;
+  padding: 8px 16px calc(12px + var(--tabbar, 0px));
+}
+.keepsakes-hub button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  min-height: 0;
+  width: 100%;
+  padding: 16px;
+  border-radius: 28px;
+  border: 1px solid rgba(180, 150, 255, 0.28);
+  color: var(--ink);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  touch-action: manipulation;
+}
+.keepsakes-hub button[data-hub="galleries"] {
+  background:
+    radial-gradient(ellipse at 50% 18%, rgba(255, 176, 106, 0.28), transparent 58%),
+    #140c24;
+}
+.keepsakes-hub button[data-hub="capsules"] {
+  background:
+    radial-gradient(ellipse at 50% 18%, rgba(142, 236, 255, 0.2), transparent 58%),
+    #140c24;
+}
+.keepsakes-hub button:active {
+  transform: scale(0.985);
+}
+.keepsakes-hub-mark {
+  font-size: 76px;
+  line-height: 1;
+}
+.keepsakes-hub-name {
+  font-family: var(--display);
+  font-size: 26px;
+  font-weight: 400;
+  letter-spacing: 0.03em;
+  line-height: 1.1;
+  text-align: center;
+}

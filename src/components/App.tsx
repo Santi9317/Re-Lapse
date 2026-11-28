@@ -12,6 +12,7 @@ import {
   watchIosBadgePermission,
 } from "@/lib/badge";
 import { bannerOpensQuote } from "@/lib/banner-quote";
+import { keepsakesHubOpen } from "@/lib/keepsakes-hub";
 import { noteFeedLook } from "@/lib/feed-mark";
 import { recallNotes } from "@/lib/note-seen";
 import { recallStickers } from "@/lib/sticker-seen";
@@ -114,6 +115,7 @@ function catchFeed(photos: FeedItem[], feedVisible: boolean): number {
 
 function CameraDesk() {
   const [tab, setTab] = useState<MainTab>("shoot");
+  const [keepsakesHub] = useState(() => keepsakesHubOpen(window.location.search));
   const [landed, setLanded] = useState(0);
   const tabNow = useRef<MainTab>("shoot");
   tabNow.current = tab;
@@ -346,6 +348,7 @@ function CameraDesk() {
               {tab === "you" ? <Profile revision={feedRevision} refresh={landed} /> : null}
               {tab === "rolls" ? (
                 <Rolls
+                  hub={keepsakesHub}
                   revision={feedRevision}
                   refresh={landed}
                   focusEventId={focusEventId}
