@@ -4,7 +4,7 @@ export const SWIPE_COMMIT_PX = 84;
 /** Frozen travel for the preview stills, past the commit line. */
 export const SWIPE_POSE_PX = 156;
 
-/** Right sends the print to the feed. Left keeps it off the feed. */
+/** Right sends the print to the feed. Left deletes it. */
 export type SwipeVerdict = "feed" | "pass";
 
 export type SwipeUndo = {
@@ -32,7 +32,7 @@ export function poseOffset(pose: "keep" | "delete"): number {
   return pose === "keep" ? SWIPE_POSE_PX : -SWIPE_POSE_PX;
 }
 
-/** Right sends the print to the feed. Left keeps it off the feed. A short drag springs back. */
+/** Right sends the print to the feed. Left deletes it. A short drag springs back. */
 export function swipeVerdict(dx: number, commitPx = SWIPE_COMMIT_PX): SwipeVerdict | null {
   if (dx >= commitPx) return "feed";
   if (dx <= -commitPx) return "pass";

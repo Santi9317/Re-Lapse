@@ -43,7 +43,11 @@ test("this publish carries the same notes the camera can show", () => {
   assert.deepEqual(publishedReleaseFromJson(release), { version: APP_VERSION, notes: [...RELEASE_NOTES] });
   assert.deepEqual(
     [...RELEASE_NOTES],
-    ["A wrong gate key stays limited. A new browser does not start that count over."],
+    [
+      "Darkroom is the thin button at the top again.",
+      "Swipe left deletes that photo. Swipe right posts it to the Feed.",
+      "Skip a caption with one tap. Undo puts the last photo back.",
+    ],
   );
   const notes = RELEASE_NOTES.join("\n");
   const lower = notes.toLowerCase();

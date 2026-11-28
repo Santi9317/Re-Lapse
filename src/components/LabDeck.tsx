@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { DateStampToggle, Lab } from "@/components/Lab";
 import { PullRefresh } from "@/components/PullRefresh";
-import { developPhoto, fetchLab, fetchPrivateImage, publishPhoto, updateCaption } from "@/lib/api";
+import { deletePhoto, developPhoto, fetchLab, fetchPrivateImage, postSwipe } from "@/lib/api";
 import { developBath } from "@/lib/chemistry";
 import { readDateStamp, writeDateStamp } from "@/lib/date-stamp";
 import { developFrame } from "@/lib/develop-frame";
@@ -71,13 +71,21 @@ export function LabDeck({
   const placeRef = useRef(place);
   const promptRef = useRef<Print | null>(null);
   const passed = useRef(new Set<string>());
-  const publishedAny = useRef(false);
+  const pinned = useRef(new Set<string>());
+  const publishedCount = useRef(0);
+  const session = useRef(0);
   const grading = useRef(new Set<string>());
   const stampRef = useRef(true);
+  const undoRef = useRef<SwipeUndo | null>(null);
+  const heldRef = useRef<Print | null>(null);
+  const flightRef = useRef<{ id: string; done: Promise<"posted" | "failed"> } | null>(null);
+  const undoing = useRef(false);
   const onPublishedRef = useRef(onPublished);
+  const onDeletedRef = useRef(onDeleted);
   placeRef.current = place;
   promptRef.current = prompt;
   onPublishedRef.current = onPublished;
+  onDeletedRef.current = onDeleted;
   const loadRef = useRef<() => Promise<void>>(async () => {});
 
   useEffect(() => {
@@ -121,7 +129,11 @@ export function LabDeck({
             for (const row of current) {
               if (passed.current.has(row.id) || row.id === promptId) continue;
               const photo = byId.get(row.id);
-              if (!photo) continue;
+              if (!photo) {
+                if (pinned.current.has(row.id)) wanted.set(row.id, row);
+                continue;
+              }
+              pinned.current.delete(row.id);
               const state = cardState(photo, now);
               if (state !== "ready" && state !== "developed") continue;
               const next = toPrint(photo);
@@ -160,11 +172,26 @@ export function LabDeck({
     }
     if (homeSeen.current === homeTick) return;
     homeSeen.current = homeTick;
+    dropUndo();
+    session.current += 1;
+    publishedCount.current = 0;
     setPlace("select");
     setPrompt(null);
     setHeld(null);
     setUndo(null);
   }, [homeTick]);
+
+  function dropUndo() {
+    const decision = undoRef.current;
+    undoRef.current = null;
+    heldRef.current = null;
+    if (decision?.verdict !== "pass") return;
+    void deletePhoto(decision.id)
+      .then(() => onDeletedRef.current?.())
+      .catch(() => undefined);
+  }
+
+  useEffect(() => () => dropUndo(), []);
 
   const top = prints[0] ?? null;
   const topKey = top ? `${top.id}:${top.developed ? "1" : "0"}:${gradeAttempt}` : "";
@@ -205,8 +232,10 @@ export function LabDeck({
   }, [place, prompt, topKey]);
 
   function finish() {
-    const published = publishedAny.current;
-    publishedAny.current = false;
+    dropUndo();
+    const published = publishedCount.current > 0;
+    publishedCount.current = 0;
+    session.current += 1;
     setPrompt(null);
     setHeld(null);
     setUndo(null);
@@ -214,67 +243,141 @@ export function LabDeck({
     if (published) onPublishedRef.current();
   }
 
+  function putBack(frame: Print, decision: SwipeUndo) {
+    pinned.current.add(frame.id);
+    passed.current.delete(frame.id);
+    const next = restoreSwipe(deckRef.current, frame, decision);
+    deckRef.current = next;
+    setPrints(next);
+    setPrompt(null);
+    setHeld(null);
+    setUndo(null);
+    undoRef.current = null;
+    heldRef.current = null;
+  }
+
   function commit(verdict: SwipeVerdict) {
     const frame = deckRef.current[0];
     if (!frame || !frame.developed || promptRef.current) return;
+    dropUndo();
     const result = commitSwipe(deckRef.current, verdict);
     if (!result) return;
+    pinned.current.delete(frame.id);
     deckRef.current = result.deck;
     setPrints(result.deck);
     setHeld(result.frame);
     setUndo(result.undo);
-    if (verdict === "feed") {
-      setPrompt(result.frame);
-      return;
-    }
-    passed.current.add(result.frame.id);
-    if (result.deck.length === 0) finish();
+    undoRef.current = result.undo;
+    heldRef.current = result.frame;
+    if (verdict === "pass") passed.current.add(frame.id);
+    const ticket = session.current;
+    const task = postSwipe(frame.id, verdict)
+      .then(() => {
+        if (ticket === session.current && verdict === "feed") publishedCount.current += 1;
+        return "posted" as const;
+      })
+      .catch((err: unknown) => {
+        if (undoRef.current?.id === frame.id) {
+          passed.current.delete(frame.id);
+          const next = restoreSwipe(deckRef.current, frame, result.undo);
+          deckRef.current = next;
+          setPrints(next);
+          setPrompt(null);
+          setHeld(null);
+          setUndo(null);
+          undoRef.current = null;
+          heldRef.current = null;
+          setError(err instanceof Error ? err.message : "That frame stayed put.");
+        }
+        return "failed" as const;
+      });
+    flightRef.current = { id: frame.id, done: task };
+    if (verdict === "feed") setPrompt(result.frame);
   }
 
-  function undoSwipe() {
-    if (!held || !undo || undo.id !== held.id) return;
-    const next = restoreSwipe(deckRef.current, held, undo);
-    deckRef.current = next;
-    setPrints(next);
-    passed.current.delete(held.id);
-    setPrompt(null);
-    setHeld(null);
+  async function undoSwipe() {
+    const decision = undoRef.current;
+    const frame = heldRef.current;
+    if (!decision || !frame || decision.id !== frame.id || undoing.current) return;
+    undoing.current = true;
+    undoRef.current = null;
+    heldRef.current = null;
     setUndo(null);
+    setHeld(null);
+    try {
+      const pending = flightRef.current;
+      const status = pending && pending.id === frame.id ? await pending.done : "posted";
+      if (status === "failed") {
+        putBack(frame, decision);
+        return;
+      }
+      if (decision.verdict === "pass") {
+        await postSwipe(frame.id, "undo-pass");
+        passed.current.delete(frame.id);
+      } else {
+        await postSwipe(frame.id, "undo-feed");
+        publishedCount.current = Math.max(0, publishedCount.current - 1);
+      }
+      putBack(frame, decision);
+    } catch (err) {
+      undoRef.current = decision;
+      heldRef.current = frame;
+      setUndo(decision);
+      setHeld(frame);
+      setError(err instanceof Error ? err.message : "That frame stayed put.");
+    } finally {
+      undoing.current = false;
+    }
   }
 
-  async function publishFrame(frame: Print, caption: string | null) {
+  async function skipCaption() {
+    const id = promptRef.current?.id ?? null;
+    setPrompt(null);
+    const pending = flightRef.current;
+    if (pending && pending.id === id) {
+      const status = await pending.done;
+      if (status !== "posted") return;
+    }
+    if (undoRef.current?.id === id && undoRef.current.verdict === "feed" && deckRef.current.length === 0) finish();
+  }
+
+  async function addCaption(frame: Print, caption: string) {
     if (busyId) return;
     setBusyId(frame.id);
     setError("");
     try {
-      if (caption != null && caption.trim() !== frame.caption.trim()) {
-        await updateCaption(frame.id, caption.trim());
+      const pending = flightRef.current;
+      if (pending && pending.id === frame.id) {
+        const status = await pending.done;
+        if (status !== "posted") return;
       }
-      await publishPhoto(frame.id);
-      passed.current.add(frame.id);
-      publishedAny.current = true;
+      if (undoRef.current?.id !== frame.id) return;
+      await postSwipe(frame.id, "caption", caption);
       setPrompt(null);
-      setHeld(null);
-      setUndo(null);
       if (deckRef.current.length === 0) finish();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "That frame isn't ready to share.");
+      setError(err instanceof Error ? err.message : "That caption is locked.");
     } finally {
       setBusyId((current) => (current === frame.id ? null : current));
     }
   }
 
   useEffect(() => {
-    if (place !== "swipe" || prompt || prints.length > 0) return;
-    const published = publishedAny.current;
-    publishedAny.current = false;
+    if (place !== "swipe" || prompt || prints.length > 0 || undo || undoing.current) return;
+    const published = publishedCount.current > 0;
+    publishedCount.current = 0;
+    session.current += 1;
+    dropUndo();
     setHeld(null);
     setUndo(null);
     setPlace("select");
     if (published) onPublishedRef.current();
-  }, [place, prompt, prints.length]);
+  }, [place, prompt, prints.length, undo]);
 
   function openDevelop() {
+    dropUndo();
+    session.current += 1;
+    publishedCount.current = 0;
     const queue = readyRef.current.filter((print) => !passed.current.has(print.id));
     if (queue.length === 0) return;
     deckRef.current = queue;
@@ -311,6 +414,11 @@ export function LabDeck({
   if (place === "select") {
     return (
       <PullRefresh data-screen="lab" data-lab-view="select" onRefresh={() => loadRef.current()}>
+        <div className="lab-switch">
+          <button type="button" data-open-darkroom onClick={() => setPlace("darkroom")}>
+            Darkroom{developing > 0 ? ` · ${developing}` : ""}
+          </button>
+        </div>
         {error ? <p className="error">{error}</p> : null}
         <DateStampToggle stamp={stamp} onToggle={toggleStamp} />
         {readyCount > 0 ? (
@@ -332,9 +440,6 @@ export function LabDeck({
             <p>When a photo is ready, it shows up here as one frame.</p>
           </div>
         )}
-        <button type="button" className="lab-swipe-soup-btn" data-open-darkroom onClick={() => setPlace("darkroom")}>
-          Darkroom{developing > 0 ? ` · ${developing}` : ""}
-        </button>
       </PullRefresh>
     );
   }
@@ -359,8 +464,8 @@ export function LabDeck({
             <CaptionPrompt
               frame={prompt}
               busy={busyId === prompt.id}
-              onSkip={() => void publishFrame(prompt, null)}
-              onAdd={(caption) => void publishFrame(prompt, caption)}
+              onSkip={() => void skipCaption()}
+              onAdd={(caption) => void addCaption(prompt, caption)}
             />
           </>
         ) : frame ? (
@@ -373,7 +478,7 @@ export function LabDeck({
         )}
         {liveUndo ? (
           <button type="button" className="lab-undo-mini" data-undo-action={liveUndo.verdict} onClick={undoSwipe}>
-            Undo
+            <span>Undo</span>
           </button>
         ) : null}
       </div>
@@ -530,7 +635,7 @@ function LivePrint({
               data-frame={frame.id}
               role="group"
               tabIndex={0}
-              aria-label={`${label}. Swipe right to send it to the feed. Swipe left to keep it off the feed.`}
+              aria-label={`${label}. Swipe right to send it to the feed. Swipe left to delete it.`}
               style={{ transform: `translate3d(${shown}px, 0, 0) rotate(${tilt}deg) scale(${dragging ? 1.02 : 1})` }}
               onPointerDown={down}
               onPointerMove={move}
@@ -556,7 +661,7 @@ function LivePrint({
                 Feed
               </span>
               <span className="lab-swipe-mark" data-verdict="pass" style={{ opacity: passFade }} aria-hidden="true">
-                Pass
+                Delete
               </span>
             </div>
           </>
