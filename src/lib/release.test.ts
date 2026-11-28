@@ -44,8 +44,10 @@ test("this publish carries the same notes the camera can show", () => {
   assert.deepEqual(
     [...RELEASE_NOTES],
     [
-      "The walk opens on the Feed, then emojis, then signatures. The sample photo is not saved.",
-      "New emojis glow blue. Frames glow blue when they have unread signatures.",
+      "When photos are ready, one large frame shows how many, and Develop opens them.",
+      "Swipe right to send a photo to the Feed. Skip the caption with one tap, or write one.",
+      "A small undo sits with that swipe.",
+      "Darkroom still lists each photo, including ones that are ready, with a bath for each.",
     ],
   );
   const notes = RELEASE_NOTES.join("\n");
@@ -115,6 +117,8 @@ test("this publish carries the same notes the camera can show", () => {
     "A wrong gate key counts for this browser. Another visitor does not use up those tries.",
     "Double-tap a photo you shot to place an emoji on it.",
     "Tap Feed while it is already open to return home and scroll back to the top.",
+    "The walk opens on the Feed, then emojis, then signatures. The sample photo is not saved.",
+    "New emojis glow blue. Frames glow blue when they have unread signatures.",
   ]) {
     assert.equal(notes.includes(older), false);
   }

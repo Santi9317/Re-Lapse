@@ -78,7 +78,7 @@ function posedBoard(pose: LabPose): Board {
       dx: 0,
       dragging: false,
       flight: false,
-      undo: FRAMES[0] ? { frame: FRAMES[0], verdict: "delete" } : null,
+      undo: FRAMES[0] ? { frame: FRAMES[0], verdict: "pass" } : null,
     };
   }
   return { developing: DEVELOPING, frame, next, dx: 0, dragging: false, flight: false, undo: null };
@@ -319,7 +319,7 @@ function LivePrint({
       return;
     }
     const travel = (wellRef.current?.offsetWidth ?? 360) + 140;
-    setFlight(verdict === "keep" ? travel : -travel);
+    setFlight(verdict === "feed" ? travel : -travel);
     window.clearTimeout(timer.current);
     timer.current = window.setTimeout(() => settle(), 420);
   }
@@ -350,10 +350,10 @@ function LivePrint({
           if (pending.current) return;
           if (event.key === "ArrowRight") {
             event.preventDefault();
-            onCommit("keep");
+            onCommit("feed");
           } else if (event.key === "ArrowLeft") {
             event.preventDefault();
-            onCommit("delete");
+            onCommit("pass");
           }
         }}
       />
@@ -409,7 +409,7 @@ function Print({
         )}
         <div
           className="lab-swipe-wash"
-          data-side={dx < 0 ? "delete" : "keep"}
+          data-side={dx < 0 ? "pass" : "feed"}
           style={{ opacity: Math.max(keepFade, deleteFade) }}
           aria-hidden="true"
         />
@@ -420,7 +420,7 @@ function Print({
           data-frame={frame.id}
           role="group"
           tabIndex={0}
-          aria-label={`${frame.caption}. Swipe right to keep, swipe left to delete.`}
+          aria-label={`${frame.caption}. Swipe right to send it to the feed. Swipe left to keep it off the feed.`}
           style={{ transform: `translate3d(${dx}px, 0, 0) rotate(${tilt}deg) scale(${lift})` }}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
@@ -430,11 +430,11 @@ function Print({
           onKeyDown={onKeyDown}
         >
           <LabFrame scene={frame.scene} title={frame.caption} stamp={frame.stamp} id={frame.id} />
-          <span className="lab-swipe-mark" data-verdict="keep" style={{ opacity: keepFade }} aria-hidden="true">
-            Keep
+          <span className="lab-swipe-mark" data-verdict="feed" style={{ opacity: keepFade }} aria-hidden="true">
+            Feed
           </span>
-          <span className="lab-swipe-mark" data-verdict="delete" style={{ opacity: deleteFade }} aria-hidden="true">
-            Delete
+          <span className="lab-swipe-mark" data-verdict="pass" style={{ opacity: deleteFade }} aria-hidden="true">
+            Pass
           </span>
         </div>
       </div>
@@ -478,8 +478,8 @@ function Tray({
             <LabFrame scene={undo.frame.scene} title="" id={`${undo.frame.id}-undo`} />
           </span>
           <span>
-            <strong>{undo.verdict === "keep" ? "Kept" : "Deleted"}</strong>
-            <p>{undo.verdict === "keep" ? "Still yours." : "Undo puts it back."}</p>
+            <strong>{undo.verdict === "feed" ? "Feed" : "Passed"}</strong>
+            <p>{undo.verdict === "feed" ? "It goes to the feed." : "It stays off the feed."}</p>
           </span>
           <button type="button" className="primary" data-undo-action={undo.verdict} onClick={onUndo}>
             Undo
@@ -487,8 +487,8 @@ function Tray({
         </div>
       ) : (
         <p className="lab-swipe-hint" style={{ opacity: hint }} aria-hidden={hint < 0.4 ? true : undefined}>
-          <span>← Delete</span>
-          <span>Keep →</span>
+          <span>← Pass</span>
+          <span>Feed →</span>
         </p>
       )}
     </div>

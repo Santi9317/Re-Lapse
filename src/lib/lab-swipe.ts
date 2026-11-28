@@ -1,10 +1,11 @@
-/** How far a print must travel before a swipe keeps or deletes it. */
+/** How far a print must travel before a swipe sends it to the feed or keeps it off. */
 export const SWIPE_COMMIT_PX = 84;
 
 /** Frozen travel for the preview stills, past the commit line. */
 export const SWIPE_POSE_PX = 156;
 
-export type SwipeVerdict = "keep" | "delete";
+/** Right sends the print to the feed. Left keeps it off the feed. */
+export type SwipeVerdict = "feed" | "pass";
 
 export type SwipeUndo = {
   id: string;
@@ -31,10 +32,10 @@ export function poseOffset(pose: "keep" | "delete"): number {
   return pose === "keep" ? SWIPE_POSE_PX : -SWIPE_POSE_PX;
 }
 
-/** Right keeps the print. Left deletes it. A short drag springs back. */
+/** Right sends the print to the feed. Left keeps it off the feed. A short drag springs back. */
 export function swipeVerdict(dx: number, commitPx = SWIPE_COMMIT_PX): SwipeVerdict | null {
-  if (dx >= commitPx) return "keep";
-  if (dx <= -commitPx) return "delete";
+  if (dx >= commitPx) return "feed";
+  if (dx <= -commitPx) return "pass";
   return null;
 }
 

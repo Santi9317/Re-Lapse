@@ -1,23 +1,25 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import { CaptionField } from "@/components/CaptionField";
-import { Lab } from "@/components/Lab";
+import { useEffect, useRef, useState } from "react";
+import { DateStampToggle, Lab } from "@/components/Lab";
 import { PullRefresh } from "@/components/PullRefresh";
-import { deletePhoto, fetchLab, fetchPrivateImage, publishPhoto, updateCaption } from "@/lib/api";
+import { developPhoto, fetchLab, fetchPrivateImage, publishPhoto, updateCaption } from "@/lib/api";
+import { developBath } from "@/lib/chemistry";
+import { readDateStamp, writeDateStamp } from "@/lib/date-stamp";
+import { developFrame } from "@/lib/develop-frame";
 import { disposableDate } from "@/lib/format";
-import { ensurePhotoFile, iosPhotosTarget, readyPhotoFile, shareOrSave } from "@/lib/save";
-import {
-  commitSwipe,
-  restoreSwipe,
-  swipeTilt,
-  swipeVerdict,
-  type SwipeUndo,
-  type SwipeVerdict,
-} from "@/lib/lab-swipe";
-import type { LabItem, LabState } from "@/lib/types";
+import { commitSwipe, restoreSwipe, swipeTilt, swipeVerdict, type SwipeUndo, type SwipeVerdict } from "@/lib/lab-swipe";
+import type { Chemistry, LabItem, LabState } from "@/lib/types";
 
-type Print = { id: string; caption: string; stamp: string };
+type Print = {
+  id: string;
+  caption: string;
+  stamp: string;
+  chemistry: Chemistry | null;
+  graded: boolean;
+  capturedAt: number | null;
+  developed: boolean;
+};
 
 function cardState(item: LabItem, now: number): LabState {
   if (item.labState === "sealed" || item.labState === "developed") return item.labState;
@@ -28,7 +30,16 @@ function cardState(item: LabItem, now: number): LabState {
 function toPrint(item: LabItem): Print {
   const when = new Date(item.capturedAt ?? item.createdAt);
   const stamp = item.dateStamp && Number.isFinite(when.getTime()) ? disposableDate(when) : "";
-  return { id: item.id, caption: item.caption, stamp };
+  const developed = item.labState === "developed";
+  return {
+    id: item.id,
+    caption: item.caption,
+    stamp,
+    chemistry: item.chemistry,
+    graded: item.graded || developed,
+    capturedAt: item.capturedAt,
+    developed,
+  };
 }
 
 export function LabDeck({
@@ -45,38 +56,42 @@ export function LabDeck({
   onDeleted?: () => void;
 }) {
   const [place, setPlace] = useState<"select" | "swipe" | "darkroom">("select");
+  const [readyCount, setReadyCount] = useState(0);
   const [prints, setPrints] = useState<Print[]>([]);
   const [developing, setDeveloping] = useState(0);
   const [undo, setUndo] = useState<SwipeUndo | null>(null);
   const [held, setHeld] = useState<Print | null>(null);
+  const [prompt, setPrompt] = useState<Print | null>(null);
   const [error, setError] = useState("");
-  const [focusId, setFocusId] = useState<string | null>(null);
-  const [deckBump, setDeckBump] = useState(0);
-  const [aside, setAside] = useState<string[]>([]);
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [savingId, setSavingId] = useState<string | null>(null);
+  const [stamp, setStamp] = useState(true);
+  const [gradeAttempt, setGradeAttempt] = useState(0);
   const deckRef = useRef<Print[]>([]);
-  const focusRef = useRef<string | null>(null);
-  const captionDrafts = useRef(new Map<string, string>());
-  focusRef.current = focusId;
+  const readyRef = useRef<Print[]>([]);
+  const placeRef = useRef(place);
+  const promptRef = useRef<Print | null>(null);
   const passed = useRef(new Set<string>());
-  const pendingDelete = useRef(new Set<string>());
-  const onDeletedRef = useRef(onDeleted);
-  onDeletedRef.current = onDeleted;
+  const publishedAny = useRef(false);
+  const grading = useRef(new Set<string>());
+  const stampRef = useRef(true);
+  const onPublishedRef = useRef(onPublished);
+  placeRef.current = place;
+  promptRef.current = prompt;
+  onPublishedRef.current = onPublished;
   const loadRef = useRef<() => Promise<void>>(async () => {});
 
   useEffect(() => {
-    const pending = pendingDelete;
-    return () => {
-      const ids = [...pending.current];
-      pending.current.clear();
-      for (const id of ids) {
-        void deletePhoto(id)
-          .then(() => onDeletedRef.current?.())
-          .catch(() => undefined);
-      }
-    };
+    const saved = readDateStamp();
+    stampRef.current = saved;
+    setStamp(saved);
   }, []);
+
+  function toggleStamp() {
+    const next = !stampRef.current;
+    stampRef.current = next;
+    setStamp(next);
+    writeDateStamp(next);
+  }
 
   useEffect(() => {
     let stop = false;
@@ -87,28 +102,42 @@ export function LabDeck({
         const now = Date.now();
         let soupCount = 0;
         const ready: Print[] = [];
+        const byId = new Map(data.photos.map((photo) => [photo.id, photo]));
         for (const photo of data.photos) {
           const state = cardState(photo, now);
           if (state === "developing") soupCount += 1;
-          if (state === "developed" && !passed.current.has(photo.id)) ready.push(toPrint(photo));
+          if (state === "ready" && !passed.current.has(photo.id)) ready.push(toPrint(photo));
         }
-        const focus = focusRef.current;
-        if (focus) {
-          const index = ready.findIndex((print) => print.id === focus);
-          if (index > 0) {
-            const [hit] = ready.splice(index, 1);
-            ready.unshift(hit);
-          }
-        }
+        readyRef.current = ready;
+        setReadyCount(ready.length);
         setDeveloping(soupCount);
-        setPrints((current) => {
-          const incoming = new Map(ready.map((print) => [print.id, print]));
-          const kept = current.filter((print) => incoming.has(print.id)).map((print) => incoming.get(print.id) as Print);
-          const seen = new Set(kept.map((print) => print.id));
-          const next = [...kept, ...ready.filter((print) => !seen.has(print.id))];
-          deckRef.current = next;
-          return next;
-        });
+        if (placeRef.current === "swipe") {
+          const promptId = promptRef.current?.id;
+          setPrints((current) => {
+            const wanted = new Map<string, Print>();
+            for (const print of ready) {
+              if (print.id !== promptId) wanted.set(print.id, print);
+            }
+            for (const row of current) {
+              if (passed.current.has(row.id) || row.id === promptId) continue;
+              const photo = byId.get(row.id);
+              if (!photo) continue;
+              const state = cardState(photo, now);
+              if (state !== "ready" && state !== "developed") continue;
+              const next = toPrint(photo);
+              wanted.set(row.id, {
+                ...next,
+                developed: row.developed || next.developed,
+                graded: row.graded || next.graded,
+              });
+            }
+            const kept = current.filter((row) => wanted.has(row.id)).map((row) => wanted.get(row.id) as Print);
+            const seen = new Set(kept.map((row) => row.id));
+            const next = [...kept, ...ready.filter((row) => !seen.has(row.id) && row.id !== promptId)];
+            deckRef.current = next;
+            return next;
+          });
+        }
         setError("");
       } catch (err) {
         if (!stop) setError(err instanceof Error ? err.message : "The lab didn't answer.");
@@ -121,7 +150,7 @@ export function LabDeck({
       stop = true;
       window.clearInterval(poll);
     };
-  }, [revision, refresh, deckBump]);
+  }, [revision, refresh]);
 
   const homeSeen = useRef<number | null>(null);
   useEffect(() => {
@@ -132,29 +161,74 @@ export function LabDeck({
     if (homeSeen.current === homeTick) return;
     homeSeen.current = homeTick;
     setPlace("select");
-    setFocusId(null);
+    setPrompt(null);
+    setHeld(null);
+    setUndo(null);
   }, [homeTick]);
 
-  function rememberAside() {
-    setAside([...passed.current]);
+  const top = prints[0] ?? null;
+  const topKey = top ? `${top.id}:${top.developed ? "1" : "0"}:${gradeAttempt}` : "";
+  useEffect(() => {
+    if (place !== "swipe" || prompt || !top || top.developed) return;
+    const frame = top;
+    if (grading.current.has(frame.id)) return;
+    grading.current.add(frame.id);
+    let alive = true;
+    setError("");
+    const task = frame.graded
+      ? developPhoto(frame.id).then(() => undefined)
+      : developFrame(
+          { id: frame.id, capturedAt: frame.capturedAt },
+          { chemistry: developBath(frame.chemistry), stamp: readDateStamp() },
+        );
+    void task
+      .then(() => {
+        if (!alive) return;
+        setPrints((current) => {
+          const next = current.map((row) =>
+            row.id === frame.id ? { ...row, developed: true, graded: true } : row,
+          );
+          deckRef.current = next;
+          return next;
+        });
+      })
+      .catch((err) => {
+        if (!alive) return;
+        setError(err instanceof Error ? err.message : "That frame can't be developed yet.");
+      })
+      .finally(() => {
+        grading.current.delete(frame.id);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [place, prompt, topKey]);
+
+  function finish() {
+    const published = publishedAny.current;
+    publishedAny.current = false;
+    setPrompt(null);
+    setHeld(null);
+    setUndo(null);
+    setPlace("select");
+    if (published) onPublishedRef.current();
   }
 
   function commit(verdict: SwipeVerdict) {
+    const frame = deckRef.current[0];
+    if (!frame || !frame.developed || promptRef.current) return;
     const result = commitSwipe(deckRef.current, verdict);
     if (!result) return;
-    if (verdict === "keep") {
-      const draft = (captionDrafts.current.get(result.frame.id) ?? result.frame.caption).trim();
-      if (draft !== result.frame.caption.trim()) {
-        void updateCaption(result.frame.id, draft).catch(() => setError("That caption didn't stick."));
-      }
-    }
     deckRef.current = result.deck;
     setPrints(result.deck);
     setHeld(result.frame);
     setUndo(result.undo);
+    if (verdict === "feed") {
+      setPrompt(result.frame);
+      return;
+    }
     passed.current.add(result.frame.id);
-    if (verdict === "delete") pendingDelete.current.add(result.frame.id);
-    rememberAside();
+    if (result.deck.length === 0) finish();
   }
 
   function undoSwipe() {
@@ -163,86 +237,68 @@ export function LabDeck({
     deckRef.current = next;
     setPrints(next);
     passed.current.delete(held.id);
-    pendingDelete.current.delete(held.id);
+    setPrompt(null);
     setHeld(null);
     setUndo(null);
-    rememberAside();
   }
 
-  function openSwipe(id: string) {
-    setFocusId(id);
-    setPrints((current) => {
-      const hit = current.find((print) => print.id === id);
-      const next = hit ? [hit, ...current.filter((print) => print.id !== id)] : [{ id, caption: "", stamp: "" }, ...current];
-      deckRef.current = next;
-      return next;
-    });
-    setPlace("swipe");
-    setDeckBump((value) => value + 1);
-  }
-
-  async function publish(id: string) {
+  async function publishFrame(frame: Print, caption: string | null) {
     if (busyId) return;
-    setBusyId(id);
+    setBusyId(frame.id);
     setError("");
     try {
-      const frame = deckRef.current.find((print) => print.id === id);
-      const draft = (captionDrafts.current.get(id) ?? frame?.caption ?? "").trim();
-      if (frame && draft !== frame.caption.trim()) {
-        const saved = await updateCaption(id, draft);
-        captionDrafts.current.set(id, saved.caption);
+      if (caption != null && caption.trim() !== frame.caption.trim()) {
+        await updateCaption(frame.id, caption.trim());
       }
-      await publishPhoto(id);
-      captionDrafts.current.delete(id);
-      passed.current.add(id);
-      const next = deckRef.current.filter((print) => print.id !== id);
-      deckRef.current = next;
-      setPrints(next);
-      rememberAside();
-      onPublished();
+      await publishPhoto(frame.id);
+      passed.current.add(frame.id);
+      publishedAny.current = true;
+      setPrompt(null);
+      setHeld(null);
+      setUndo(null);
+      if (deckRef.current.length === 0) finish();
     } catch (err) {
       setError(err instanceof Error ? err.message : "That frame isn't ready to share.");
     } finally {
-      setBusyId((current) => (current === id ? null : current));
+      setBusyId((current) => (current === frame.id ? null : current));
     }
   }
 
-  function saveFrame(id: string) {
+  useEffect(() => {
+    if (place !== "swipe" || prompt || prints.length > 0) return;
+    const published = publishedAny.current;
+    publishedAny.current = false;
+    setHeld(null);
+    setUndo(null);
+    setPlace("select");
+    if (published) onPublishedRef.current();
+  }, [place, prompt, prints.length]);
+
+  function openDevelop() {
+    const queue = readyRef.current.filter((print) => !passed.current.has(print.id));
+    if (queue.length === 0) return;
+    deckRef.current = queue;
+    setPrints(queue);
+    setPrompt(null);
+    setHeld(null);
+    setUndo(null);
     setError("");
-    const file = readyPhotoFile(id);
-    if (file) {
-      shareOrSave(file);
-      return;
-    }
-    setSavingId(id);
-    void ensurePhotoFile(id)
-      .then((next) => shareOrSave(next))
-      .catch(() => setError("That frame didn't download."))
-      .finally(() => setSavingId(null));
+    setPlace("swipe");
   }
 
-  const frames = (
-    <div className="lab-switch">
-      <button type="button" data-open-darkroom onClick={() => setPlace("darkroom")}>
-        Darkroom{developing > 0 ? ` · ${developing}` : ""}
-      </button>
-      {prints.length > 0 ? (
-        <button type="button" data-open-swipe onClick={() => setPlace("swipe")}>
-          Swipe
-        </button>
-      ) : null}
-    </div>
-  );
+  function reloadSwipe() {
+    setGradeAttempt((value) => value + 1);
+    return loadRef.current();
+  }
 
   if (place === "darkroom") {
     return (
       <Lab
         revision={revision}
-        refresh={refresh + deckBump}
+        refresh={refresh}
         onPublished={onPublished}
         onDeleted={onDeleted}
         screen="darkroom"
-        aside={aside}
         leading={
           <button type="button" className="ghost back" data-close-darkroom onClick={() => setPlace("select")}>
             ← Frames
@@ -254,99 +310,124 @@ export function LabDeck({
 
   if (place === "select") {
     return (
-      <Lab
-        revision={revision}
-        refresh={refresh + deckBump}
-        onPublished={onPublished}
-        onDeleted={onDeleted}
-        screen="select"
-        aside={aside}
-        onSwipe={openSwipe}
-        leading={frames}
-      />
+      <PullRefresh data-screen="lab" data-lab-view="select" onRefresh={() => loadRef.current()}>
+        {error ? <p className="error">{error}</p> : null}
+        <DateStampToggle stamp={stamp} onToggle={toggleStamp} />
+        {readyCount > 0 ? (
+          <div className="lab-ready">
+            <div className="sealed-frame" aria-hidden="true">
+              <span>Ready</span>
+            </div>
+            <p className="lab-ready-count" data-ready-count={readyCount}>
+              <span className="time">{readyCount}</span>
+              <span>{readyCount === 1 ? "photo is ready" : "photos are ready"}</span>
+            </p>
+            <button className="primary" type="button" data-develop-ready onClick={openDevelop}>
+              Develop
+            </button>
+          </div>
+        ) : (
+          <div className="empty">
+            <h2>Nothing to develop.</h2>
+            <p>When a photo is ready, it shows up here as one frame.</p>
+          </div>
+        )}
+        <button type="button" className="lab-swipe-soup-btn" data-open-darkroom onClick={() => setPlace("darkroom")}>
+          Darkroom{developing > 0 ? ` · ${developing}` : ""}
+        </button>
+      </PullRefresh>
     );
   }
 
   const frame = prints[0] ?? null;
   const next = prints[1] ?? null;
-  const liveUndo = held && undo && undo.id === held.id ? { frame: held, verdict: undo.verdict } : null;
+  const liveUndo = held && undo && undo.id === held.id ? undo : null;
 
   return (
-    <PullRefresh data-screen="lab" data-lab-view="swipe" onRefresh={() => loadRef.current()}>
-      <button type="button" className="ghost back" data-lab-home onClick={() => setPlace("select")}>
-        ← Frames
-      </button>
+    <PullRefresh data-screen="lab" data-lab-view="swipe" onRefresh={reloadSwipe}>
       {error ? <p className="error">{error}</p> : null}
-      <div className="lab-swipe" data-live="true" data-lab-swipe={frame ? "print" : "developing"}>
-        {frame ? (
-          <LivePrint
-            frame={frame}
-            next={next}
-            developing={developing}
-            undo={liveUndo}
-            onCommit={commit}
-            onUndo={undoSwipe}
-            onDarkroom={() => setPlace("darkroom")}
-            extra={
-              <div className="lab-swipe-caption">
-                <CaptionField
-                  id={frame.id}
-                  caption={frame.caption}
-                  disabled={busyId === frame.id}
-                  onDraft={(photoId, value) => {
-                    captionDrafts.current.set(photoId, value);
-                  }}
-                />
-                <button
-                  className="primary"
-                  type="button"
-                  data-publish={frame.id}
-                  disabled={busyId === frame.id}
-                  onClick={() => void publish(frame.id)}
-                >
-                  {busyId === frame.id ? "Sending…" : "Send to the feed"}
-                </button>
-                <button
-                  type="button"
-                  data-download={frame.id}
-                  aria-label={iosPhotosTarget() ? "Download this photo to Photos" : "Download this photo"}
-                  disabled={savingId === frame.id}
-                  onClick={() => saveFrame(frame.id)}
-                >
-                  {savingId === frame.id ? "Saving…" : "Download"}
-                </button>
+      <div className="lab-swipe" data-live="true" data-lab-swipe={prompt ? "caption" : frame ? "print" : "empty"}>
+        {prompt ? (
+          <>
+            <div className="lab-swipe-stage">
+              <div className="lab-swipe-well" data-lab-swipe="well">
+                <div className="lab-swipe-card" data-frame={prompt.id}>
+                  <Shot id={prompt.id} alt={prompt.caption.trim() || "Developed frame"} stamp={prompt.stamp} />
+                </div>
               </div>
-            }
-          />
+            </div>
+            <CaptionPrompt
+              frame={prompt}
+              busy={busyId === prompt.id}
+              onSkip={() => void publishFrame(prompt, null)}
+              onAdd={(caption) => void publishFrame(prompt, caption)}
+            />
+          </>
+        ) : frame ? (
+          <LivePrint frame={frame} next={next} onCommit={commit} />
         ) : (
           <div className="empty">
-            <h2>No print to swipe.</h2>
-            <p>Develop a frame, then it shows up here.</p>
+            <h2>No photo to swipe.</h2>
+            <p>When a photo is ready, Develop opens it here.</p>
           </div>
         )}
+        {liveUndo ? (
+          <button type="button" className="lab-undo-mini" data-undo-action={liveUndo.verdict} onClick={undoSwipe}>
+            Undo
+          </button>
+        ) : null}
       </div>
     </PullRefresh>
+  );
+}
+
+function CaptionPrompt({
+  frame,
+  busy,
+  onSkip,
+  onAdd,
+}: {
+  frame: Print;
+  busy: boolean;
+  onSkip: () => void;
+  onAdd: (caption: string) => void;
+}) {
+  const [value, setValue] = useState(frame.caption);
+  const trimmed = value.trim();
+  const changed = trimmed.length > 0 && trimmed !== frame.caption.trim();
+  return (
+    <div className="lab-caption-prompt" role="dialog" aria-labelledby="caption-prompt-title">
+      <h2 id="caption-prompt-title">Add a caption?</h2>
+      <input
+        className="field"
+        maxLength={80}
+        placeholder="Caption, if you want one"
+        aria-label="Caption"
+        data-caption={frame.id}
+        value={value}
+        disabled={busy}
+        onChange={(event) => setValue(event.target.value)}
+      />
+      <button className="primary" type="button" data-skip-caption disabled={busy} onClick={onSkip}>
+        {busy ? "Sending…" : "Skip"}
+      </button>
+      {changed ? (
+        <button type="button" data-add-caption disabled={busy} onClick={() => onAdd(trimmed)}>
+          Add caption
+        </button>
+      ) : null}
+    </div>
   );
 }
 
 function LivePrint({
   frame,
   next,
-  developing,
-  undo,
   onCommit,
-  onUndo,
-  onDarkroom,
-  extra,
 }: {
   frame: Print;
   next: Print | null;
-  developing: number;
-  undo: { frame: Print; verdict: SwipeVerdict } | null;
   onCommit: (verdict: SwipeVerdict) => void;
-  onUndo: () => void;
-  onDarkroom: () => void;
-  extra?: ReactNode;
 }) {
   const wellRef = useRef<HTMLDivElement>(null);
   const timer = useRef(0);
@@ -358,6 +439,7 @@ function LivePrint({
   const [width, setWidth] = useState(360);
   const onCommitRef = useRef(onCommit);
   onCommitRef.current = onCommit;
+  const locked = !frame.developed;
 
   useEffect(() => () => window.clearTimeout(timer.current), []);
 
@@ -369,7 +451,7 @@ function LivePrint({
     const observer = new ResizeObserver(measure);
     observer.observe(node);
     return () => observer.disconnect();
-  }, [frame.id]);
+  }, [frame.id, locked]);
 
   function settle() {
     const verdict = pending.current;
@@ -381,7 +463,7 @@ function LivePrint({
   }
 
   function down(event: React.PointerEvent<HTMLDivElement>) {
-    if (flight != null) return;
+    if (locked || flight != null) return;
     event.currentTarget.setPointerCapture(event.pointerId);
     drag.current = { pointer: event.pointerId, x: event.clientX, dx: 0 };
     setDragging(true);
@@ -411,75 +493,80 @@ function LivePrint({
       return;
     }
     const travel = (wellRef.current?.offsetWidth ?? 360) + 140;
-    setFlight(verdict === "keep" ? travel : -travel);
+    setFlight(verdict === "feed" ? travel : -travel);
     window.clearTimeout(timer.current);
     timer.current = window.setTimeout(() => settle(), 420);
   }
 
   const shown = flight ?? dx;
-  const keepFade = shown > 0 ? Math.min(1, shown / 84) : 0;
-  const deleteFade = shown < 0 ? Math.min(1, -shown / 84) : 0;
+  const feedFade = shown > 0 ? Math.min(1, shown / 84) : 0;
+  const passFade = shown < 0 ? Math.min(1, -shown / 84) : 0;
   const tilt = swipeTilt(shown, width);
+  const label = frame.caption.trim() || "Developed frame";
   return (
-    <>
-      <div className="lab-swipe-stage">
-        <div className="lab-swipe-well" ref={wellRef} data-lab-swipe="well">
-          {next ? (
-            <div className="lab-swipe-next" aria-hidden="true">
-              <Shot id={next.id} alt="" />
-            </div>
-          ) : (
-            <div className="lab-swipe-next lab-swipe-next-soup" aria-hidden="true">
-              <div className="safelight" />
-            </div>
-          )}
-          <div
-            className="lab-swipe-wash"
-            data-side={shown < 0 ? "delete" : "keep"}
-            style={{ opacity: Math.max(keepFade, deleteFade) }}
-            aria-hidden="true"
-          />
-          <div
-            className="lab-swipe-card"
-            data-dragging={dragging ? "true" : "false"}
-            data-flight={flight != null ? "true" : "false"}
-            data-frame={frame.id}
-            role="group"
-            tabIndex={0}
-            aria-label={`${frame.caption.trim() || "Developed frame"}. Swipe right to keep, swipe left to delete.`}
-            style={{ transform: `translate3d(${shown}px, 0, 0) rotate(${tilt}deg) scale(${dragging ? 1.02 : 1})` }}
-            onPointerDown={down}
-            onPointerMove={move}
-            onPointerUp={up}
-            onPointerCancel={up}
-            onTransitionEnd={(event) => {
-              if (event.propertyName !== "transform" || event.target !== event.currentTarget) return;
-              if (pending.current) settle();
-            }}
-            onKeyDown={(event) => {
-              if (pending.current) return;
-              if (event.key === "ArrowRight") {
-                event.preventDefault();
-                onCommit("keep");
-              } else if (event.key === "ArrowLeft") {
-                event.preventDefault();
-                onCommit("delete");
-              }
-            }}
-          >
-            <Shot id={frame.id} alt={frame.caption} stamp={frame.stamp} />
-            <span className="lab-swipe-mark" data-verdict="keep" style={{ opacity: keepFade }} aria-hidden="true">
-              Keep
-            </span>
-            <span className="lab-swipe-mark" data-verdict="delete" style={{ opacity: deleteFade }} aria-hidden="true">
-              Delete
-            </span>
+    <div className="lab-swipe-stage">
+      <div className="lab-swipe-well" ref={wellRef} data-lab-swipe="well">
+        {next ? (
+          <div className="lab-swipe-next" aria-hidden="true">
+            {next.developed ? <Shot id={next.id} alt="" /> : <div className="safelight" />}
           </div>
-        </div>
+        ) : (
+          <div className="lab-swipe-next lab-swipe-next-soup" aria-hidden="true">
+            <div className="safelight" />
+          </div>
+        )}
+        {frame.developed ? (
+          <>
+            <div
+              className="lab-swipe-wash"
+              data-side={shown < 0 ? "pass" : "feed"}
+              style={{ opacity: Math.max(feedFade, passFade) }}
+              aria-hidden="true"
+            />
+            <div
+              className="lab-swipe-card"
+              data-dragging={dragging ? "true" : "false"}
+              data-flight={flight != null ? "true" : "false"}
+              data-frame={frame.id}
+              role="group"
+              tabIndex={0}
+              aria-label={`${label}. Swipe right to send it to the feed. Swipe left to keep it off the feed.`}
+              style={{ transform: `translate3d(${shown}px, 0, 0) rotate(${tilt}deg) scale(${dragging ? 1.02 : 1})` }}
+              onPointerDown={down}
+              onPointerMove={move}
+              onPointerUp={up}
+              onPointerCancel={up}
+              onTransitionEnd={(event) => {
+                if (event.propertyName !== "transform" || event.target !== event.currentTarget) return;
+                if (pending.current) settle();
+              }}
+              onKeyDown={(event) => {
+                if (pending.current || locked) return;
+                if (event.key === "ArrowRight") {
+                  event.preventDefault();
+                  onCommit("feed");
+                } else if (event.key === "ArrowLeft") {
+                  event.preventDefault();
+                  onCommit("pass");
+                }
+              }}
+            >
+              <Shot id={frame.id} alt={label} stamp={frame.stamp} />
+              <span className="lab-swipe-mark" data-verdict="feed" style={{ opacity: feedFade }} aria-hidden="true">
+                Feed
+              </span>
+              <span className="lab-swipe-mark" data-verdict="pass" style={{ opacity: passFade }} aria-hidden="true">
+                Pass
+              </span>
+            </div>
+          </>
+        ) : (
+          <div className="sealed-frame lab-swipe-pending" data-frame={frame.id}>
+            <span>Developing</span>
+          </div>
+        )}
       </div>
-      {extra}
-      <Tray developing={developing} dx={shown} undo={undo} onUndo={onUndo} onDarkroom={onDarkroom} />
-    </>
+    </div>
   );
 }
 
@@ -507,54 +594,3 @@ function Shot({ id, alt, stamp }: { id: string; alt: string; stamp?: string }) {
     </div>
   );
 }
-
-function Tray({
-  developing,
-  dx,
-  undo,
-  onUndo,
-  onDarkroom,
-}: {
-  developing: number;
-  dx: number;
-  undo: { frame: Print; verdict: SwipeVerdict } | null;
-  onUndo: () => void;
-  onDarkroom: () => void;
-}) {
-  const hint = 1 - Math.min(1, Math.abs(dx) / 84);
-  return (
-    <div className="lab-swipe-tray">
-      {developing > 0 ? (
-        <p className="lab-swipe-countline" data-developing={developing}>
-          <span className="kicker">In the soup</span>
-          <span className="lab-swipe-countrow">
-            <span className="time" data-developing-count={developing}>
-              {developing}
-            </span>
-            <span className="lab-swipe-countword">developing</span>
-          </span>
-        </p>
-      ) : null}
-      <button type="button" className="lab-swipe-soup-btn" data-open-darkroom onClick={onDarkroom}>
-        Darkroom
-      </button>
-      {undo ? (
-        <div className="lab-swipe-undo" data-undo={undo.verdict}>
-          <span>
-            <strong>{undo.verdict === "keep" ? "Kept" : "Deleted"}</strong>
-            <p>{undo.verdict === "keep" ? "Still yours." : "Undo puts it back."}</p>
-          </span>
-          <button type="button" className="primary" data-undo-action={undo.verdict} onClick={onUndo}>
-            Undo
-          </button>
-        </div>
-      ) : (
-        <p className="lab-swipe-hint" style={{ opacity: hint }} aria-hidden={hint < 0.4 ? true : undefined}>
-          <span>← Delete</span>
-          <span>Keep →</span>
-        </p>
-      )}
-    </div>
-  );
-}
-
