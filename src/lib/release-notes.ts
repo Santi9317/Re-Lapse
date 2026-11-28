@@ -5,8 +5,10 @@
  * Keep public/release.json in step with this list, and keep its version equal to APP_VERSION.
  */
 export const RELEASE_NOTES = [
-  "The walk opens on the Feed, then emojis, then signatures. The sample photo is not saved.",
-  "New emojis glow blue. Frames glow blue when they have unread signatures.",
+  "When photos are ready, one large frame shows how many, and Develop opens them.",
+  "Swipe right to send a photo to the Feed. Skip the caption with one tap, or write one.",
+  "A small undo sits with that swipe.",
+  "Darkroom still lists each photo, including ones that are ready, with a bath for each.",
 ] as const;
 
 export type PublishedRelease = {

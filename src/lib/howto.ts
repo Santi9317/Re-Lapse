@@ -14,7 +14,7 @@ export const HOW_TO: HowToSection[] = [
     id: "wait",
     title: "The wait",
     body: [
-      "A frame you just shot is not ready. It takes five to thirty minutes, and you do not pick the number. No peeking. When the dot shows, tap Develop. Daylight and Night are other baths: pick one before the clock runs out, or when the frame is ready. Tap the one you picked again to clear it. With neither picked, Develop uses the usual bath. A frame takes one bath.",
+      "A frame you just shot is not ready. It takes five to thirty minutes, and you do not pick the number. No peeking. When photos are ready, one large frame shows how many. Develop opens them one at a time. Swipe right to send a photo to the feed. You can write a caption, or skip it with one tap. Darkroom still lists every photo. Daylight and Night are other baths there: pick one before the clock runs out, or when the frame is ready. Tap the one you picked again to clear it. With neither picked, Develop uses the usual bath. A frame takes one bath.",
     ],
   },
   {
