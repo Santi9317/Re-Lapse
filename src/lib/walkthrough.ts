@@ -1,5 +1,6 @@
 /**
- * One walk through the Feed, on a sample photo.
+ * One walk through the Feed.
+ * The first step is the Feed tab itself. The sample photo comes after that.
  * Everyone sees it on the next open. After that it waits for a new profile,
  * or for Feature Walkthrough in the You menu. The sample is not saved.
  */
@@ -17,14 +18,14 @@ export const FEATURE_WALK: readonly FeatureWalkStep[] = [
   {
     id: "feed",
     kicker: "Feed",
-    title: "Frames from this link",
+    title: "The Feed",
     line: "Photos people develop show up here. A frame stays up for a week, then it lapses.",
   },
   {
     id: "frame",
     kicker: "A frame",
-    title: "Tap the sample",
-    line: "Tap the photo to turn it over. The front is the picture. This sample is only for the walk.",
+    title: "On a photo",
+    line: "Add an emoji and drag it. Write on the back, and read the notes and signatures there. A new emoji glows blue, and so does a frame with a signature you have not opened, until you look. Those notes are on the back.",
   },
   {
     id: "notes",

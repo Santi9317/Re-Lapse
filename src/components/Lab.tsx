@@ -7,6 +7,7 @@ import { developBath, heldChemistry, isExtraChemistry, nextChemistry, type Extra
 import { developStampDate, readDateStamp, writeDateStamp } from "@/lib/date-stamp";
 import { countdown, disposableDate, longRemain } from "@/lib/format";
 import { renderDisposable } from "@/lib/filter";
+import { labScreenShows } from "@/lib/lab-screen";
 import { lapseQuip } from "@/lib/quips";
 import { ensurePhotoFile, iosPhotosTarget, readyPhotoFile, rememberPhotoBlob, shareOrSave } from "@/lib/save";
 import type { Chemistry, LabItem, LabState } from "@/lib/types";
@@ -29,12 +30,19 @@ export function Lab({
   onPublished,
   onDeleted,
   leading = null,
+  screen = "select",
+  onSwipe,
+  aside = [],
 }: {
   revision: number;
   refresh?: number;
   onPublished: () => void;
   onDeleted?: () => void;
   leading?: ReactNode;
+  /** select: frames you tap to develop. darkroom: the countdown and the chemistry. */
+  screen?: "select" | "darkroom";
+  onSwipe?: (id: string) => void;
+  aside?: readonly string[];
 }) {
   const [items, setItems] = useState<LabItem[]>([]);
   const [now, setNow] = useState(() => Date.now());
@@ -51,6 +59,8 @@ export function Lab({
   const grading = useRef(new Set<string>());
   const finished = useRef(new Set<string>());
   const captionDrafts = useRef(new Map<string, string>());
+  const onSwipeRef = useRef(onSwipe);
+  onSwipeRef.current = onSwipe;
 
   useEffect(() => {
     const saved = readDateStamp();
@@ -137,6 +147,7 @@ export function Lab({
           row.id === item.id ? { ...row, labState: "developed", graded: true, chemistry } : row,
         ),
       );
+      onSwipeRef.current?.(item.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "That frame can't be developed yet.");
     } finally {
@@ -154,6 +165,7 @@ export function Lab({
       setItems((current) =>
         current.map((item) => (item.id === id ? { ...item, labState: "developed", graded: true } : item)),
       );
+      onSwipeRef.current?.(id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "That frame can't be developed yet.");
     } finally {
@@ -250,9 +262,19 @@ export function Lab({
     }
   }
 
+  const visible = items.filter((item) => {
+    if (aside.includes(item.id)) return false;
+    return labScreenShows(cardState(item, now), screen);
+  });
+
   return (
-    <PullRefresh data-screen="lab" onRefresh={() => loadRef.current()}>
+    <PullRefresh data-screen="lab" data-lab-view={screen} onRefresh={() => loadRef.current()}>
       {leading}
+      {screen === "darkroom" ? (
+        <h2 className="section" data-darkroom-title>
+          Darkroom
+        </h2>
+      ) : null}
       {error ? <p className="error">{error}</p> : null}
       <label className="stamp-toggle" data-date-stamp={stamp ? "on" : "off"}>
         <input
@@ -273,18 +295,39 @@ export function Lab({
           <span />
         </span>
       </label>
-      {items.length === 0 ? (
-        <div className="empty">
-          <h2>Nothing in the soup. 🧪</h2>
-          <p>Shoot a frame and let it lapse. The print comes back when the clock does.</p>
-        </div>
+      {visible.length === 0 ? (
+        screen === "darkroom" ? (
+          <div className="empty">
+            <h2>Nothing in the darkroom.</h2>
+            <p>A photo you just took shows up here, with the countdown, until it is ready.</p>
+          </div>
+        ) : (
+          <div className="empty">
+            <h2>Nothing to develop.</h2>
+            <p>When a frame is ready, it shows up here. Tap Develop, then swipe to keep or discard.</p>
+          </div>
+        )
       ) : (
-        items.map((item) => {
+        visible.map((item) => {
           const state = cardState(item, now);
           const remaining = item.readyAt - now;
           const latent = !item.graded && state !== "sealed" && state !== "developed";
           return (
-            <article className="lab-card" key={item.id} data-lab-state={state}>
+            <article
+              className="lab-card"
+              key={item.id}
+              data-lab-state={state}
+              onClick={
+                state === "ready"
+                  ? (event) => {
+                      const target = event.target;
+                      if (target instanceof Element && target.closest("button")) return;
+                      const chemistry = developBath(heldChemistry(pendingBath.current, item.id, item.chemistry));
+                      void (item.graded ? develop(item.id) : grade(item, chemistry));
+                    }
+                  : undefined
+              }
+            >
               {state === "developed" ? (
                 <PrivateFrame id={item.id} alt={item.caption || "Developed frame"} />
               ) : (
@@ -302,6 +345,13 @@ export function Lab({
                       Comes back with the timecapsule
                       {item.revealAt ? ` in ${longRemain(item.revealAt - now)}` : ""}. Then the frames for the feed get picked. 🌙
                     </p>
+                  </>
+                ) : state === "developed" && onSwipe ? (
+                  <>
+                    <div className="kicker">Developed</div>
+                    <button className="primary" type="button" data-swipe-frame={item.id} onClick={() => onSwipe(item.id)}>
+                      Swipe to keep or discard
+                    </button>
                   </>
                 ) : state === "developed" ? (
                   <>
@@ -347,7 +397,7 @@ export function Lab({
                       {busy === item.id ? "Developing…" : "Develop ✨"}
                     </button>
                     {latent ? <Bath item={item} disabled={busy === item.id} onPick={(chemistry) => void pick(item, chemistry)} /> : null}
-                    <p>{latent ? "Run a bath once. It stays." : "The lapse is over. Pop the print, then decide who else gets a look."}</p>
+                    <p>Tap Develop, then swipe to keep or discard. You can add a caption while you swipe.</p>
                   </>
                 ) : (
                   <>

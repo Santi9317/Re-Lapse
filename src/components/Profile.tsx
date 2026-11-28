@@ -42,12 +42,14 @@ function captionFor(id: string, photos: FeedItem[]): string {
 export function Profile({
   revision,
   refresh = 0,
+  homeTick = 0,
   onShootGallery,
   onFeatureWalk,
   onProfileCreated,
 }: {
   revision: number;
   refresh?: number;
+  homeTick?: number;
   onShootGallery?: (gallery: GalleryRoll) => void;
   onFeatureWalk?: () => void;
   onProfileCreated?: () => void;
@@ -78,6 +80,27 @@ export function Profile({
       mounted.current = false;
     };
   }, []);
+
+  const profileRef = useRef(profile);
+  profileRef.current = profile;
+  const homeSeen = useRef<number | null>(null);
+  useEffect(() => {
+    if (homeSeen.current === null) {
+      homeSeen.current = homeTick;
+      return;
+    }
+    if (homeSeen.current === homeTick) return;
+    homeSeen.current = homeTick;
+    setOpenGallery(null);
+    setOpenId(null);
+    setFormError("");
+    const current = profileRef.current;
+    if (current && profileReady(current)) {
+      clearDraft();
+      setDraft(current);
+      setMode("page");
+    }
+  }, [homeTick]);
 
   const loadProfileRef = useRef<() => Promise<void>>(async () => {});
   const loadFeedRef = useRef<() => Promise<void>>(async () => {});
@@ -306,7 +329,7 @@ export function Profile({
   if (!profile || !mode) {
     return (
       <div className="profile-screen" data-screen="profile">
-        <Sleeve onFeatureWalk={onFeatureWalk} />
+        <Sleeve onFeatureWalk={onFeatureWalk} homeTick={homeTick} />
         <PullRefresh onRefresh={refreshYou}>{null}</PullRefresh>
       </div>
     );
@@ -318,7 +341,7 @@ export function Profile({
 
   return (
     <div className="profile-screen" data-screen="profile" data-mode={mode}>
-      <Sleeve onFeatureWalk={onFeatureWalk} />
+      <Sleeve onFeatureWalk={onFeatureWalk} homeTick={homeTick} />
       <PullRefresh onRefresh={refreshYou}>
       {formError ? <p className="error">{formError}</p> : null}
       {mode === "page" ? (

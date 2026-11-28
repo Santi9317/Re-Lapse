@@ -77,6 +77,7 @@ export function Rolls({
   hub = false,
   revision,
   refresh = 0,
+  homeTick = 0,
   focusEventId,
   joinNotice,
   onArm,
@@ -88,6 +89,7 @@ export function Rolls({
   hub?: boolean;
   revision: number;
   refresh?: number;
+  homeTick?: number;
   focusEventId?: string | null;
   joinNotice?: string;
   onArm: (event: EventRoll) => void;
@@ -195,6 +197,20 @@ export function Rolls({
     void showEvent(focusEventId);
     onFocusConsumed?.();
   }, [focusEventId]);
+
+  const homeSeen = useRef<number | null>(null);
+  useEffect(() => {
+    if (homeSeen.current === null) {
+      homeSeen.current = homeTick;
+      return;
+    }
+    if (homeSeen.current === homeTick) return;
+    homeSeen.current = homeTick;
+    setLane(hub ? "hub" : "all");
+    setGalleryId(null);
+    setEventDetail(null);
+    setOpen(null);
+  }, [homeTick, hub]);
 
   async function makeAlbum() {
     if (!albumName.trim() || busy) return;

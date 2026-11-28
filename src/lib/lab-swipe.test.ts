@@ -80,19 +80,24 @@ test("preview poses are the workshop stills", () => {
   assert.equal(poseOffset("delete"), -156);
 });
 
-test("the lab tab is the swipe, and soup opens the chemistry list", () => {
+test("the lab opens on frames to develop, and darkroom keeps the countdown", () => {
   const app = readFileSync(new URL("../components/App.tsx", import.meta.url), "utf8");
   const lab = readFileSync(new URL("../components/Lab.tsx", import.meta.url), "utf8");
   const deck = readFileSync(new URL("../components/LabDeck.tsx", import.meta.url), "utf8");
   const page = readFileSync(new URL("../app/preview/lab/page.tsx", import.meta.url), "utf8");
   assert.match(app, /LabDeck/);
   assert.doesNotMatch(app, /<Lab[\s>]/);
-  assert.match(deck, /data-screen="lab"/);
-  assert.match(deck, /data-open-soup/);
-  assert.match(deck, /data-close-soup/);
+  assert.match(deck, /data-lab-view="swipe"/);
+  assert.match(deck, /data-open-darkroom/);
+  assert.match(deck, /data-close-darkroom/);
   assert.match(deck, /<Lab/);
+  assert.match(deck, /CaptionField/);
   assert.match(deck, /Swipe right to keep, swipe left to delete/);
+  assert.equal(deck.includes("data-open-soup"), false);
   assert.match(lab, /Additional chemistry/);
+  assert.match(lab, /data-darkroom-title/);
+  assert.match(lab, /data-lab-view=\{screen\}/);
+  assert.match(lab, /Tap Develop, then swipe to keep or discard/);
   assert.match(page, /LabSwipePreview/);
   assert.match(page, /robots: \{ index: false, follow: false \}/);
 });
