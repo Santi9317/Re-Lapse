@@ -14,6 +14,7 @@ import {
 import { bannerOpensQuote } from "@/lib/banner-quote";
 import { keepsakesHubOpen } from "@/lib/keepsakes-hub";
 import { noteFeedLook } from "@/lib/feed-mark";
+import { recapWorkshopStored } from "@/lib/feed-recap";
 import { recallNotes } from "@/lib/note-seen";
 import { recallStickers } from "@/lib/sticker-seen";
 import { restorePhone } from "@/lib/identity";
@@ -21,6 +22,7 @@ import { drawInspiration, type Quote } from "@/lib/quotes";
 import { shouldReloadOnPageSignal, shouldReloadOnTabChange, type MainTab } from "@/lib/refresh";
 import type { EventRoll, FeedItem } from "@/lib/types";
 import { Feed } from "@/components/Feed";
+import { FeedRecapWorkshop } from "@/components/FeedRecap";
 import { Lab } from "@/components/Lab";
 import { GuestProfile, Profile } from "@/components/Profile";
 import { QuoteDialog } from "@/components/QuoteDialog";
@@ -140,6 +142,8 @@ function CameraDesk() {
   const [joinNotice, setJoinNotice] = useState("");
   const [bannerQuote, setBannerQuote] = useState<Quote | null>(null);
   const bannerRef = useRef<HTMLButtonElement>(null);
+  const [recapOn, setRecapOn] = useState(false);
+  const [recapDone, setRecapDone] = useState(false);
 
   function openBannerQuote() {
     setBannerQuote(drawInspiration(localStorage));
@@ -191,6 +195,10 @@ function CameraDesk() {
   useEffect(() => {
     if (!bannerOpensQuote(tab)) setBannerQuote(null);
   }, [tab]);
+
+  useEffect(() => {
+    setRecapOn(recapWorkshopStored());
+  }, []);
 
   useEffect(() => {
     if (tokenReady === 0) return;
@@ -345,7 +353,12 @@ function CameraDesk() {
             <GuestProfile id={guestId} refresh={landed} onBack={() => setGuestId(null)} />
           ) : (
             <>
-              {tab === "feed" ? <Feed revision={feedRevision} refresh={landed} onOpenProfile={setGuestId} onSeen={sawFeed} /> : null}
+              {tab === "feed" && recapOn && !recapDone ? (
+                <FeedRecapWorkshop onDismiss={() => setRecapDone(true)} />
+              ) : null}
+              {tab === "feed" && (!recapOn || recapDone) ? (
+                <Feed revision={feedRevision} refresh={landed} onOpenProfile={setGuestId} onSeen={sawFeed} />
+              ) : null}
               {tab === "you" ? <Profile revision={feedRevision} refresh={landed} /> : null}
               {tab === "rolls" ? (
                 <Rolls
