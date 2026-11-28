@@ -15,7 +15,7 @@ export function isDoubleTap(
   return Math.hypot(next.x - previous.x, next.y - previous.y) <= slopPx;
 }
 
-/** A second tap on the viewfinder flips the camera. A pinch, or a tap on a button, does not. */
+/** A second tap on the viewfinder, or the empty space around the frame, flips the camera. A pinch, or a tap on a button, does not. */
 export function shouldFlipOnDoubleTap(input: {
   live: boolean;
   onControl: boolean;

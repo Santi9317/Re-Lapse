@@ -47,7 +47,7 @@ export const HOW_TO: HowToSection[] = [
     id: "flip",
     title: "Flip",
     body: [
-      "Double-tap the viewfinder to swap the front camera and the back camera. The front preview stays a mirror. The saved photo does not.",
+      "Double-tap the viewfinder, or the empty space around the frame, to swap the front camera and the back camera. The front preview stays a mirror. The saved photo does not.",
     ],
   },
   {

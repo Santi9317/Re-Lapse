@@ -99,6 +99,7 @@ export function Shoot({
   const [optical, setOptical] = useState(false);
   // A fast camera switch can leave mode on "live", so this tells the preview to attach the new stream.
   const [opened, setOpened] = useState(0);
+  const shootRef = useRef<HTMLDivElement>(null);
   const finderRef = useRef<HTMLDivElement>(null);
   const suppressClickRef = useRef(false);
   const flipRef = useRef<() => void>(() => {});
@@ -218,9 +219,10 @@ export function Shoot({
   }, [active]);
 
   useEffect(() => {
+    const root = shootRef.current;
     const finder = finderRef.current;
     const engine = engineRef.current;
-    if (!finder || !engine) return;
+    if (!root || !finder || !engine) return;
 
     let session: { distance: number; zoom: number; moved: boolean } | null = null;
     let lastTap: { x: number; y: number; at: number } | null = null;
@@ -235,7 +237,8 @@ export function Shoot({
       } else if (event.touches.length === 1 && event.touches[0]) {
         drag = { x: event.touches[0].clientX, y: event.touches[0].clientY };
       }
-      if (!live() || event.touches.length !== 2) return;
+      const onFinder = event.target instanceof Node && finder.contains(event.target);
+      if (!live() || event.touches.length !== 2 || !onFinder) return;
       const distance = pinchDistance(event.touches[0], event.touches[1]);
       if (!(distance > 0)) return;
       session = { distance, zoom: engine.zoom, moved: false };
@@ -306,18 +309,18 @@ export function Shoot({
       event.preventDefault();
     };
 
-    finder.addEventListener("touchstart", onStart, { passive: true });
-    finder.addEventListener("touchmove", onMove, { passive: false });
-    finder.addEventListener("touchend", onEnd, { passive: false });
-    finder.addEventListener("touchcancel", onCancel);
+    root.addEventListener("touchstart", onStart, { passive: true });
+    root.addEventListener("touchmove", onMove, { passive: false });
+    root.addEventListener("touchend", onEnd, { passive: false });
+    root.addEventListener("touchcancel", onCancel);
     finder.addEventListener("wheel", onWheel, { passive: false });
     finder.addEventListener("gesturestart", stopGesture, { passive: false });
     finder.addEventListener("gesturechange", stopGesture, { passive: false });
     return () => {
-      finder.removeEventListener("touchstart", onStart);
-      finder.removeEventListener("touchmove", onMove);
-      finder.removeEventListener("touchend", onEnd);
-      finder.removeEventListener("touchcancel", onCancel);
+      root.removeEventListener("touchstart", onStart);
+      root.removeEventListener("touchmove", onMove);
+      root.removeEventListener("touchend", onEnd);
+      root.removeEventListener("touchcancel", onCancel);
       finder.removeEventListener("wheel", onWheel);
       finder.removeEventListener("gesturestart", stopGesture);
       finder.removeEventListener("gesturechange", stopGesture);
@@ -484,8 +487,14 @@ export function Shoot({
 
   return (
     <div
+      ref={shootRef}
       className="shoot"
       data-screen="shoot"
+      onDoubleClick={(event) => {
+        if (!(event.target instanceof Element)) return;
+        if (event.target.closest("button, a, input, textarea, label")) return;
+        flipCamera();
+      }}
       onDragOver={(event) => event.preventDefault()}
       onDrop={(event) => {
         event.preventDefault();
@@ -533,11 +542,6 @@ export function Shoot({
         data-zoom={zoom}
         data-zoom-mode={optical ? "optical" : "crop"}
         data-preview-scale={preview}
-        onDoubleClick={(event) => {
-          if (!(event.target instanceof Element)) return;
-          if (event.target.closest("button, a, input, textarea, label")) return;
-          flipCamera();
-        }}
         onClickCapture={(event) => {
           if (!suppressClickRef.current) return;
           suppressClickRef.current = false;

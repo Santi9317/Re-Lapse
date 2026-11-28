@@ -2034,6 +2034,19 @@ figure.print .print-actions button[data-delete]:hover:not(:disabled) {
   margin-top: 8px;
   text-align: center;
 }
+/* A long what's-new list stays inside the window. The title and buttons stay put, and the lines scroll. */
+.lab-sheet[data-shell="update"] .sheet-card,
+.lab-sheet[data-shell="notes"] .sheet-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: 100%;
+  overflow: hidden;
+}
+.lab-sheet[data-shell="update"] .sheet-card > :not(.sheet-notes),
+.lab-sheet[data-shell="notes"] .sheet-card > :not(.sheet-notes) {
+  flex: none;
+}
 .sheet-notes {
   margin: 0 0 12px;
   padding: 0 0 0 1.1em;
@@ -2041,6 +2054,10 @@ figure.print .print-actions button[data-delete]:hover:not(:disabled) {
   font-size: 14px;
   line-height: 1.4;
   list-style: disc;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .sheet-notes li { margin: 0 0 6px; }
 .sheet-notes li:last-child { margin-bottom: 0; }

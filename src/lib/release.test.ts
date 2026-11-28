@@ -197,6 +197,9 @@ test("a version bump offers what's new on entry without a waiting update", () =>
   assert.match(notesSheet, /data-release-notes-control/);
   assert.match(notesSheet, /See what's new/);
   assert.equal(updateSheet.includes('data-shell="notes"'), false);
+  const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+  assert.match(css, /\.lab-sheet\[data-shell="update"\] \.sheet-card,\s*\.lab-sheet\[data-shell="notes"\] \.sheet-card \{[^}]*max-height:\s*100%/);
+  assert.match(css, /\.sheet-notes \{[^}]*overflow-y:\s*auto/);
 
   const baseSource = git(["show", "origin/main:src/lib/release.ts"]);
   const baseReleaseText = git(["show", "origin/main:public/release.json"]);
